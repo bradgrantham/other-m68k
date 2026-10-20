@@ -47,13 +47,17 @@ E6. A zero-wait 68000 bus cycle starting at E0 has S0 at E0, S1 at E1, ... S7 at
 |---|---|---|---|---|---|---|---|---|---|
 | edge | E0 | E1 | E2 | E3 | E4 | E5 | E6 | E7 | E0' |
 
-68000 facts used below (12.5 MHz grade, worst case): address valid <= 55 ns after S0 edge;
-AS/DS asserted <= 55 ns after their state edge (read: DS at S2, write: DS at S4); write
-data driven <= 50 ns after S3 edge and held until >= 0 ns after S7 ends, released <= 60 ns
-after; DTACK/BERR/VPA sampled at the S4->S5 falling edge (E5) and at every following
-falling edge while waiting; read data sampled at the S6->S7 falling edge (E7), setup 10 ns,
-hold 0. CPLD outputs change ~7.5 ns after their clock edge; the CPU's own clock lags the
-CPLD's internal edge by that much too.
+68000 facts used below, from the M68000 User's Manual section 10.10, 12.5 MHz column
+(worst case): address valid <= 50 ns after the S1 (clock-low) edge (#6); AS and DS asserted
+3..40 ns after their state edge (#9; read: DS at S2, write: DS at S4); AS/DS negated <= 40 ns
+after the S7 edge (#12); write data valid <= 50 ns after the S3 edge (#23), held >= 20 ns
+after AS/DS negate (#25) and released <= 60 ns after the S7-ending clock edge (#7);
+asynchronous inputs DTACK/BERR/VPA need 10 ns setup to the sampling falling edge (#47) and
+are sampled at S4->S5 (E5 for a cycle starting at E0) and every following falling edge while
+waiting; read data needs 10 ns setup to the S6->S7 falling edge (#27) and 0 ns hold (#29);
+DTACK must be negated within 150 ns of AS negating (#28); RESET and HALT must be held 100 ms
+at power-up. CPLD outputs change ~7.5 ns after their clock edge, and the CPU's own clock
+lags the CPLD's internal edge by that much too.
 
 ### Slot schedule
 
@@ -83,22 +87,25 @@ during F3): at E4 capture D and DE; at E0 capture D into a register if IOCS and 
   to VA at E1 -> tWR 41 ns. CPU holds data >= 0 ns after E0 and the transceiver adds 10 ns ->
   tDH >= 10 ns (>= 0).
 * UDS/LDS for a write assert at S4: for a serviced cycle S4 is at E4 at the latest, so they
-  are low by 229 ns, before the E6 WE gate (250). **Margin 17 ns.**
-* ROM: CE = region & AS & R/W, combinational. AS low by 145 ns (S0 at E0) -> data by 222
+  are low by 214 ns, before the E6 WE gate (250). **Margin 36 ns.**
+* AS is asserted no earlier than 3 ns after the CPU's clock edge, which itself lags the
+  CPLD's edge, so a cycle whose S2 falls exactly on E4 is always sampled "AS high" at that
+  E4 and serviced in the next slot: the decision is deterministic, never a race.
+* ROM: CE = region & AS & R/W, combinational. AS low by 131 ns (S0 at E0) -> data by 208
   ns, sampled at 289. Zero wait states at any phase; the EPROM only ever drives the CPU bus.
 * Transceiver B-side stops driving 22 ns after E0; next video OE at E2 (91 ns later).
 
 ### Alignment (the "cycle stealing" cost)
 
 A RAM or I/O cycle is serviced in the first slot whose E4 finds AS already low. Because AS
-asserts ~62 ns after the S2 edge:
+asserts at most 47.5 ns after the S2 edge (7.5 clock lag + 40):
 
 | S0 at | AS low by | serviced at | cycle length |
 |---|---|---|---|
-| E0 | 145 (this slot) | this slot | 4 clocks (zero wait) |
-| E6 of previous slot | 62 (this slot) | this slot | 5 clocks (DTACK at E4 is first seen at E5) |
-| E2 | 229 (after E4) | next slot | 6 clocks |
-| E4 | 312 | next slot | 6 clocks |
+| E0 | 131 (this slot) | this slot | 4 clocks (zero wait) |
+| E6 of previous slot | 48 (this slot) | this slot | 5 clocks (DTACK at E4 is first seen at E5) |
+| E2 | 214 (after E4) | next slot | 6 clocks |
+| E4 | 298 | next slot | 6 clocks |
 
 Every serviced cycle ends at E0, so after the first RAM or I/O access the CPU is realigned to
 the slot. 68000 bus cycles then start on even CPU clocks relative to each other (cycles are 4
