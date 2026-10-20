@@ -452,14 +452,7 @@
    "assembly": "dnp"
   }
  },
- "extras": [
-  {
-   "qty": 2,
-   "mfr": "Sullins",
-   "mpn": "SPC02SYAN",
-   "desc": "2.54 mm shunt for JP1 (loose)"
-  }
- ],
+ "extras": [],
  "jlc_rotation": {
   "_comment": "footprint-name regex -> degrees to add to KiCad's rotation for the JLCPCB CPL; fill in after JLCPCB's DFM preview shows a turned part",
   "rules": {}

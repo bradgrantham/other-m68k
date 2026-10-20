@@ -64,7 +64,7 @@ FAB_PCB := $(if $(wildcard $(B)/$(BN)-routed.kicad_pcb),$(B)/$(BN)-routed.kicad_
 
 fab:
 	@test -f $(B)/$(BN).kicad_sch || $(MAKE) board
-	mkdir -p $(FAB)
+	rm -rf $(FAB) && mkdir -p $(FAB)
 	$(KICAD_CLI) pcb export gerbers --no-protel-ext --subtract-soldermask --layers F.Cu,In1.Cu,In2.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,F.Paste,B.Paste,Edge.Cuts -o $(FAB)/ $(FAB_PCB)
 	$(KICAD_CLI) pcb export drill --format excellon --excellon-separate-th --generate-map --map-format pdf -o $(FAB)/ $(FAB_PCB)
 	$(KICAD_CLI) pcb export pos --format csv --units mm --side both --exclude-dnp -o $(FAB)/$(BN)-pos.csv $(FAB_PCB)

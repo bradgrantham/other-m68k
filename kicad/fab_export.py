@@ -175,7 +175,11 @@ def main():
         f.write(f"Assembled parts without an LCSC number (JLCPCB matches basic passives itself): {len(problems['no_lcsc'])}\n")
         f.write("  " + ", ".join(problems["no_lcsc"]) + "\n")
     # Gerber zip
-    gerbers = sorted(x for x in os.listdir(a.outdir) if x.endswith((".gbr", ".drl", ".gbrjob")) or x.endswith("-drl_map.pdf"))
+    # only the files kicad-cli made from *this* board (stale exports of another board in the
+    # same directory, or of an earlier revision, must not end up in the zip)
+    stem = os.path.splitext(os.path.basename(a.pcb))[0] + "-"
+    gerbers = sorted(x for x in os.listdir(a.outdir)
+                     if x.startswith(stem) and (x.endswith((".gbr", ".drl", ".gbrjob")) or x.endswith("-drl_map.pdf")))
     if gerbers:
         with zipfile.ZipFile(out("gerbers.zip"), "w", zipfile.ZIP_DEFLATED) as z:
             for g in gerbers:
