@@ -67,15 +67,13 @@
    "mfr": "Rubycon",
    "mpn": "16ZLH220MEFC6.3X11",
    "desc": "220 uF 16 V electrolytic, 6.3 mm dia, 2.5 mm pitch",
-   "assembly": "pcba",
-   "verify": true
+   "assembly": "pcba"
   },
   "100uF|Capacitor_THT:CP_Radial_D6.3mm_P2.50mm": {
    "mfr": "Rubycon",
-   "mpn": "16ZLH100MEFC6.3X11",
-   "desc": "100 uF 16 V electrolytic, 6.3 mm dia, 2.5 mm pitch",
-   "assembly": "pcba",
-   "verify": true
+   "mpn": "35ZLH100MEFC6.3X11",
+   "desc": "100 uF 35 V electrolytic, 6.3 mm dia, 2.5 mm pitch (the 16 V ZLH 100 uF is a 5 mm can)",
+   "assembly": "pcba"
   },
   "10k|Resistor_SMD:R_0603_1608Metric": {
    "mfr": "Yageo",
@@ -169,18 +167,16 @@
    "assembly": "pcba"
   },
   "LED green|LED_SMD:LED_0805_2012Metric": {
-   "mfr": "Everlight",
-   "mpn": "19-217/GHC-YR1S2/3T",
-   "desc": "green LED 0805",
-   "assembly": "pcba",
-   "verify": true
+   "mfr": "Lite-On",
+   "mpn": "LTST-C171GKT",
+   "desc": "green LED 0805, 2.1 V",
+   "assembly": "pcba"
   },
   "LED red (power)|LED_SMD:LED_0805_2012Metric": {
-   "mfr": "Everlight",
-   "mpn": "19-217/R6C-AL1M2VY/3T",
-   "desc": "red LED 0805",
-   "assembly": "pcba",
-   "verify": true
+   "mfr": "Lite-On",
+   "mpn": "LTST-C171KRKT",
+   "desc": "red LED 0805, 2.0 V",
+   "assembly": "pcba"
   },
   "600R@100MHz|Inductor_SMD:L_0603_1608Metric": {
    "mfr": "Murata",
@@ -275,10 +271,9 @@
   },
   "3.6864MHz|*": {
    "mfr": "ECS",
-   "mpn": "ECS-36-20-4X",
-   "desc": "3.6864 MHz crystal HC-49/US, 20 pF",
-   "assembly": "pcba",
-   "verify": true
+   "mpn": "ECS-36-20-4XDN",
+   "desc": "3.6864 MHz crystal HC-49/US, 20 pF (-40..85 C grade; ECS-36-20-4DN is NRND)",
+   "assembly": "pcba"
   },
   "2A|Fuse:Fuse_1206_3216Metric": {
    "mfr": "Littelfuse",
@@ -290,15 +285,13 @@
    "mfr": "Microchip",
    "mpn": "MCP130T-450I/TT",
    "desc": "4.50 V reset supervisor, open drain, SOT-23",
-   "assembly": "pcba",
-   "verify": true
+   "assembly": "pcba"
   },
   "3.579545MHz|*": {
    "mfr": "ECS",
    "mpn": "ECS-35-17-4X",
    "desc": "3.579545 MHz crystal HC-49/US (NTSC subcarrier)",
-   "assembly": "pcba",
-   "verify": true
+   "assembly": "pcba"
   },
   "Logic analyzer (gusmanb 2x15)|*": {
    "mfr": "Sullins",
@@ -308,10 +301,9 @@
   },
   "4x100|Resistor_SMD:R_Array_Convex_4x0603": {
    "mfr": "Yageo",
-   "mpn": "YC124-JR-07100RL",
-   "desc": "4 x 100 ohm resistor array, 4x0603 convex",
-   "assembly": "pcba",
-   "verify": true
+   "mpn": "YC164-JR-07100RL",
+   "desc": "4 x 100 ohm resistor array, 4x0603 convex (1206 size); alt Panasonic EXB-38V101JV",
+   "assembly": "pcba"
   }
  },
  "by_ref": {
@@ -322,10 +314,9 @@
    "assembly": "socket",
    "chip_supply": "customer",
    "socket": {
-    "mfr": "Preci-dip",
-    "mpn": "110-83-964-41-001101",
-    "desc": "DIP-64 socket, 22.86 mm (0.9 in) rows: confirm the row spacing of this ordering code, or use 3M 264-4493-09-0602J",
-    "verify": true
+    "mfr": "Mill-Max",
+    "mpn": "110-43-964-41-001000",
+    "desc": "DIP-64 socket, 22.86 mm (0.9 in) rows, gold contacts, RoHS"
    }
   },
   "U2": {
@@ -335,10 +326,9 @@
    "assembly": "socket",
    "chip_supply": "customer",
    "socket": {
-    "mfr": "Preci-dip",
-    "mpn": "110-99-632-41-001000",
-    "desc": "DIP-32 socket, 15.24 mm rows",
-    "verify": true
+    "mfr": "Mill-Max",
+    "mpn": "110-43-632-41-001000",
+    "desc": "DIP-32 socket, 15.24 mm rows, gold contacts, RoHS"
    }
   },
   "U3": {
@@ -348,10 +338,9 @@
    "assembly": "socket",
    "chip_supply": "customer",
    "socket": {
-    "mfr": "Preci-dip",
-    "mpn": "110-99-632-41-001000",
-    "desc": "DIP-32 socket, 15.24 mm rows",
-    "verify": true
+    "mfr": "Mill-Max",
+    "mpn": "110-43-632-41-001000",
+    "desc": "DIP-32 socket, 15.24 mm rows, gold contacts, RoHS"
    }
   },
   "U4": {
@@ -421,10 +410,9 @@
    "assembly": "socket",
    "chip_supply": "customer",
    "socket": {
-    "mfr": "Preci-dip",
-    "mpn": "110-99-640-41-001000",
-    "desc": "DIP-40 socket, 15.24 mm rows",
-    "verify": true
+    "mfr": "Mill-Max",
+    "mpn": "110-43-640-41-001000",
+    "desc": "DIP-40 socket, 15.24 mm rows, gold contacts, RoHS"
    }
   },
   "TP1": {

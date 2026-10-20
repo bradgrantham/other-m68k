@@ -32,7 +32,7 @@ FAB  := $(BUILD)/fab
 
 board: pcb-board
 
-$(B)/$(BN).kicad_sch: board.py gen_sch.py lib/other-m68k.kicad_sym ../hdl/pins_cpld1_mmu.json ../hdl/pins_cpld2_io.json
+$(B)/$(BN).kicad_sch: board.py gen_sch.py parts.json lib/other-m68k.kicad_sym ../hdl/pins_cpld1_mmu.json ../hdl/pins_cpld2_io.json
 	$(PYTHON) board.py $(B)
 
 sch-board: $(B)/$(BN).kicad_sch

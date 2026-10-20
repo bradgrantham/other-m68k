@@ -29,9 +29,13 @@ assembly.
 | not fitted | mounting holes, test pads, the crystal trim capacitor (DNP) |
 | loose parts | none (the PAL jumper is gone; no shunts) |
 
-Before uploading, clear `other-m68k-bom-check.txt`: every line under "part numbers written
-from memory" must be checked against a distributor listing (or replaced by what PCBWay's
-quote proposes), and `verify: true` removed from `parts.json`.
+All part numbers were checked against distributor listings on 2026-10-20 (`parts.json` has no
+`verify` flags left; `other-m68k-bom-check.txt` lists none). Substitutions made then: Lite-On
+LTST-C171GKT/KRKT LEDs (the Everlight 19-217 parts are 0603, the footprint is 0805), Yageo
+YC164 arrays (YC124 is the 4x0402 size), Rubycon 35ZLH100MEFC6.3X11 for the 100 uF bulk
+capacitor (the 16 V part only comes in a 5 mm can), Mill-Max 110-43 series DIP sockets (gold
+contacts, RoHS; the 110-99 codes are tin-lead), ECS-36-20-4XDN. If PCBWay proposes
+equivalents in the quote review, same package and ratings are acceptable.
 
 ## Power note for the order and for use
 
