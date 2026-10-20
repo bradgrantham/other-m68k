@@ -122,6 +122,11 @@ def gen_hw_h(d):
     A("#define DUART_XTAL_HZ %dUL" % d["serial"]["xtal_hz"])
     A("#define SERIAL_CSR_VALUE %s   /* CSRA: RX and TX baud code */" % hx(d["serial"]["csr"], 2))
     A("#define SERIAL_ACR_BRG_SET %d  /* ACR[7] */" % d["serial"]["acr_brg_set"])
+    A("#define SERIAL_ACR_VALUE %s   /* ACR: baud set, no counter/timer, no IP interrupts */" % hx(d["serial"]["acr_brg_set"] << 7, 2))
+    A("#define SERIAL_MR1_VALUE %s   /* MR1A: 8 bits, no parity, RxRDY interrupt */" % hx(d["serial"]["mr1"], 2))
+    A("#define SERIAL_MR2_VALUE %s   /* MR2A: 1 stop bit, normal mode */" % hx(d["serial"]["mr2"], 2))
+    for k, v in d["serial"]["cr_commands"].items():
+        A("#define DUART_CR_%s %s" % (k, hx(v, 2)))
     A("\n#endif /* HW_H */")
     return "\n".join(o) + "\n"
 
@@ -152,6 +157,8 @@ def gen_hw_inc(d):
             rn = cident(r["name"])
             eq("%s_%s_ADDR" % (prefix, rn), hx(n(blk["base"]) + r["offset"]))
             eq("%s_%s_OFFSET" % (prefix, rn), r["offset"])
+            if "reset" in r:
+                eq("%s_%s_RESET" % (prefix, rn), hx(r["reset"], 4))
             for f, w, mask in field_items(r):
                 fn = "%s_%s" % (rn, cident(f["name"]))
                 eq(fn + "_BIT", f["bit"])
@@ -164,6 +171,10 @@ def gen_hw_inc(d):
     eq("SERIAL_BAUD", d["serial"]["baud"])
     eq("SERIAL_CSR_VALUE", hx(d["serial"]["csr"], 2))
     eq("SERIAL_ACR_BRG_SET", d["serial"]["acr_brg_set"])
+    eq("SERIAL_ACR_VALUE", hx(d["serial"]["acr_brg_set"] << 7, 2))
+    eq("SERIAL_MR1_VALUE", hx(d["serial"]["mr1"], 2)); eq("SERIAL_MR2_VALUE", hx(d["serial"]["mr2"], 2))
+    for k, v in d["serial"]["cr_commands"].items():
+        eq("DUART_CR_" + k, hx(v, 2))
     A("")
     for s in d["syscalls"]:
         eq("SYS_" + s["name"], s["num"])

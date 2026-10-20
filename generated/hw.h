@@ -367,5 +367,14 @@
 #define DUART_XTAL_HZ 3686400UL
 #define SERIAL_CSR_VALUE 0xCC   /* CSRA: RX and TX baud code */
 #define SERIAL_ACR_BRG_SET 1  /* ACR[7] */
+#define SERIAL_ACR_VALUE 0x80   /* ACR: baud set, no counter/timer, no IP interrupts */
+#define SERIAL_MR1_VALUE 0x13   /* MR1A: 8 bits, no parity, RxRDY interrupt */
+#define SERIAL_MR2_VALUE 0x07   /* MR2A: 1 stop bit, normal mode */
+#define DUART_CR_RESET_MR 0x10
+#define DUART_CR_RESET_RX 0x20
+#define DUART_CR_RESET_TX 0x30
+#define DUART_CR_RESET_ERR 0x40
+#define DUART_CR_RESET_BRK 0x50
+#define DUART_CR_ENABLE 0x05
 
 #endif /* HW_H */

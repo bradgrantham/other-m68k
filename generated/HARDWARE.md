@@ -313,7 +313,7 @@ autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied in
 
 ## Peripherals
 
-**serial**: device: MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header); baud: 38400; format: 8N1; xtal_hz: 3686400; csr: 0xCC; acr_brg_set: 1; init: MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x80, CSRA=0xCC, CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts; note: 38400 is the highest rate in the 68681's fixed table; the counter/timer or the X1/16 input could give more but are not used.; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected
+**serial**: device: MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header); baud: 38400; format: 8N1; xtal_hz: 3686400; csr: 0xCC; acr_brg_set: 1; mr1: 0x13; mr2: 0x07; cr_commands: OrderedDict({'RESET_MR': '0x10', 'RESET_RX': '0x20', 'RESET_TX': '0x30', 'RESET_ERR': '0x40', 'RESET_BRK': '0x50', 'ENABLE': '0x05'}); init: MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x80, CSRA=0xCC, CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts; note: 38400 is the highest rate in the 68681's fixed table; the counter/timer or the X1/16 input could give more but are not used.; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected
 
 **ps2**: rx: hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY; tx: software bit-bang via GPIO.PS2CLK/PS2DAT open-drain bits; connector: 6-pin mini-DIN, 5V
 
