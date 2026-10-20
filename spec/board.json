@@ -50,7 +50,7 @@
       "kind": "io",
       "device": "MC68681 / SCN68681 / SCC68681 DUART, 3.6864 MHz crystal",
       "registers": "duart",
-      "desc": "68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use byte accesses only. DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned."
+      "desc": "68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use odd-address byte accesses only: an even-byte or word cycle still selects the chip (undefined data; a read pops the FIFO into the wrong lane). DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned."
     }
   ],
   "unmapped_policy": "BERR asserted (bus error exception) for any access outside the regions above, except the interrupt-acknowledge pattern A23..A4 all ones, which is autovectored via VPA.",
@@ -393,7 +393,7 @@
     "duart": {
       "base": "0xF20000",
       "width": 8,
-      "desc": "MC68681 registers; one name per direction where read and write differ at the same offset.",
+      "desc": "MC68681 registers; one name per direction where read and write differ at the same offset. Offsets 5 and 21 must not be READ (factory test locations: CRA/CRB are write-only). Even-address bytes and word accesses in this region do hit the chip (DUARTCS is asserted for any cycle in the region) with undefined data: do not use them.",
       "regs": [
         {
           "name": "MRA",
@@ -453,7 +453,7 @@
           "name": "CSRA",
           "offset": 3,
           "access": "w",
-          "desc": "Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600)."
+          "desc": "Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (set 1, ACR[7]=0: 0xC = 38.4k, 0xB = 9600, 0x8 = 2400; set 2 swaps some rows, e.g. 0xC = 19.2k)."
         },
         {
           "name": "CRA",
@@ -483,7 +483,7 @@
           "name": "ACR",
           "offset": 9,
           "access": "w",
-          "desc": "Auxiliary control: bit 7 baud-rate set (1 = set 2, used here), bits 6..4 counter/timer mode and source, bits 3..0 IP change interrupt enables."
+          "desc": "Auxiliary control: bit 7 baud-rate set (0 = set 1, used here: 0xC = 38.4k), bits 6..4 counter/timer mode and source, bits 3..0 IP change interrupt enables."
         },
         {
           "name": "ISR",
@@ -663,7 +663,7 @@
           "name": "CSRB",
           "offset": 19,
           "access": "w",
-          "desc": "Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600)."
+          "desc": "Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (set 1, ACR[7]=0: 0xC = 38.4k, 0xB = 9600, 0x8 = 2400; set 2 swaps some rows, e.g. 0xC = 19.2k)."
         },
         {
           "name": "CRB",
@@ -767,7 +767,7 @@
     "format": "8N1",
     "xtal_hz": 3686400,
     "csr": "0xCC",
-    "acr_brg_set": 1,
+    "acr_brg_set": 0,
     "mr1": "0x13",
     "mr2": "0x07",
     "cr_commands": {
@@ -778,8 +778,8 @@
       "RESET_BRK": "0x50",
       "ENABLE": "0x05"
     },
-    "init": "MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x80, CSRA=0xCC, CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts",
-    "note": "38400 is the highest rate in the 68681's fixed table; the counter/timer or the X1/16 input could give more but are not used.",
+    "init": "MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x00 (baud-rate set 1), CSRA=0xCC (38.4k RX and TX), CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts",
+    "note": "38400 is the highest rate in the 68681's fixed tables: CSR code 0xC is 38.4k in set 1 (ACR[7]=0) and 19.2k in set 2 (ACR[7]=1), data sheet Table 4-5. The counter/timer or an external 16x clock could give more but are not used.",
     "connector": "6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected"
   },
   "ps2": {

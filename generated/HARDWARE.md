@@ -13,7 +13,7 @@ CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 | ROM | 0xE00000 | 0xE1FFFF | 128 KB | rom | 128 KB EPROM. Read-only; zero wait states; not subject to slot alignment. Vectors at offset 0 (overlaid at 0x000000 at reset). |
 | IO | 0xF00000 | 0xF0FFFF | 64 KB | io | CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). INTEN, SDIO, GPIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. |
 | SWITCHES | 0xF10000 | 0xF1FFFF | 64 KB | io | CPLD1 soft switches. Write-only; writing any value to the address performs the action. Reads return garbage. |
-| DUART | 0xF20000 | 0xF2FFFF | 64 KB | io | 68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use byte accesses only. DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned. |
+| DUART | 0xF20000 | 0xF2FFFF | 64 KB | io | 68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use odd-address byte accesses only: an even-byte or word cycle still selects the chip (undefined data; a read pops the FIFO into the wrong lane). DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned. |
 
 BERR asserted (bus error exception) for any access outside the regions above, except the interrupt-acknowledge pattern A23..A4 all ones, which is autovectored via VPA.
 
@@ -145,7 +145,7 @@ Select PAL (312-line) timing table.
 
 ## DUART registers (base 0xF20000, 8-bit, byte access at odd addresses)
 
-MC68681 registers; one name per direction where read and write differ at the same offset.
+MC68681 registers; one name per direction where read and write differ at the same offset. Offsets 5 and 21 must not be READ (factory test locations: CRA/CRB are write-only). Even-address bytes and word accesses in this region do hit the chip (DUARTCS is asserted for any cycle in the region) with undefined data: do not use them.
 
 ### MRA @ 0xF20001 (RW)
 
@@ -168,7 +168,7 @@ Status register A.
 
 ### CSRA @ 0xF20003 (W)
 
-Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600).
+Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (set 1, ACR[7]=0: 0xC = 38.4k, 0xB = 9600, 0x8 = 2400; set 2 swaps some rows, e.g. 0xC = 19.2k).
 
 ### CRA @ 0xF20005 (W)
 
@@ -188,7 +188,7 @@ Input port change register.
 
 ### ACR @ 0xF20009 (W)
 
-Auxiliary control: bit 7 baud-rate set (1 = set 2, used here), bits 6..4 counter/timer mode and source, bits 3..0 IP change interrupt enables.
+Auxiliary control: bit 7 baud-rate set (0 = set 1, used here: 0xC = 38.4k), bits 6..4 counter/timer mode and source, bits 3..0 IP change interrupt enables.
 
 ### ISR @ 0xF2000B (R)
 
@@ -257,7 +257,7 @@ Status register B.
 
 ### CSRB @ 0xF20013 (W)
 
-Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600).
+Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (set 1, ACR[7]=0: 0xC = 38.4k, 0xB = 9600, 0x8 = 2400; set 2 swaps some rows, e.g. 0xC = 19.2k).
 
 ### CRB @ 0xF20015 (W)
 
@@ -313,7 +313,7 @@ autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied in
 
 ## Peripherals
 
-**serial**: device: MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header); baud: 38400; format: 8N1; xtal_hz: 3686400; csr: 0xCC; acr_brg_set: 1; mr1: 0x13; mr2: 0x07; cr_commands: OrderedDict({'RESET_MR': '0x10', 'RESET_RX': '0x20', 'RESET_TX': '0x30', 'RESET_ERR': '0x40', 'RESET_BRK': '0x50', 'ENABLE': '0x05'}); init: MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x80, CSRA=0xCC, CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts; note: 38400 is the highest rate in the 68681's fixed table; the counter/timer or the X1/16 input could give more but are not used.; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected
+**serial**: device: MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header); baud: 38400; format: 8N1; xtal_hz: 3686400; csr: 0xCC; acr_brg_set: 0; mr1: 0x13; mr2: 0x07; cr_commands: OrderedDict({'RESET_MR': '0x10', 'RESET_RX': '0x20', 'RESET_TX': '0x30', 'RESET_ERR': '0x40', 'RESET_BRK': '0x50', 'ENABLE': '0x05'}); init: MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x00 (baud-rate set 1), CSRA=0xCC (38.4k RX and TX), CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts; note: 38400 is the highest rate in the 68681's fixed tables: CSR code 0xC is 38.4k in set 1 (ACR[7]=0) and 19.2k in set 2 (ACR[7]=1), data sheet Table 4-5. The counter/timer or an external 16x clock could give more but are not used.; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected
 
 **ps2**: rx: hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY; tx: software bit-bang via GPIO.PS2CLK/PS2DAT open-drain bits; connector: 6-pin mini-DIN, 5V
 

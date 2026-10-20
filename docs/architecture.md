@@ -225,4 +225,5 @@ Musashi runs 764 x 262 = 200,168 CPU clocks per NTSC frame (768 x 312 = 239,616 
 Per line: HSYNC flag at the line's sync start; VBLANK flag at the
 first vsync line. RAM accesses may optionally add the alignment penalty (average +1 clock)
 for realism; ROM accesses none. The 68681 is modelled at register level (FIFOs, status,
-interrupts, baud-independent delivery); channel A is the emulator's serial console.
+interrupts, counter/timer, bit-rate-timed transmit and receive); channel A is the emulator's
+serial console.
