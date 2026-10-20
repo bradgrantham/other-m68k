@@ -1959,8 +1959,13 @@ static inline void m68ki_exception_bus_error(void)
 
 	uint sr = m68ki_init_exception();
 
-	/* Note: This is implemented for 68010 only! */
-	m68ki_stack_frame_1000(REG_PPC, sr, EXCEPTION_BUS_ERROR);
+	/* other-m68k: the 68000 pushes the 7-word group-0 frame (access info,
+	 * fault address, IR, SR, PC); the glue fills m68ki_aerr_* before calling
+	 * m68k_pulse_bus_error().  Stock Musashi always pushed the 68010 frame. */
+	if(CPU_TYPE_IS_000(CPU_TYPE))
+		m68ki_stack_frame_buserr(sr);
+	else
+		m68ki_stack_frame_1000(REG_PPC, sr, EXCEPTION_BUS_ERROR);
 
 	m68ki_jump_vector(EXCEPTION_BUS_ERROR);
 
