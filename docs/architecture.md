@@ -63,9 +63,9 @@ lags the CPLD's internal edge by that much too.
 
 | edge | CPLD1 action |
 |---|---|
-| E0 | WEU/WEL off, BUFEN off, IOCS off, DTACK(RAM/IO) off. "Serviced" latch set if a cycle was serviced. |
+| E0 | WEU/WEL off, BUFEN off, IOCS off, DTACK(RAM/IO) off, RAMOE off (it was on for a CPU read). "Serviced" latch set if a cycle was serviced. |
 | E1 | MA <- video address (VA). |
-| E2 | RAMOE on (video read). |
+| E2 | RAMOE on (video read) in fetch slots (DE); blanking slots skip the read. |
 | E3 | LATCH <- 1 (tells CPLD2 to capture at E4). |
 | E4 | LATCH <- 0. MA <- CPU address A1..A17. VA <- VA+1 if fetching. RAMOE stays on only if this slot services a CPU **read** of RAM, else off. **Decision point**: if AS is low, the address decodes to RAM or I/O, and this cycle has not been serviced, service it this slot: DTACK on. |
 | E5 | If servicing: BUFEN on (direction from R/W), IOCS on (if I/O). |
@@ -104,13 +104,13 @@ asserts at most 47.5 ns after the S2 edge (7.5 clock lag + 40):
 |---|---|---|---|
 | E0 | 131 (this slot) | this slot | 4 clocks (zero wait) |
 | E6 of previous slot | 48 (this slot) | this slot | 5 clocks (DTACK at E4 is first seen at E5) |
-| E2 | 214 (after E4) | next slot | 6 clocks |
+| E2 | 214 (after E4) | next slot | 7 clocks (S4 began at E6; DTACK at E4' is first seen at E5') |
 | E4 | 298 | next slot | 6 clocks |
 
 Every serviced cycle ends at E0, so after the first RAM or I/O access the CPU is realigned to
 the slot. 68000 bus cycles then start on even CPU clocks relative to each other (cycles are 4
 clocks, internal operations come in 2-clock units), so in steady state RAM accesses cost 4 or
-6 clocks; the odd-phase cases (E2, E6) occur only once, coming out of reset. ROM accesses
+6 clocks; the odd-phase cases (E2, E6) occur only once, coming out of reset. The TAS instruction (read-modify-write with AS held low) is not supported on RAM/IO: the serviced flag would block its write half, so firmware must not use TAS. ROM accesses
 always take 4 clocks. Expect code in ROM with data in RAM to run roughly 10%
 slower than an unshared system, code in RAM 15-25%. The video fetch itself never costs the
 CPU a slot.

@@ -270,7 +270,7 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 
 **CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller, PS/2 receiver, serial receiver, SD/GPIO bits, registers
 
-* inputs: CLK24, SYSRESET, A1..A4, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, SER_RX, PALJMP, NMIBTN
+* inputs: CLK24, SYSRESET, A1..A3, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, SER_RX, PALJMP, NMIBTN
 * bidir: D0..D15 (SRAM-side bus), PS2_CLK, PS2_DAT, UIO0..UIO3
 * outputs: IPL0, IPL1, IPL2, R2, R1, R0, G2, G1, G0, B1, B0, SD_CS, SD_CLK, SD_MOSI, SER_TX, AUDIO, LED0, LED1
 

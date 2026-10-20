@@ -1029,7 +1029,7 @@
         "inputs": [
           "CLK24",
           "SYSRESET",
-          "A1..A4",
+          "A1..A3",
           "IOCS",
           "RW",
           "LATCH",
