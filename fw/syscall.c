@@ -1,6 +1,14 @@
 /* TRAP #15 system calls. The dispatcher is generated from the spec; every bios_* below
- * implements one call. Filesystem, SD and exec are stage 2 and return E_NOSYS. */
+ * implements one call. Filesystem calls go through fs.c (FatFs), raw blocks through sd.c,
+ * exec through exec.c.
+ *
+ * User pointers are checked before use: they must lie in RAM above the BIOS area
+ * (USER_BASE..RAM_END, which includes both framebuffers so a program may read a file
+ * straight into a page). A bad pointer gives E_INVAL (the ABI has no E_FAULT yet). */
 #include "bios.h"
+#include "sd.h"
+#include "fs.h"
+#include "exec.h"
 
 uint32_t video_standard = VIDEO_STD_NTSC;
 uint32_t video_page;
@@ -12,8 +20,28 @@ void syscall_dispatch(struct trap_frame *f)
     f->d0 = ret;
 }
 
+/* ---- user pointer validation ---------------------------------------------------- */
+
+static int user_range_ok(const void *p, uint32_t len)
+{
+    uintptr_t a = (uintptr_t)p;
+    return a >= USER_BASE && a < RAM_END && len <= RAM_END - a;
+}
+
+/* NUL-terminated string entirely inside user RAM and shorter than max. */
+static int user_str_ok(const char *s, uint32_t max)
+{
+    if (!user_range_ok(s, 1)) return 0;
+    uint32_t room = (uint32_t)(RAM_END - (uintptr_t)s);
+    if (room > max) room = max;
+    for (uint32_t i = 0; i < room; i++)
+        if (s[i] == 0) return 1;
+    return 0;
+}
+
 void user_cleanup(void)
 {
+    fs_close_all();
     irq_reset_user();
     bios_video_set_page(0);
     gpio_write((uint16_t)(gpio_shadow & ~(GPIO_LED0 | GPIO_LED1 | GPIO_AUDIO)));
@@ -76,39 +104,114 @@ int bios_video_set_page(int page)
     return 0;
 }
 
-int bios_open(int flags, const char *path) { (void)flags; (void)path; return E_NOSYS; }
-int bios_close(int fd) { (void)fd; return E_NOSYS; }
+int bios_open(int flags, const char *path)
+{
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_INVAL;
+    return fs_open(flags, path);
+}
+
+int bios_close(int fd)
+{
+    if (fd >= 0 && fd < FS_FD_BASE) return 0;       /* console: nothing to do */
+    return fs_close(fd);
+}
 
 int bios_read(int fd, unsigned len, void *buf)
 {
-    if (fd != 0) return fd < 3 ? E_BADF : E_NOSYS;
-    uint8_t *p = buf;
-    unsigned n = 0;
-    if (!len) return 0;
-    p[n++] = (uint8_t)input_getchar();          /* block for the first byte only */
-    while (n < len) {
-        int c = input_pollchar();
-        if (c < 0) break;
-        p[n++] = (uint8_t)c;
+    if (!user_range_ok(buf, len)) return E_INVAL;
+    if (fd == 0) {
+        uint8_t *p = buf;
+        unsigned n = 0;
+        if (!len) return 0;
+        p[n++] = (uint8_t)input_getchar();          /* block for the first byte only */
+        while (n < len) {
+            int c = input_pollchar();
+            if (c < 0) break;
+            p[n++] = (uint8_t)c;
+        }
+        return (int)n;
     }
-    return (int)n;
+    if (fd == 1 || fd == 2) return E_BADF;
+    return fs_read(fd, buf, len);
 }
 
 int bios_write(int fd, unsigned len, const void *buf)
 {
-    if (fd != 1 && fd != 2) return fd == 0 ? E_BADF : E_NOSYS;
-    const uint8_t *p = buf;
-    for (unsigned i = 0; i < len; i++) putchar_both(p[i]);
-    return (int)len;
+    if (!user_range_ok(buf, len)) return E_INVAL;
+    if (fd == 1 || fd == 2) {
+        const uint8_t *p = buf;
+        for (unsigned i = 0; i < len; i++) putchar_both(p[i]);
+        return (int)len;
+    }
+    if (fd == 0) return E_BADF;
+    return fs_write(fd, buf, len);
 }
 
-int bios_lseek(int fd, int offset, int whence) { (void)fd; (void)offset; (void)whence; return E_NOSYS; }
-int bios_opendir(const char *path) { (void)path; return E_NOSYS; }
-int bios_readdir(int handle, struct dirent *ent) { (void)handle; (void)ent; return E_NOSYS; }
-int bios_closedir(int handle) { (void)handle; return E_NOSYS; }
-int bios_sd_read_block(uint32_t lba, void *buf) { (void)lba; (void)buf; return E_NOSYS; }
-int bios_sd_write_block(uint32_t lba, const void *buf) { (void)lba; (void)buf; return E_NOSYS; }
-int bios_exec(const char *path, const char *args) { (void)path; (void)args; return E_NOSYS; }
+int bios_lseek(int fd, int offset, int whence)
+{
+    if (fd >= 0 && fd < FS_FD_BASE) return E_INVAL;     /* console is not seekable */
+    return fs_lseek(fd, offset, whence);
+}
+
+int bios_opendir(const char *path)
+{
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_INVAL;
+    return fs_opendir(path);
+}
+
+int bios_readdir(int handle, struct dirent *ent)
+{
+    if (!user_range_ok(ent, sizeof *ent)) return E_INVAL;
+    return fs_readdir(handle, ent);
+}
+
+int bios_closedir(int handle) { return fs_closedir(handle); }
+
+static int sd_to_abi(int rc)
+{
+    switch (rc) {
+    case SD_OK: return 0;
+    case SD_ERR_RANGE: return E_INVAL;
+    default: return E_IO;
+    }
+}
+
+int bios_sd_read_block(uint32_t lba, void *buf)
+{
+    if (!user_range_ok(buf, SD_BLOCK_SIZE)) return E_INVAL;
+    if (!sd_card.ready && sd_init() != SD_OK) return E_IO;
+    return sd_to_abi(sd_read_block(lba, buf));
+}
+
+int bios_sd_write_block(uint32_t lba, const void *buf)
+{
+    if (!user_range_ok(buf, SD_BLOCK_SIZE)) return E_INVAL;
+    if (!sd_card.ready && sd_init() != SD_OK) return E_IO;
+    return sd_to_abi(sd_write_block(lba, buf));
+}
+
+/* Chain to another program. The headers are checked before anything is disturbed, so
+ * a missing or unloadable file is reported to the caller; once loading has started the
+ * caller is gone, and a load error (I/O) ends in the monitor. */
+int bios_exec(const char *path, const char *args)
+{
+    static struct exec_image img;
+    static char args_copy[256];
+    int rc;
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_INVAL;
+    if (args && !user_str_ok(args, sizeof args_copy)) return E_INVAL;
+    rc = exec_prepare(path, &img);
+    if (rc) return rc;
+    if (args) strcpy(args_copy, args); else args_copy[0] = 0;
+    user_cleanup();
+    rc = exec_load(&img);
+    if (rc) {
+        kprintf("\nexec %s: %s\n", img.path, fs_strerror(rc));
+        monitor_restart();
+    }
+    con_cursor_show(0);
+    user_launch(img.entry, img.path, args_copy);
+}
 
 void *bios_set_irq_handler(int level, void *handler)
 {

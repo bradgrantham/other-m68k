@@ -161,9 +161,11 @@ extern uint32_t video_page;             /* displayed page */
 /* ---- monitor.c ---- */
 void monitor_main(void) __attribute__((noreturn));
 void monitor_restart(void) __attribute__((noreturn));    /* crt0.S */
-void run_user(uint32_t pc) __attribute__((noreturn));    /* crt0.S */
+void run_user(uint32_t pc, uint32_t usp) __attribute__((noreturn)); /* crt0.S; see exec.c user_launch */
 void cpu_reset(void) __attribute__((noreturn));          /* crt0.S */
 extern uint32_t last_entry;             /* default address for `go` */
+
+/* ---- sd.c / fs.c / elf.c / exec.c: see sd.h, fs.h, elf.h, exec.h ---- */
 
 /* ---- main.c ---- */
 extern uint16_t post_rom_sum;           /* 16-bit word sum from POST (0 = good) */

@@ -1,18 +1,84 @@
-# fw/ + sdk/ status (stage 1, spec revision 2)
+# fw/ + sdk/ status (stage 2, spec revision 2)
 
-**State: stage 1 ported to spec revision 2 (68681 DUART, write-only CPLD2 registers);
-builds and passes host tests, not yet re-run in an emulator that models the DUART.**
-`make -C fw` builds a 131072-byte `rom.bin` (about 18.7 KB used) with no warnings;
-`make -C fw test` passes 97 host checks; `make -C sdk` builds `libsys.a`, `hello.elf/.srec`
-and `plasma.elf/.srec`. The revision-1 ROM was verified in `emu/build/m68k-emu` (POST,
-banner, monitor, exceptions, S-record upload typed and serial, `go`, `sys_exit`, PAL); the
-emulator's DUART model was being written concurrently with this port, so the revision-2
-ROM has only been checked by inspection of `rom.lst` (byte accesses at the odd DUART
-addresses, init order, `rte` in `irq_duart`, vector 27 -> `irq_duart`). Re-run the
-emulator check below once `emu/README.md` mentions the DUART. Nothing has run on real
-hardware yet. See README.md for usage.
+**State: stage 2 implemented and verified in the DUART emulator with an SD image: SD card
+driver, FatFs R0.15 (8.3 names), file/directory system calls, ELF loader with argv,
+`sys_exec`, monitor `sd`/`dir`/`cat`/`run`. Not yet run on real hardware.**
+`make -C fw` builds a 131072-byte `rom.bin` with 35188 bytes of text + 18 data (about 35 KB
+of the 128 KB used; FatFs is ~12 KB of that) and no warnings; `make -C fw test` passes
+293 host checks (the FAT tests need `mkfs.vfat` and `mcopy`, present here); `make -C sdk`
+builds `libsys.a` and `hello/plasma/ls/cat/fstest.elf/.srec`. `.data+.bss` is 0x1584 bytes
+(ends at 0x1994), leaving ~9.8 KB of supervisor stack. See README.md for usage, the exact
+emulator commands and their output.
 
-## Revision 2 port (what changed)
+## Stage 2 (what was added)
+
+* `sd.c/h`, `sdspi.S`: SPI mode 0 bit-bang on SDIO (`sdio_shadow`, MISO from
+  `INTSTAT.SDMISO`), slow clock through ACMD41, CMD0/8/55/ACMD41(HCS)/58/16/9/10, CMD17 read,
+  CMD24 write with data-response and busy handling, CRC7 on every command, timeouts in bytes
+  exchanged, `SD_ERR_*`. `sdhw_read` (asm, 44 clocks/bit) does the data phases: a block is
+  ~15 ms, so card init + mount + loading the 35 KB `hello.elf` is ~2.5 s. Byte-addressed
+  SDSC (v1/v2) and block-addressed SDHC both handled (host-tested; the emulator is SDHC).
+* `fatfs/`: FatFs R0.15 from elm-chan (ff.c unmodified, `ffconf.h`: RW, LFN off, RPATH 0,
+  1 volume, TINY, CP437, NORTC fixed 2026-10-20, no mkfs). `diskio.c` on `sd.c`. Lazy mount
+  on first use; `sd` command and disk errors drop the mount so the next call re-inits.
+* `fs.c/h`: 8 `FIL` + 4 `DIR` table (fd 3..10, dir handles 0..3), `O_*` -> FatFs modes
+  (`O_TRUNC` without `O_CREAT` = `f_truncate`, `O_APPEND` = seek-to-end per write),
+  `FRESULT` -> `E_*`, `struct dirent` fill. `syscall.c`: user pointer checks
+  (`USER_BASE..RAM_END`, `E_INVAL` otherwise), fd 0/1/2 stay the console, `sd_read_block`/
+  `sd_write_block`, `exec`. `user_cleanup` closes the program's files.
+* `elf.c/h`, `exec.c/h`: ELF32 MSB `ET_EXEC` `EM_68K`, `PT_LOAD` segments must fit in
+  `[USER_BASE, USER_END)` (`E_NOMEM`; framebuffers and BIOS data rejected), bss zeroed,
+  entry inside a segment. Two phases (`exec_prepare` touches no RAM; `exec_load` copies)
+  so `sys_exec` reports unloadable files to the caller. `user_launch` builds argv on the
+  user stack: `USP -> {user_exit_stub, argc, argv}`, strings and array below
+  `USER_STACK_TOP`; `run_user(pc, usp)` in crt0.S takes the prepared stack.
+  `sdk/crt0.S` reads `argc`/`argv` from `4(sp)`/`8(sp)`.
+* Monitor: `sd` (type, blocks/MB, CID, CSD), `sd rd lba`, `dir [path]`/`ls`, `cat`/`type`,
+  `run file [args]` (raw remainder of the line becomes the args). `go` goes through
+  `user_launch` with `argc = 0`.
+* SDK: `newlib_shim.c` translates newlib's `O_CREAT/O_TRUNC/O_APPEND` (0x200/0x400/0x8) to
+  the ABI's (256/512/1024); `fstat` fills `st_size` via lseek; `stat` via open/opendir.
+  New examples `ls.c`, `cat.c`, `fstest.c` (write + readback + `sys_exec` chain).
+* Host tests: `test_sd.c` (fake card checking start bits, CRC7, args, HCS, ACMD41 polling,
+  CMD16 only for SDSC, byte vs block addresses, data tokens, write data response, timeouts,
+  no-card), `test_elf.c` (synthetic ELF, rejections, range checks, `sdk/build/hello.elf`),
+  `test_fs.c` (fd table + FatFs on a 64 MB image from `test/mkimage.sh`: read/seek/create/
+  write across sectors/append/truncate/open-always, table limits, listing, remount).
+
+## Verified in the emulator (revision-2 ROM, DUART emulator, `--sd` image)
+
+Commands are in README.md ("Run in the emulator"). Seen: `sd` -> SDHC, 131072 blocks,
+CID `EM M68K0`; `dir` lists the five/six files with sizes matching `mdir`; `run hello.elf`
+loads 004000-00cb33 and runs newlib printf, waits for the typed key, `[exit 0]`;
+`run ls.elf /` prints `argc 2 [ls.elf] [/]` and the listing; `run cat.elf README.TXT
+nope.txt` prints the file and `No such file or directory`; `run fstest.elf exec ls.elf`
+prints `fstest: OK (1080 bytes, 41 lines)` (TEST.TXT created, appended, re-read; `mtype` on
+the host agrees) then `argc 3 [ls.elf] [from] [fstest]`; `cat README.TXT`; `sd rd 0` dumps
+the boot sector (ends `55 aa`); `run plasma.elf` animates page 0/1; `run nope.elf: not
+found`, `run README.TXT: not a runnable ELF`, `dir /x: not found`. 0 bus errors, 0 serial
+overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, then CMD17s.
+
+## Known limitations
+
+* 8.3 names only (`FF_USE_LFN 0`); long names show as `~1` aliases, lookups are
+  case-insensitive, creating a non-8.3 name is `E_INVAL`. No current directory (`cd`),
+  no unlink/mkdir/rename (no syscalls in the ABI).
+* Write support: `sd_write_block`, `O_CREAT/O_TRUNC/O_APPEND`, `write`, `lseek` past EOF
+  are implemented and tested on the host (fake card, FAT image) and in the emulator
+  (`fstest.elf` creates/appends `TEST.TXT`). Not tested on a real card; data CRC16 is not
+  checked and multi-block commands are not used (one CMD17/CMD24 per 512 bytes).
+* A program's files are closed at exit; the monitor's `cat`/`run` use the same table.
+  Descriptors do not survive `sd` (remount).
+* `sd rd` dumps all 64 lines; it is not key-abortable because the emulator (and a fast
+  terminal) type ahead and the abort would eat the next command's first character (same
+  reason `md` is only abortable above 256 bytes; monitor `cat` is abortable after 1 KB).
+* Argument string for `sys_exec` is limited to 255 bytes, 16 words; path 127 bytes.
+* `go` after `run` re-enters the image without reloading `.data`; a newlib program's stdio
+  state is stale and nothing prints (seen in the emulator). Use `run` again.
+* `exec` chaining: if a load fails after headers passed (I/O error mid-copy), the caller is
+  gone and the monitor is entered with a message.
+
+## Revision 2 port (stage 1 -> DUART, for reference)
 
 * Serial is MC68681 channel A (`DUART_*` in `generated/hw.h`/`hw.inc`, byte accesses only).
   `sertx.S`/`serbit.inc` (cycle-counted bit-bang TX) are gone; `duart.S` holds
@@ -51,10 +117,11 @@ hardware yet. See README.md for usage.
 | `ps2.c` | set-2 decoder: F0/E0/E1, shift/ctrl/caps, arrows/Home/End/Ins/Del/PgUp/PgDn/F1-F12 escape sequences, raw events |
 | `irq.c` | ISRs (`interrupt_handler` attribute, verified `rte` in rom.lst), DUART RX FIFO drain, user hooks, INTEN shadow |
 | `exception.c` | names, register dump, `exception_entry` |
-| `syscall.c` | `syscall_dispatch` with the generated `.inc`, all 30 `bios_*` (fs/SD/exec -> E_NOSYS), `user_cleanup` |
+| `syscall.c` | `syscall_dispatch` with the generated `.inc`, all 30 `bios_*` (fs/SD/exec real since stage 2), user pointer checks, `user_cleanup` |
+| `sd.c/h`, `sdspi.S`, `diskio.c`, `fatfs/`, `fs.c/h`, `elf.c/h`, `exec.c/h` | stage 2 (see above) |
 | `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | monitor, S-record parser, dump line, kprintf/ksnprintf |
-| `test/test_main.c` | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump |
-| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma}.c`, `sdk/README.md` | as planned; link uses `--start-group -lc -lsys --end-group -lgcc` |
+| `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, FatFs/fd table |
+| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma,ls,cat,fstest}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
 
 ## Design as built (differences from the original plan)
 
@@ -76,12 +143,8 @@ hardware yet. See README.md for usage.
 * Asm `.S` files cannot use `|` for OR (it is the m68k gas comment character); `+` is used.
   `hw.inc` has no `IO_GPIO_RESET` value, so the idle GPIO value is built from the bit masks.
 
-## Verified in the emulator (revision-1 ROM; to be repeated with the DUART emulator)
-
-Command to repeat once `emu/README.md` mentions the DUART:
-`./emu/build/m68k-emu --rom fw/build/rom.bin --headless --frames 400 --serial-log LOG
---type "help\n" --no-audio --no-stdin`, then check the POST lines, the banner
-(`DUART 38400 8N1`), `help` and `info`.
+## Verified in the emulator, stage 1 features (revision-1 ROM; POST, banner, help, info,
+## S-records, go and exit re-checked with the DUART emulator during the stage 2 runs)
 
 * POST: `ROM sum 0000 OK`, `RAM ....... OK`; banner; `help`, `info`, `ticks`, `md`, `mb/mw/ml`,
   `fill`, `led`, `page`, `dir` (stage 2 message), unknown command.
@@ -93,19 +156,42 @@ Command to repeat once `emu/README.md` mentions the DUART:
   the serial port with no bad lines, `go` runs newlib `printf`.
 * `--pal` -> banner `PAL`, 50 ticks/s (the revision-1 `--hw-serial-tx` option is obsolete).
 
-## Known limitations / stage 2
+## Stage 1 leftovers
 
-* No SD/FAT32/ELF loader (`dir run cat sd`, `sys_open..sys_closedir`, `sys_sd_*`, `sys_exec`).
 * No PS/2 host-to-device commands (LEDs, typematic); the keyboard's power-on defaults are used.
 * Serial TX is polled (one `TXRDY` wait per byte, ~260 us at 38400); a long `md` holds the
   monitor but no interrupts are masked. The DUART's TXRDY interrupt is not used.
-* SDIO and USERIO.OUT are write-only; no shadows exist yet because stage 1 does not touch
-  them (add `sdio_shadow`/`userio_shadow` with the SD driver).
+* USERIO.OUT is write-only and still has no shadow (nothing writes it).
 * ESC sequences from the keyboard are swallowed by the line editor (no history/cursor editing).
 * NMI path is exercised only through the generic stub mechanism (the emulator needs a window
   for F12); the same path handled bus error / illegal instruction.
 
 ## Spec / architecture notes to raise
+
+Stage 2:
+
+* The ABI needs an error code for bad user pointers; `E_INVAL` is used now. Suggest
+  `E_FAULT -14`. Also useful: `E_NODEV -19` (no card / no FAT volume, now `E_IO`),
+  `E_ROFS -30` (write-protected card), `E_NAMETOOLONG -36` (not 8.3, now `E_INVAL`),
+  `E_ACCES -13`.
+* The argv convention should be in the spec (`abi` or `syscalls.exec`): user stack at entry
+  = `{return address, argc, argv}` as for a C call `_start(argc, argv)`, `argv[0]` = path,
+  `args` split on blanks, max 16 args / 255 bytes; `go` gives `argc 0`, `argv[0] NULL`.
+* `open` is `(flags, path)`: the spec's `O_*` values (256/512/1024) differ from newlib's
+  `fcntl.h` (0x200/0x400/0x8); the SDK shim translates. Either adopt newlib's values in
+  the spec or note that `syscalls.h` and `<fcntl.h>` must not be included together.
+* `readdir`'s `struct dirent.name[64]` is far more than 8.3 needs (13); fine as is but
+  only if LFN is ever enabled would it fill up; a `mtime` field could be added later.
+* The spec has no `unlink`/`mkdir`/`rename`/`stat` syscalls; FatFs provides them and the
+  SDK's `stat()` is emulated with open+lseek. Suggest adding `stat(path, struct stat_info*)`
+  and `unlink` at least.
+* `exec`'s "does not return on success" should say it returns a negative error only before
+  any user memory is overwritten (headers checked first), and that `sys_exit` of the new
+  program returns to the monitor, not to the caller.
+* A 32 MB FAT32 volume is below the FAT32 cluster minimum (65525 clusters at 512 B/cluster);
+  `mkfs.fat -F 32` and FatFs both need >= ~33 MB with 512-byte clusters. Test images are 64 MB.
+
+Stage 1:
 
 * architecture.md alignment table: an S0-at-E6 cycle with DTACK asserted at E4 and sampled at
   E5 is 5 clocks, conflicting with "the cycle ends at E0 regardless of where S0 was" (which

@@ -147,15 +147,15 @@ trap15_handler:
 	rte
 
 /* ------------------------------------------------------------------------- */
-/* void run_user(uint32_t pc) -- start a program in user mode. USP = USER_STACK_TOP - 4
- * with the address of user_exit_stub on the stack, so a stray `rts` from the entry point
- * becomes sys_exit(0). Supervisor stack is reset; bios_exit returns to the monitor. */
+/* void run_user(uint32_t pc, uint32_t usp) -- start a program in user mode. The caller
+ * (exec.c user_launch) has built the user stack: return address = user_exit_stub so a
+ * stray `rts` from the entry point becomes sys_exit(0), then argc and argv. Supervisor
+ * stack is reset; bios_exit returns to the monitor. */
 	.globl	run_user
 run_user:
-	move.l	4(%sp),%a0
+	move.l	4(%sp),%a0			/* pc  */
+	move.l	8(%sp),%a1			/* usp */
 	lea	_sys_stack_top,%sp
-	lea	USER_END - 4,%a1
-	move.l	#user_exit_stub,(%a1)
 	move.l	%a1,%usp
 	moveq	#0,%d0
 	moveq	#0,%d1

@@ -4,15 +4,26 @@
  *
  *   fd 0       console input  (read(): a small line editor with echo)
  *   fd 1, 2    console output (video + serial) via sys_write
- *   fd >= 3    SD card files via sys_open/read/write/lseek/close (BIOS stage 2; E_NOSYS now)
+ *   fd >= 3    SD card files via sys_open/read/write/lseek/close (8.3 names, see fw/README.md)
  *   sbrk       __heap_start .. mem_info.user_end - STACK_RESERVE
+ *
+ * newlib's O_* flag values (fcntl.h) differ from the BIOS ABI's (syscalls.h); open()
+ * translates. Both headers define O_RDONLY etc., so newlib's are captured first.
  */
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/times.h>
 #include <sys/time.h>
 #include <string.h>
+enum { NL_O_ACCMODE = O_ACCMODE, NL_O_APPEND = O_APPEND, NL_O_CREAT = O_CREAT, NL_O_TRUNC = O_TRUNC };
+#undef O_RDONLY
+#undef O_WRONLY
+#undef O_RDWR
+#undef O_APPEND
+#undef O_CREAT
+#undef O_TRUNC
 #include "syscalls.h"
 
 #define STACK_RESERVE (16 * 1024)
@@ -95,7 +106,11 @@ void *sbrk(ptrdiff_t incr)
 
 int open(const char *path, int flags, ...)
 {
-    return map_err(sys_open(flags, path));
+    int f = flags & NL_O_ACCMODE;               /* O_RDONLY/O_WRONLY/O_RDWR are 0/1/2 in both */
+    if (flags & NL_O_CREAT) f |= O_CREAT;
+    if (flags & NL_O_TRUNC) f |= O_TRUNC;
+    if (flags & NL_O_APPEND) f |= O_APPEND;
+    return map_err(sys_open(f, path));
 }
 
 int close(int fd)
@@ -114,16 +129,35 @@ int fstat(int fd, struct stat *st)
 {
     memset(st, 0, sizeof *st);
     if (fd < 3) { st->st_mode = S_IFCHR; st->st_blksize = 0; return 0; }
-    st->st_mode = S_IFREG;
+    int cur = sys_lseek(fd, 0, SEEK_CUR);
+    if (cur < 0) return map_err(cur);
+    int end = sys_lseek(fd, 0, SEEK_END);
+    sys_lseek(fd, cur, SEEK_SET);
+    st->st_mode = S_IFREG | 0644;
+    st->st_size = end < 0 ? 0 : end;
     st->st_blksize = 512;
+    st->st_nlink = 1;
     return 0;
 }
 
+/* The BIOS has no stat call; open the file (or, failing that, the directory). */
 int stat(const char *path, struct stat *st)
 {
-    (void)path; (void)st;
-    errno = ENOSYS;
-    return -1;
+    int fd = sys_open(O_RDONLY, path);
+    if (fd >= 0) {
+        int r = fstat(fd, st);
+        sys_close(fd);
+        return r;
+    }
+    int h = sys_opendir(path);
+    if (h >= 0) {
+        sys_closedir(h);
+        memset(st, 0, sizeof *st);
+        st->st_mode = S_IFDIR | 0755;
+        st->st_nlink = 1;
+        return 0;
+    }
+    return map_err(fd);
 }
 
 int isatty(int fd)

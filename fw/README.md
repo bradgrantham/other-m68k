@@ -1,16 +1,19 @@
-# fw/ -- other-m68k BIOS / monitor ROM (stage 1)
+# fw/ -- other-m68k BIOS / monitor ROM (stage 2)
 
 128 KB EPROM image: power-on self test, 68681 DUART serial (38400 8N1), 40x30 video console, PS/2
-keyboard, exception reporting, machine monitor with S-record upload, and the TRAP #15
-system call interface used by user programs (see `../sdk/`). Stage 2 (SD card, FAT32, ELF
-loader, `dir`/`run`/`cat`/`sd`) is not implemented; those calls return `E_NOSYS`.
+keyboard, exception reporting, machine monitor with S-record upload, SD card (SPI bit-bang)
+with a FAT32 filesystem (FatFs R0.15, 8.3 names), an ELF loader (`run`, `sys_exec`) and the
+TRAP #15 system call interface used by user programs (see `../sdk/`), including the file
+and directory calls.
 
 ## Build
 
 ```
 make -C fw            # build/rom.elf, rom.bin (131072 bytes), rom.lst, rom.map,
                       # rom_even.bin (D15..D8 EPROM), rom_odd.bin (D7..D0 EPROM)
-make -C fw test       # host unit tests: printf, queue, srec, ps2, console, hexdump
+make -C fw test       # host unit tests: printf, queue, srec, ps2, console, hexdump, SD framing
+                      # (fake card), ELF parser (+ ../sdk/build/hello.elf), FatFs + fd table on
+                      # a FAT32 image made with mkfs.vfat/mcopy (skipped if those are missing)
 make -C fw clean
 ```
 
@@ -18,7 +21,8 @@ Toolchain: `~/x-tools/m68k-unknown-elf` (override `XTOOLS=/path/to/bin`). The BI
 freestanding (`-ffreestanding -nostdlib`, own string/printf), `-m68000 -Os -Wall -Wextra`,
 linked with `-lgcc` only. All addresses, register bits, syscall numbers and the dispatcher
 come from `../generated/` (`hw.h`, `hw.inc`, `syscalls.h`, `bios_syscalls.h`,
-`syscall_dispatch.inc`, `memory.ld`); nothing is duplicated here.
+`syscall_dispatch.inc`, `memory.ld`); nothing is duplicated here. `fatfs/` is vendored
+FatFs R0.15 (ff.c/ff.h/diskio.h unmodified, `ffconf.h` configured, `LICENSE.txt` kept).
 
 `mkrom.py` sets the last ROM word so that the 16-bit big-endian sum of all 65536 words is
 zero, then writes the even/odd split. The POST sums the whole ROM and expects 0.
@@ -30,7 +34,53 @@ emu/build/m68k-emu --rom fw/build/rom.bin                       # window + PS/2 
 emu/build/m68k-emu --rom fw/build/rom.bin --headless --frames 300 --type "help\n"
 ```
 
-The serial port is the emulator's stdin/stdout (`--serial-log FILE` keeps a copy).
+The serial port is the emulator's stdin/stdout (`--serial-log FILE` keeps a copy;
+`--serial-type "text\n"` injects serial input, `--type` types on the PS/2 keyboard).
+
+With an SD card image (see "SD card" below for making one):
+
+```
+make -C sdk
+S=/tmp/sdimg; mkdir -p $S
+for p in hello plasma ls cat fstest; do cp sdk/build/$p.elf $S/$(echo $p | tr a-z A-Z).ELF; done
+sh fw/test/mkimage.sh $S/sd.img 64 $S/*.ELF fw/test/data/README.TXT     # mkfs.vfat + mcopy
+./emu/build/m68k-emu --rom fw/build/rom.bin --sd $S/sd.img --headless --frames 1500 \
+    --serial-log $S/run.log --type "sd\ndir\nrun hello.elf\nx\n" --type-delay 200 \
+    --no-audio --no-stdin
+```
+
+`--type-delay 200` leaves the POST (~100 frames) time to finish before typing starts; the
+trailing `x` is the key `hello` waits for. Expected log (abridged):
+
+```
+> sd
+SDHC/SDXC (block addressed)
+131072 blocks = 64 MB
+CID mid 01 oid EM pnm M68K0 rev 1.0
+sn 00006800 mdt 2024/10
+CSD v2 400e00325b590000007f7f800a400051
+> dir
+HELLO.ELF       54536
+PLASMA.ELF      55124
+...
+README.TXT         33
+6 entries
+> run hello.elf
+run hello.elf: 004000-00cb33 entry 004000
+Hello from newlib on other-m68k!
+...
+press a key: got 0x78
+
+[exit 0]
+```
+
+Other things verified the same way: `run ls.elf /` (argv), `run cat.elf README.TXT nope.txt`
+(newlib `fopen` -> `sys_open`, `ENOENT` for the missing file), `run fstest.elf exec ls.elf`
+(creates and appends to `TEST.TXT` through stdio, reads it back with the raw calls, then
+`sys_exec` chains into `ls.elf` with `argv = {"ls.elf", "from", "fstest"}`; the file is
+readable with `mtype` on the host afterwards), `cat README.TXT`, `sd rd 0`, `run plasma.elf`,
+and the error paths (`run nope.elf`, `run README.TXT`, `dir /x`). Card init plus mounting
+plus loading the 35 KB `hello.elf` takes about 2.5 s of emulated time.
 
 ## Boot sequence and LED codes
 
@@ -78,13 +128,16 @@ switch when `INTSTAT.PALJMP` is set) and the DUART baud rate.
 | range | use |
 |---|---|
 | 0x000000-0x0003FF | vector table, copied from ROM after the RAM test (programs may hook vectors) |
-| 0x000400-~0x000F60 | BIOS `.data` + `.bss` (input rings 512+256+128 B, console shadow text 1200 B, exception record) |
-| ~0x000F60-0x004000 | supervisor stack, grows down from `SYS_STACK_TOP` (0x4000) |
+| 0x000400-0x001994 | BIOS `.data` + `.bss` (input rings 512+256+128 B, console shadow text 1200 B, exception record, FATFS + file table ~1.3 KB, 512 B block buffer) |
+| 0x001994-0x004000 | supervisor stack, grows down from `SYS_STACK_TOP` (0x4000) |
 | 0x004000-0x01A7FF | user program; USP starts at 0x01A7FC |
 | 0x01A800-0x02D3FF | framebuffer page 1 (user programs may use it as RAM if they do not double buffer) |
 | 0x02D400-0x03FFFF | framebuffer page 0 = the console |
 
-ROM use: about 19 KB of 128 KB (`make` prints the sizes; `mkrom` prints the bytes used).
+ROM use: about 35 KB of 128 KB (`make` prints the sizes; `mkrom` prints the bytes used);
+FatFs is roughly 12 KB of that. BIOS `.data`+`.bss` is 0x1584 bytes (ends at 0x1994; the
+FATFS object with its 512-byte sector window, 8 `FIL` and 4 `DIR` slots and the monitor's
+block buffer account for the growth), leaving about 9.8 KB of supervisor stack.
 
 ## Vectors and the overlay
 
@@ -120,8 +173,64 @@ while receiving S-records (printing a line takes longer than a line takes to arr
 hosts should wait for the prompt before sending. Channel B is not used by the BIOS.
 
 INTEN, SDIO, GPIO and USERIO.OUT are write-only in CPLD2 (they read as 0); the BIOS keeps
-`inten_shadow` and `gpio_shadow` and every write goes through `irq_update_inten` /
-`gpio_write/set/clear`. SDIO and USERIO are not touched by stage 1.
+`inten_shadow`, `gpio_shadow` and `sdio_shadow` and every write goes through
+`irq_update_inten` / `gpio_write/set/clear` / the SD driver. USERIO is not touched.
+
+## SD card
+
+`sd.c` bit-bangs SPI mode 0 on SDIO (bit 0 CS, active low; bit 1 CLK; bit 2 MOSI) and reads
+MISO from `INTSTAT.SDMISO`. Each bit is two register writes (MOSI with CLK low, then CLK
+high) and one read, so the generic byte exchange runs at roughly 200 kbit/s and the
+receive-only path (`sdhw_read` in `sdspi.S`, 44 clocks per bit) at about 270 kbit/s, 15 ms
+per 512-byte block. `sd_hw_init` (called from `bios_main`) leaves the card deselected
+with the clock low.
+
+`sd_init`: slow clock (<= 400 kHz, `delay_loops` around each edge), 80 idle clocks with CS
+high, CMD0 (up to 8 tries), CMD8 with 0x1AA (v2 cards echo it; v1 cards reject it with
+"illegal command"), CMD55 + ACMD41 (HCS set for v2) until the idle bit clears (~1 s limit;
+cards that reject ACMD41 get CMD1), CMD58 for CCS (block vs byte addressing), CMD16 512 for
+byte-addressed cards, then full speed, CMD9 (CSD, capacity for both CSD versions) and CMD10
+(CID). Every command carries a correct CRC7; data CRC16 is not checked (CMD59 off). Reads are
+CMD17 (0xFE token wait ~160 ms), writes CMD24 (data response token checked, busy poll up to
+~500 ms). Errors are `SD_ERR_*` (`sd_strerror`), mapped to `E_IO`/`E_INVAL` at the syscall
+boundary. The `sd` monitor command re-initialises the card and prints type, capacity, CID
+and CSD; `sd rd <lba>` hex-dumps a block. Multi-block commands are not used.
+
+## Filesystem
+
+FatFs R0.15 (`fatfs/`, `ffconf.h`: read/write, `FF_USE_LFN 0` so only 8.3 names,
+`FF_FS_RPATH 0` (no current directory; paths are from the root, leading `/` optional),
+`FF_VOLUMES 1`, `FF_FS_TINY 1`, code page 437, `FF_FS_NORTC 1` with a fixed timestamp
+2026-10-20, no mkfs). `diskio.c` sits on `sd.c`. The volume is mounted lazily on the first
+file or directory call; `fs.c` keeps a table of 8 files (fd 3..10) and 4 directory handles
+(0..3), maps `FRESULT` to the ABI's `E_*` codes and implements `O_CREAT` (open-always),
+`O_CREAT|O_TRUNC` (create-always), `O_TRUNC` alone (`f_truncate`) and `O_APPEND` (seek to
+the end before every write). A disk error or `sd` drops the mount and the card state, so
+the next call re-initialises and remounts (open descriptors are closed). A user program's
+descriptors are closed by `user_cleanup` when it exits.
+
+Long file names on the card appear as their 8.3 aliases (`LONGNA~1.TXT`), names longer than
+8.3 cannot be created (`E_INVAL`), and lookups are case-insensitive. Removing, renaming and
+making directories have no syscalls in the ABI, so they are not exposed (FatFs has them).
+
+## ELF loader
+
+`elf.c` parses ELF32 big-endian `ET_EXEC` for `EM_68K` with 32-byte program headers;
+`exec.c` reads the headers (`exec_prepare`: every `PT_LOAD` must fit in
+`[USER_BASE, USER_END)`, else `E_NOMEM`; a bad header is `E_NOEXEC`; the entry point must
+lie in a loaded segment), then copies the file parts into place and zeroes `memsz - filesz`
+(`exec_load`). Nothing is written to RAM until all headers have passed, so `sys_exec` can
+report a bad file to the caller; an I/O error during the copy ends in the monitor.
+
+Launch convention (`user_launch`, shared with `sdk/crt0.S`): the argument strings and the
+NULL-terminated `argv` array are placed just below `USER_STACK_TOP`, then the user stack is
+set up as for a call `_start(argc, argv)`: `USP -> {return address = user_exit_stub, argc,
+argv}`. `argv[0]` is the path given to `run`/`sys_exec`, the remaining words of the argument
+string are split on blanks (at most 16 arguments). `go` uses the same path with `argc = 0`
+and `argv[0] == NULL`. The return address makes a bare `rts` from the entry point a
+`sys_exit(0)`. `run` sets the `go` default to the new entry point, but a newlib program
+re-run with `go` finds its `.data` (stdio state) as the first run left it, so use `run`
+again rather than `go` to restart a loaded program.
 
 ## Console
 
@@ -163,7 +272,11 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 | `beep` | 1 kHz for 200 ms on GPIO.AUDIO |
 | `cls` | clear the console |
 | `info` | banner, tick rate, INTSTAT, INTEN and GPIO shadows, DUART SRA, RX overruns, PS/2 errors |
-| `dir` `run` `cat` `sd` | "not implemented (stage 2)" |
+| `sd` | re-initialise the card; print type, capacity, CID, CSD (also drops the FAT mount) |
+| `sd rd lba` | hex dump of one 512-byte block |
+| `dir [path]` (`ls`) | list a directory: name, size or `<DIR>` |
+| `cat file` (`type`) | print a file (CRs dropped; files over 1 KB stop on a key) |
+| `run file [args...]` | load an ELF into user RAM and run it with `argv` (see "ELF loader") |
 
 ### S-record upload
 
@@ -176,12 +289,20 @@ the file to stdin once the prompt is visible (the emulator reads stdin as serial
 
 ### Running programs
 
-`go` enters user mode with USP = 0x1A7FC and a return address that performs `sys_exit(0)`,
-so a program may simply `rts`. Programs cannot touch SR; they use TRAP #15 (see
+`run`/`go` enter user mode with the stack described under "ELF loader" (`argc`/`argv` and a
+return address that performs `sys_exit(0)`, so a program may simply `rts`). Programs cannot touch SR; they use TRAP #15 (see
 `generated/HARDWARE.md`, "System calls") and `sys_set_irq_handler` for interrupt hooks,
-which are called from the BIOS ISRs in supervisor mode. `sys_exit` restores the BIOS
-interrupt enables, drops user hooks and the audio callback, selects page 0 and prints
-`[exit N]`.
+which are called from the BIOS ISRs in supervisor mode. `sys_exit` closes the program's
+files, restores the BIOS interrupt enables, drops user hooks and the audio callback,
+selects page 0 and prints `[exit N]`. `sys_exec(path, args)` loads another ELF over the
+current program and starts it (`argv[0] = path`, `args` split on blanks); it returns only
+on failure, before anything was overwritten.
+
+System calls check user pointers: buffers and strings must lie in RAM above the BIOS area
+(`USER_BASE`..`RAM_END`, which includes both framebuffer pages so a file can be read
+straight into one); otherwise `E_INVAL` (the ABI has no `E_FAULT`). fd 0/1/2 are the
+console; `read`/`write` on them from the file calls return `E_BADF` for the wrong
+direction and `lseek` on them `E_INVAL`.
 
 ## Files
 
@@ -194,6 +315,11 @@ interrupt enables, drops user hooks and the audio callback, selects page 0 and p
 | `main.c` | `bios_main`, banner, `putchar_both` |
 | `console.c`, `font8x8_basic.h` | video console |
 | `serial.c`, `input.c`, `queue.c`, `ps2.c`, `irq.c` | GPIO shadow, polled DUART TX, input rings, PS/2 decoder, ISRs (DUART RX drain) |
-| `exception.c`, `syscall.c`, `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | as named |
-| `test/test_main.c` | host unit tests (`make test`) |
+| `exception.c`, `syscall.c`, `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | as named; `syscall.c` holds the user pointer checks and the fs/SD/exec call wrappers |
+| `sd.c`, `sd.h`, `sdspi.S` | SD SPI bit-bang driver (init, CMD17/CMD24, CSD/CID), asm receive path |
+| `fatfs/` | FatFs R0.15 (`ff.c`, `ff.h`, `diskio.h`, configured `ffconf.h`, `LICENSE.txt`) |
+| `diskio.c` | FatFs media layer on `sd.c` |
+| `fs.c`, `fs.h` | fd table, `O_*` to FatFs mode mapping, `FRESULT` to `E_*`, `struct dirent` |
+| `elf.c`, `elf.h`, `exec.c`, `exec.h` | ELF32 parsing, `exec_prepare`/`exec_load`, `user_launch` (argv convention) |
+| `test/test_main.c`, `test_sd.c`, `test_elf.c`, `test_fs.c`, `test.h` | host unit tests (`make test`); `test/mkimage.sh` builds the FAT32 image, `test/data/` its files |
 | `rom.ld`, `mkrom.py`, `Makefile` | link, checksum/split, build |

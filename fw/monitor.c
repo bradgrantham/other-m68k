@@ -1,6 +1,9 @@
 /* Machine monitor: line editor, S-record upload (explicit `srec` or auto-detected from a
  * line starting with "S<digit>"), memory commands and user program launch. */
 #include "bios.h"
+#include "sd.h"
+#include "fs.h"
+#include "exec.h"
 
 #define LINE_MAX 96
 #define SREC_LINE_MAX 520
@@ -186,7 +189,10 @@ static void cmd_help(void)
             "srec           receive S-records\n"
             "reset led n  page n  ticks  cls\n"
             "ramtest  beep  info\n"
-            "dir run cat sd (stage 2)\n");
+            "sd [rd lba]    card info / dump block\n"
+            "dir [path]     list directory\n"
+            "cat file       print a file\n"
+            "run file [args] load ELF and run\n");
 }
 
 static void cmd_md(int argc, char **argv)
@@ -242,7 +248,7 @@ static void cmd_go(int argc, char **argv)
     if (addr & 1) { kprintf("odd address\n"); return; }
     kprintf("go %06x\n", addr);
     con_cursor_show(0);
-    run_user(addr);
+    user_launch(addr, 0, 0);
 }
 
 static void cmd_led(int argc, char **argv)
@@ -304,9 +310,103 @@ static void cmd_info(void)
     kprintf("go default %06x\n", last_entry);
 }
 
+/* ---- SD card and files ------------------------------------------------------------- */
+
+static uint8_t blockbuf[SD_BLOCK_SIZE];
+
+static void cmd_sd(int argc, char **argv)
+{
+    if (argc >= 2 && !strcmp(argv[1], "rd")) {
+        uint32_t lba;
+        if (!need_hex(argc, argv, 2, &lba)) return;
+        if (!sd_card.ready) {
+            int rc = sd_init();
+            if (rc) { kprintf("sd: %s\n", sd_strerror(rc)); return; }
+        }
+        int rc = sd_read_block(lba, blockbuf);
+        if (rc) { kprintf("sd rd %x: %s\n", lba, sd_strerror(rc)); return; }
+        char line[48];
+        for (int off = 0; off < SD_BLOCK_SIZE; off += HEXDUMP_BYTES_PER_LINE) {
+            hexdump_line(line, (uint32_t)off, blockbuf + off, HEXDUMP_BYTES_PER_LINE);
+            kprintf("%s\n", line);             /* not key-abortable: must not eat typed-ahead input */
+        }
+        return;
+    }
+    /* (re)initialise and describe the card; the filesystem is remounted on next use */
+    fs_invalidate();
+    int rc = sd_init();
+    if (rc) { kprintf("sd: %s\n", sd_strerror(rc)); return; }
+    const uint8_t *cid = sd_card.cid;
+    kprintf("%s\n", sd_type_name(sd_card.type));
+    kprintf("%u blocks = %u MB\n", sd_card.blocks, sd_card.blocks / 2048);
+    kprintf("CID mid %02x oid %c%c pnm %c%c%c%c%c rev %u.%u\n", cid[0], cid[1], cid[2], cid[3],
+            cid[4], cid[5], cid[6], cid[7], cid[8] >> 4, cid[8] & 15);
+    kprintf("sn %02x%02x%02x%02x mdt %u/%u\n", cid[9], cid[10], cid[11], cid[12],
+            2000 + (((cid[13] & 0x0F) << 4) | (cid[14] >> 4)), cid[14] & 0x0F);
+    kprintf("CSD v%u", (sd_card.csd[0] >> 6) + 1);
+    for (int i = 0; i < 16; i++) kprintf("%s%02x", i ? "" : " ", sd_card.csd[i]);
+    kprintf("\n");
+}
+
+static void cmd_dir(int argc, char **argv)
+{
+    const char *path = argc > 1 ? argv[1] : "/";
+    int h = fs_opendir(path);
+    if (h < 0) { kprintf("dir %s: %s\n", path, fs_strerror(h)); return; }
+    struct dirent ent;
+    int n = 0, rc;
+    while ((rc = fs_readdir(h, &ent)) > 0) {
+        if (ent.attr & ATTR_DIR) kprintf("%-12s    <DIR>\n", ent.name);
+        else kprintf("%-12s %8u\n", ent.name, ent.size);
+        n++;
+    }
+    fs_closedir(h);
+    if (rc < 0) kprintf("dir: %s\n", fs_strerror(rc));
+    else kprintf("%d entries\n", n);
+}
+
+static void cmd_cat(int argc, char **argv)
+{
+    if (argc < 2) { kprintf("cat file\n"); return; }
+    int fd = fs_open(O_RDONLY, argv[1]);
+    if (fd < 0) { kprintf("cat %s: %s\n", argv[1], fs_strerror(fd)); return; }
+    int n;
+    uint32_t total = 0;
+    while ((n = fs_read(fd, blockbuf, sizeof blockbuf)) > 0) {
+        for (int i = 0; i < n; i++) if (blockbuf[i] != '\r') putchar_both(blockbuf[i]);
+        total += (uint32_t)n;
+        if (total > 1024 && input_pollchar() >= 0) break;   /* long files stop on a key (as md) */
+    }
+    if (n < 0) kprintf("\ncat: %s\n", fs_strerror(n));
+    fs_close(fd);
+}
+
+/* `run file [args...]`: rest is the raw remainder of the line after the command word. */
+static void cmd_run(char *rest)
+{
+    static struct exec_image img;
+    while (*rest == ' ' || *rest == '\t') rest++;
+    if (!*rest) { kprintf("run file [args]\n"); return; }
+    char *args = rest;
+    while (*args && *args != ' ' && *args != '\t') args++;
+    if (*args) *args++ = 0;
+    while (*args == ' ' || *args == '\t') args++;
+    int rc = exec_prepare(rest, &img);
+    if (rc == 0) rc = exec_load(&img);
+    if (rc) { kprintf("run %s: %s\n", rest, fs_strerror(rc)); return; }
+    kprintf("run %s: %06x-%06x entry %06x\n", img.path, img.lowest, img.highest - 1, img.entry);
+    last_entry = img.entry;
+    con_cursor_show(0);
+    user_launch(img.entry, img.path, args);
+}
+
 static void execute(char *line)
 {
     char *argv[12];
+    if (!strncmp(line, "run", 3) && (line[3] == 0 || line[3] == ' ' || line[3] == '\t')) {
+        cmd_run(line + 3);
+        return;
+    }
     int argc = split(line, argv, 12);
     if (!argc) return;
     const char *c = argv[0];
@@ -327,8 +427,9 @@ static void execute(char *line)
     else if (!strcmp(c, "cls")) con_clear();
     else if (!strcmp(c, "info")) cmd_info();
     else if (!strcmp(c, "srec")) srec_receive(0);
-    else if (!strcmp(c, "dir") || !strcmp(c, "run") || !strcmp(c, "cat") || !strcmp(c, "sd"))
-        kprintf("%s: not implemented (stage 2)\n", c);
+    else if (!strcmp(c, "sd")) cmd_sd(argc, argv);
+    else if (!strcmp(c, "dir") || !strcmp(c, "ls")) cmd_dir(argc, argv);
+    else if (!strcmp(c, "cat") || !strcmp(c, "type")) cmd_cat(argc, argv);
     else kprintf("unknown command '%s' (try help)\n", c);
 }
 

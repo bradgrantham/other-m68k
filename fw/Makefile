@@ -19,15 +19,16 @@ B    = build
 FW_VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 
 CFLAGS  = -m68000 -Os -Wall -Wextra -ffreestanding -nostdlib -fno-delete-null-pointer-checks \
-          -fno-common -ffunction-sections -fdata-sections -I$(GEN) -I. -DFW_VERSION=\"$(FW_VERSION)\"
+          -fno-common -ffunction-sections -fdata-sections -I$(GEN) -I. -Ifatfs -DFW_VERSION=\"$(FW_VERSION)\"
 ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections -Wl,-Map=$(B)/rom.map
 
 # Planned source list (see STATUS.md); only files that exist are built.
-ASRCS = crt0.S post.S duart.S memops.S
+ASRCS = crt0.S post.S duart.S memops.S sdspi.S
 CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c queue.c \
-        hexdump.c printf.c syscall.c string.c
-OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS))
+        hexdump.c printf.c syscall.c string.c sd.c diskio.c fs.c elf.c exec.c
+FATFS = fatfs/ff.c
+OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS)) $(B)/ff.o
 
 .PHONY: all clean test check-sources
 
@@ -46,6 +47,10 @@ $(B)/%.o: %.S | $(B)
 $(B)/%.o: %.c | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+# FatFs R0.15 (fatfs/, configured by fatfs/ffconf.h); vendor code, warnings not our business.
+$(B)/ff.o: $(FATFS) fatfs/ffconf.h | $(B)
+	$(CC) $(CFLAGS) -Wno-unused-parameter -c -o $@ $<
+
 $(B)/rom.elf: $(OBJS) rom.ld $(GEN)/memory.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) -lgcc
 	$(SIZE) $@
@@ -59,13 +64,25 @@ $(B)/rom.bin $(B)/rom_even.bin $(B)/rom_odd.bin: $(B)/rom.elf mkrom.py
 $(B)/rom.lst: $(B)/rom.elf
 	$(OBJDUMP) -d -S $< > $@
 
-# Host-side unit tests of the pure-C modules (srec, ps2, printf, console, hexdump, queue).
-test:
-	@test -f test/test_main.c || { echo "fw: no host tests written yet (see STATUS.md)"; exit 1; }
+# Host-side unit tests: pure-C modules (srec, ps2, printf, console, hexdump, queue), SD
+# command framing against a fake card, the ELF parser (synthetic image and
+# ../sdk/build/hello.elf when present) and FatFs + the fd table against a FAT32 image made
+# with mkfs.vfat/mcopy (skipped with a message when mtools/dosfstools are missing).
+TEST_SRCS = test/test_main.c test/test_sd.c test/test_elf.c test/test_fs.c \
+            srec.c ps2.c printf.c console.c hexdump.c queue.c sd.c fs.c elf.c $(FATFS)
+TEST_IMG  = $(B)/test/fat.img
+
+test: $(TEST_IMG)
 	mkdir -p $(B)/test
-	$(HOSTCC) -std=gnu11 -Wall -Wextra -O1 -g -DHOST_TEST -I$(GEN) -I. -o $(B)/test/fwtest \
-	    test/test_main.c srec.c ps2.c printf.c console.c hexdump.c queue.c
-	$(B)/test/fwtest
+	$(HOSTCC) -std=gnu11 -Wall -Wextra -O1 -g -DHOST_TEST -I$(GEN) -I. -Ifatfs -Itest \
+	    -Wno-unused-parameter -o $(B)/test/fwtest $(TEST_SRCS)
+	$(B)/test/fwtest $(TEST_IMG) ../sdk/build/hello.elf
+
+# 64 MB sparse FAT32 image with a few files (FAT32 needs >= 65525 clusters, so 32 MB is
+# too small for mkfs.fat with 512-byte clusters).
+$(TEST_IMG): test/mkimage.sh
+	mkdir -p $(B)/test
+	sh test/mkimage.sh $@ 64 test/data/README.TXT test/data/HELLO.TXT || { rm -f $@; touch $@; }
 
 clean:
 	rm -rf $(B)

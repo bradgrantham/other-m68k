@@ -1,5 +1,6 @@
 /* BIOS C entry: called by crt0.S after POST, vector copy and .data/.bss setup. */
 #include "bios.h"
+#include "sd.h"
 
 uint16_t post_rom_sum;
 
@@ -30,6 +31,7 @@ void bios_main(void)
     inten_shadow = 0;
     serial_init();
     input_init();
+    sd_hw_init();                       /* SDIO shadow: card deselected, clock idle */
     if (IO_INTSTAT & INTSTAT_PALJMP) {
         SW_PAL_SET();
         video_standard = VIDEO_STD_PAL;

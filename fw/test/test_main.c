@@ -1,12 +1,7 @@
 /* Host unit tests for the pure-C BIOS modules. Build/run: make -C fw test */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "bios.h"
+#include "test.h"
 
-static int fails, checks;
-#define CHECK(cond) do { checks++; if (!(cond)) { fails++; printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
-#define CHECK_STR(a, b) do { checks++; if (strcmp((a), (b))) { fails++; printf("FAIL %s:%d: \"%s\" != \"%s\"\n", __FILE__, __LINE__, (a), (b)); } } while (0)
+int fails, checks;
 
 /* ---- sinks for ps2.c ---- */
 static char kbd_out[256]; static int kbd_n;
@@ -193,7 +188,7 @@ static void test_hexdump(void)
     CHECK_STR(line, "e1fffe 00 41                   .A");
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     test_printf();
     test_queue();
@@ -201,6 +196,9 @@ int main(void)
     test_ps2();
     test_console();
     test_hexdump();
+    test_sd();
+    test_elf(argc > 2 ? argv[2] : 0);
+    test_fs(argc > 1 ? argv[1] : 0);
     printf("%d checks, %d failures\n", checks, fails);
     return fails ? 1 : 0;
 }
