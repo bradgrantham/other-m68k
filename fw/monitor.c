@@ -45,8 +45,10 @@ static int read_raw_line(char *buf, int max)
 }
 
 /* `first` is the already-read start of the first line ("S" + digit) or NULL. Nothing is
- * echoed while records arrive: the bit-banged TX masks interrupts for a whole byte time
- * and the receiver has a one-byte holding register, so echoing would drop input. */
+ * echoed while records arrive: at 38400 baud a record line lands every ~11 ms, and
+ * echoing it (console glyphs, a 35 ms scroll, the serial copy) would take longer than
+ * that, so the 512-byte RX ring would overflow within a few lines. The DUART's 3-byte
+ * FIFO is drained by the level-3 ISR, which keeps running during the parse. */
 static void srec_receive(const char *first)
 {
     static char line[SREC_LINE_MAX];
@@ -297,7 +299,8 @@ static void cmd_info(void)
 {
     print_banner();
     kprintf("ticks %u (%u/s) INTSTAT %04x INTEN %04x\n", ticks, ticks_per_sec, IO_INTSTAT, inten_shadow);
-    kprintf("GPIO %04x rx overruns %u ps2 err %u\n", gpio_shadow, serial_rx_overruns, ps2_errors);
+    kprintf("GPIO %04x DUART SRA %02x rx overruns %u ps2 err %u\n", gpio_shadow, DUART_SRA,
+            serial_rx_overruns, ps2_errors);
     kprintf("go default %06x\n", last_entry);
 }
 

@@ -44,6 +44,6 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
 ## Uploading
 
 Serial: wait for the `> ` prompt, then send `build/hello.srec` (e.g. `cat build/hello.srec >
-/dev/ttyUSB0`, 115200 8N1). The monitor detects the S-records, prints a summary and `go`
+/dev/ttyUSB0`, 38400 8N1). The monitor detects the S-records, prints a summary and `go`
 runs the program. Emulator: pipe the file to stdin after the prompt appears, or type it
 with `--type` for small programs.

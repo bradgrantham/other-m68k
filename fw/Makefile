@@ -24,7 +24,7 @@ ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections -Wl,-Map=$(B)/rom.map
 
 # Planned source list (see STATUS.md); only files that exist are built.
-ASRCS = crt0.S post.S sertx.S memops.S
+ASRCS = crt0.S post.S duart.S memops.S
 CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c queue.c \
         hexdump.c printf.c syscall.c string.c
 OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS))

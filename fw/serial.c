@@ -1,9 +1,12 @@
-/* Serial port glue: GPIO shadow, LEDs, TX path selection (hardware transmitter if the
- * CPLD has one, else the bit-bang loop in sertx.S), RX from the ring filled by the ISR. */
+/* Serial port (68681 DUART channel A) and the write-only GPIO register's shadow.
+ *
+ * The DUART itself is programmed by duart_reset_init (duart.S) on the reset path, before
+ * the POST, so that the POST can print through it. Here: the receive interrupt enable,
+ * the polled transmit path and the RX ring consumer. Receive happens in irq_duart
+ * (irq.c), which fills serial_rx_q. */
 #include "bios.h"
 
 uint16_t gpio_shadow;
-uint8_t serial_hw_tx;
 
 void gpio_write(uint16_t v)
 {
@@ -42,22 +45,18 @@ void delay_us(uint32_t us)
 
 void serial_init(void)
 {
-    /* Probe for a hardware transmitter: a write to SERDATA raises SERTXBUSY if one exists.
-     * Software-only glue ignores the write. A CR is harmless on the terminal. */
-    IO_SERDATA = '\r';
-    serial_hw_tx = (IO_INTSTAT & INTSTAT_SERTXBUSY) ? 1 : 0;
-    if (serial_hw_tx)
-        while (IO_INTSTAT & INTSTAT_SERTXBUSY) ;
+    /* Channel A is already running (duart_reset_init). Drop anything that arrived during
+     * the POST and clear stale error flags, then let RXRDYA raise the DUART IRQ pin; it
+     * reaches the CPU at level 3 once irq_init sets INTEN.DUART. */
+    while (DUART_SRA & SRA_RXRDY) (void)DUART_RBA;
+    DUART_CRA = DUART_CR_RESET_ERR;
+    DUART_IMR = IMR_RXRDYA;
 }
 
 void serial_putc(int c)
 {
-    if (serial_hw_tx) {
-        while (IO_INTSTAT & INTSTAT_SERTXBUSY) ;
-        IO_SERDATA = (uint16_t)(c & 0xFF);
-    } else {
-        serial_tx_byte(c);
-    }
+    while (!(DUART_SRA & SRA_TXRDY)) ;      /* transmit holding register busy */
+    DUART_TBA = (uint8_t)c;
 }
 
 void serial_puts(const char *s)

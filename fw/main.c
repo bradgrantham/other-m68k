@@ -17,8 +17,8 @@ void print_banner(void)
     kprintf("%s BIOS %s\n", BOARD_NAME, FW_VERSION);
     kprintf("ROM %uK sum %04x (%s)  RAM %uK\n", (unsigned)(ROM_SIZE / 1024), stored,
             post_rom_sum == 0 ? "ok" : "BAD", (unsigned)(RAM_SIZE / 1024));
-    kprintf("ID %04x  %s  serial TX %s\n", id, video_standard == VIDEO_STD_PAL ? "PAL" : "NTSC",
-            serial_hw_tx ? "hw" : "sw");
+    kprintf("ID %04x  %s  DUART %u 8N1\n", id, video_standard == VIDEO_STD_PAL ? "PAL" : "NTSC",
+            (unsigned)SERIAL_BAUD);
     kprintf("user RAM %06x-%06x  fb0 %06x\n", (unsigned)USER_BASE, (unsigned)(USER_END - 1),
             (unsigned)FB_PAGE0_ADDR);
 }
@@ -27,6 +27,7 @@ void bios_main(void)
 {
     /* LED1 only: C init (post.S left it that way; gpio_shadow was stored by crt0) */
     IO_INTEN = 0;
+    inten_shadow = 0;
     serial_init();
     input_init();
     if (IO_INTSTAT & INTSTAT_PALJMP) {

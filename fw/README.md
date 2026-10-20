@@ -1,6 +1,6 @@
 # fw/ -- other-m68k BIOS / monitor ROM (stage 1)
 
-128 KB EPROM image: power-on self test, bit-banged serial, 40x30 video console, PS/2
+128 KB EPROM image: power-on self test, 68681 DUART serial (38400 8N1), 40x30 video console, PS/2
 keyboard, exception reporting, machine monitor with S-record upload, and the TRAP #15
 system call interface used by user programs (see `../sdk/`). Stage 2 (SD card, FAT32, ELF
 loader, `dir`/`run`/`cat`/`sd`) is not implemented; those calls return `E_NOSYS`.
@@ -36,17 +36,27 @@ The serial port is the emulator's stdin/stdout (`--serial-log FILE` keeps a copy
 
 | LEDs | meaning |
 |---|---|
-| LED0 on | reset reached `_start`; ROM checksum running |
+| LED0 on | reset reached `_start`; DUART programmed; ROM checksum running |
 | LED0 + LED1 on | RAM test running (~1.7 s) |
 | LED1 on | RAM passed; C initialisation (vectors, .data/.bss, console, interrupts) |
 | both off | monitor idle / running normally |
 | LED0 / LED1 alternating at ~2 Hz forever | RAM test failed (details on serial) |
 
-Nothing in the POST uses RAM: the ROM checksum, the RAM test and the serial output run
-from registers only (`post.S`, `sertx.S`), returning through address registers. Do not
-press the NMI button during the POST: the vectors live in RAM, which is being tested.
+`_start` masks interrupts, writes INTEN = 0 and the GPIO idle value (PS/2 lines released,
+LED0 on), then programs DUART channel A from registers (`duart_reset_init` in `duart.S`):
+IMR = 0; CRA = reset MR pointer, reset RX, reset TX, reset error status; ACR = 0x80 (baud
+set 2); MR1A = 0x13 (8 bits, no parity); MR2A = 0x07 (1 stop bit); CSRA = 0xCC (38400 RX and
+TX); CRA = 0x05 (enable TX + RX). The data sheet requires the RX/TX reset commands before
+ACR[7] is changed, and the pointer reset makes the first MRA write hit MR1A even on a warm
+restart (`reset` command) where the DUART may not have seen a hardware reset. Only byte
+accesses at the odd addresses in `hw.inc` are used.
 
-POST serial output, 115200 8N1:
+Nothing in the POST uses RAM: the ROM checksum, the RAM test and the serial output run
+from registers only (`post.S`, `duart.S`; `post_putc` polls SRA.TXRDY and writes TBA),
+returning through address registers. Do not press the NMI button during the POST: the
+vectors live in RAM, which is being tested.
+
+POST serial output, 38400 8N1 (`SERIAL_BAUD`):
 
 ```
 other-m68k POST
@@ -60,8 +70,8 @@ byte moves and verify as longs, then the inverse, so a stuck WEU/WEL shows up as
 `exp 55AA55AA got ...`.
 
 After the POST the banner shows board name, firmware version, the stored checksum word,
-RAM size, ID register, NTSC/PAL (PAL is selected with the soft switch when
-`INTSTAT.PALJMP` is set) and whether a hardware serial transmitter was detected.
+RAM size, ID register (0x6802 on the DUART board), NTSC/PAL (PAL is selected with the soft
+switch when `INTSTAT.PALJMP` is set) and the DUART baud rate.
 
 ## Memory use
 
@@ -80,7 +90,7 @@ ROM use: about 19 KB of 128 KB (`make` prints the sizes; `mkrom` prints the byte
 
 The first 1 KB of ROM is the 256-entry vector table. Vector 0 = `SYS_STACK_TOP`, vector 1 =
 `_start` in ROM (0xE0xxxx), so the very first instruction fetch clears the ROM overlay at
-address 0. Autovectors 25-28 (VBLANK, PS2, SERRX, HSYNC) and TRAP #15 (47) point at their
+address 0. Autovectors 25-28 (VBLANK, PS2, DUART, HSYNC) and TRAP #15 (47) point at their
 handlers; every other vector points at a 10-byte stub that pushes its number and jumps to
 `exception_common`. The table is copied to RAM at 0 once RAM has passed; `go` programs can
 install their own handlers by writing RAM vectors (they run in supervisor mode).
@@ -91,16 +101,27 @@ install their own handlers by writing RAM vectors (they run in supervisor mode).
 |---|---|---|
 | 1 | VBLANK | `ticks++`, user hook (`sys_set_irq_handler(1, fn)`) |
 | 2 | PS/2 byte | set-2 decode to ASCII / escape sequences, raw event queue, user hook |
-| 3 | serial RX | 512-byte ring (overruns counted, `info` shows them), user hook |
+| 3 | DUART IRQ pin (RXRDYA unmasked) | drains the RX FIFO into a 512-byte ring (overruns counted, `info` shows them), user hook |
 | 4 | HSYNC (15.7 kHz) | enabled only while an audio callback or level-4 hook is installed |
 | 7 | NMI button | prints the registers and enters the monitor |
 
-Serial TX is bit-banged with interrupts masked for one byte time (~87 us, `sertx.S`,
-104 clocks per bit, counted per instruction). The RX holding register is one byte deep,
-so a byte arriving while the BIOS transmits can be lost: the monitor does not echo while
-receiving S-records, and hosts should wait for the prompt before sending. If the CPLD
-has a hardware transmitter (`SERTXBUSY` goes high after a write to `SERDATA`) it is used
-instead and nothing is masked.
+## Serial port
+
+Channel A of the MC68681 DUART at `DUART_BASE`, 38400 8N1, byte registers at odd
+addresses (`generated/hw.h`: `DUART_SRA`, `DUART_TBA`, ...). Transmit is polled:
+`serial_putc` waits for `SRA.TXRDY` (transmit holding register empty) and writes `TBA`;
+nothing masks interrupts, so audio callbacks and the keyboard are unaffected by printing.
+Receive is interrupt driven: `IMR = RXRDYA` (set in `serial_init`), the DUART's IRQ pin is
+gated by `INTEN.DUART` to level 3, and `irq_duart` reads the DUART `ISR`, then pops `RBA`
+while `SRA.RXRDY`, counting `SRA.OE` as an overrun (and issuing the "reset error status"
+command 0x40 to clear it). The interrupt is level sensitive, so draining the 3-byte FIFO
+is what releases it. `INTSTAT.DUARTIRQ` shows the live pin. The monitor does not echo
+while receiving S-records (printing a line takes longer than a line takes to arrive);
+hosts should wait for the prompt before sending. Channel B is not used by the BIOS.
+
+INTEN, SDIO, GPIO and USERIO.OUT are write-only in CPLD2 (they read as 0); the BIOS keeps
+`inten_shadow` and `gpio_shadow` and every write goes through `irq_update_inten` /
+`gpio_write/set/clear`. SDIO and USERIO are not touched by stage 1.
 
 ## Console
 
@@ -141,7 +162,7 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 | `ramtest` | destructive test of 0x4000-0x3FFFF (user RAM and both framebuffers) |
 | `beep` | 1 kHz for 200 ms on GPIO.AUDIO |
 | `cls` | clear the console |
-| `info` | banner, tick rate, INTSTAT/INTEN/GPIO, RX overruns, PS/2 errors |
+| `info` | banner, tick rate, INTSTAT, INTEN and GPIO shadows, DUART SRA, RX overruns, PS/2 errors |
 | `dir` `run` `cat` `sd` | "not implemented (stage 2)" |
 
 ### S-record upload
@@ -166,13 +187,13 @@ interrupt enables, drops user hooks and the audio callback, selects page 0 and p
 
 | file | contents |
 |---|---|
-| `crt0.S` | vector table, stubs, `_start`, `post_return`, `exception_common`, `trap15_handler`, `run_user`, `monitor_restart` |
+| `crt0.S` | vector table, stubs, `_start` (GPIO idle, DUART init, POST), `post_return`, `exception_common`, `trap15_handler`, `run_user`, `monitor_restart` |
 | `post.S` | ROM checksum and RAM test, registers only |
-| `sertx.S`, `serbit.inc` | cycle-counted bit-bang TX, stack-less POST print routines, `delay_loops` |
+| `duart.S`, `duart.h` | `duart_reset_init` (stack-less DUART bring-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values with data-sheet references |
 | `memops.S`, `string.c` | memcpy/memmove/memset, str* |
 | `main.c` | `bios_main`, banner, `putchar_both` |
 | `console.c`, `font8x8_basic.h` | video console |
-| `serial.c`, `input.c`, `queue.c`, `ps2.c`, `irq.c` | GPIO shadow, TX path, input rings, PS/2 decoder, ISRs |
+| `serial.c`, `input.c`, `queue.c`, `ps2.c`, `irq.c` | GPIO shadow, polled DUART TX, input rings, PS/2 decoder, ISRs (DUART RX drain) |
 | `exception.c`, `syscall.c`, `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | as named |
 | `test/test_main.c` | host unit tests (`make test`) |
 | `rom.ld`, `mkrom.py`, `Makefile` | link, checksum/split, build |

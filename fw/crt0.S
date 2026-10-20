@@ -11,8 +11,8 @@
 #include "hw.inc"
 
 	.equ	STUB_SIZE, 10		/* move.w #imm,-(sp) (4) + jmp abs.l (6) */
-/* GPIO value with the open-drain PS/2 lines released and serial TX idle (= reset value). */
-	.equ	GPIO_IDLE, GPIO_PS2CLK_MASK + GPIO_PS2DAT_MASK + GPIO_SERTX_MASK
+/* GPIO value with the open-drain PS/2 lines released (= IO_GPIO_RESET, which hw.inc lacks). */
+	.equ	GPIO_IDLE, GPIO_PS2CLK_MASK + GPIO_PS2DAT_MASK
 
 /* ------------------------------------------------------------------------- */
 	.section .vectors,"a"
@@ -27,7 +27,7 @@ _vectors:
 	.elseif	vn == 26
 	.long	irq_ps2			/* level 2 autovector */
 	.elseif	vn == 27
-	.long	irq_serrx		/* level 3 autovector */
+	.long	irq_duart		/* level 3 autovector */
 	.elseif	vn == 28
 	.long	irq_hsync		/* level 4 autovector */
 	.elseif	vn == 47
@@ -55,14 +55,17 @@ vec_stubs:
 	.endif
 
 /* ------------------------------------------------------------------------- */
-/* Reset entry. No RAM may be assumed until post_run has passed. */
+/* Reset entry. No RAM may be assumed until post_run has passed. The DUART is set up
+ * first (duart.S, registers only) so that the POST can report through it. */
 	.globl	_start
 _start:
 	move.w	#0x2700,%sr
 	move.w	#0,IO_INTEN_ADDR		/* no interrupts */
-	move.w	#(GPIO_IDLE + GPIO_LED0_MASK),%d7	/* GPIO shadow: lines released, TX idle, LED0 on */
+	move.w	#(GPIO_IDLE + GPIO_LED0_MASK),%d7	/* GPIO shadow: PS/2 lines released, LED0 on */
 	move.w	%d7,IO_GPIO_ADDR
-	jmp	post_run			/* registers only; comes back to post_return */
+	lea	1f,%a6
+	jmp	duart_reset_init		/* 38400 8N1, TX+RX enabled, IMR = 0 */
+1:	jmp	post_run			/* registers only; comes back to post_return */
 
 /* post.S jumps here on success: d7 = GPIO shadow, d6.w = 16-bit ROM word sum (0 = good). */
 	.globl	post_return

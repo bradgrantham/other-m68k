@@ -6,11 +6,11 @@ volatile uint32_t ticks;
 volatile uint32_t ticks_per_sec = 60;
 irq_hook_fn irq_user_hook[8];
 irq_hook_fn audio_cb;
-uint16_t inten_shadow;      /* INTEN is write-only in the CPLD (fitter budget); keep a copy */
+uint16_t inten_shadow;      /* INTEN is write-only (reads 0); every write goes through here */
 
 void irq_update_inten(void)
 {
-    uint16_t en = INTEN_VBLANK | INTEN_PS2 | INTEN_SERRX;
+    uint16_t en = INTEN_VBLANK | INTEN_PS2 | INTEN_DUART;
     if (audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL]) en |= INTEN_HSYNC;
     inten_shadow = en;
     IO_INTEN = en;
@@ -18,7 +18,7 @@ void irq_update_inten(void)
 
 void irq_init(void)
 {
-    IO_INTSTAT = INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2ERR | INTSTAT_SERRXOVR;  /* W1C */
+    IO_INTSTAT = INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2ERR;  /* W1C flags */
     irq_update_inten();
     __asm__ volatile ("move.w #0x2000,%sr");
 }
@@ -52,16 +52,25 @@ __attribute__((interrupt_handler)) void irq_ps2(void)
     if (irq_user_hook[IRQ_PS2_LEVEL]) irq_user_hook[IRQ_PS2_LEVEL]();
 }
 
-__attribute__((interrupt_handler)) void irq_serrx(void)
+/* Level 3: the 68681's IRQ pin (level sensitive, gated by INTEN.DUART). Only RXRDYA is
+ * unmasked in IMR, so draining the 3-byte RX FIFO is what releases the pin; the ISR
+ * register is read first as the spec asks and so that a future source can be added.
+ * SRA.OE means a 4th character arrived while the FIFO was full and the shift register's
+ * character was lost; it stays set until a "reset error status" command. */
+__attribute__((interrupt_handler)) void irq_duart(void)
 {
-    uint16_t st = IO_INTSTAT;
-    if (st & INTSTAT_SERRXOVR) {
-        IO_INTSTAT = INTSTAT_SERRXOVR;
-        serial_rx_overruns++;
+    uint8_t isr = DUART_ISR;
+    if (isr & ISR_RXRDYA) {
+        uint8_t st;
+        while ((st = DUART_SRA) & SRA_RXRDY) {
+            if (st & SRA_OE) {
+                serial_rx_overruns++;
+                DUART_CRA = DUART_CR_RESET_ERR;
+            }
+            queue_put(&serial_rx_q, DUART_RBA);
+        }
     }
-    uint8_t b = (uint8_t)IO_SERDATA;          /* clears SERRX */
-    queue_put(&serial_rx_q, b);
-    if (irq_user_hook[IRQ_SERRX_LEVEL]) irq_user_hook[IRQ_SERRX_LEVEL]();
+    if (irq_user_hook[IRQ_DUART_LEVEL]) irq_user_hook[IRQ_DUART_LEVEL]();
 }
 
 __attribute__((interrupt_handler)) void irq_hsync(void)

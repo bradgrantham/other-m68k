@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include "hw.h"
+#include "duart.h"
 #include "syscalls.h"
 #include "bios_syscalls.h"
 
@@ -91,19 +92,17 @@ void con_set_colors(uint8_t fg, uint8_t bg);
 void con_cursor_show(int on);   /* draw/erase the block cursor */
 extern uint8_t *con_fb;
 
-/* ---- serial.c / sertx.S ---- */
-extern uint16_t gpio_shadow;            /* image of IO_GPIO; every write goes through here */
-extern uint8_t serial_hw_tx;            /* 1 if the CPLD has a hardware transmitter */
-void serial_init(void);
-void serial_putc(int c);                /* raw byte, no CR/LF translation */
+/* ---- serial.c / duart.S ---- */
+extern uint16_t gpio_shadow;            /* image of the write-only IO_GPIO; every write goes through here */
+void serial_init(void);                 /* DUART was programmed by _start; this enables the RX interrupt */
+void serial_putc(int c);                /* raw byte, no CR/LF translation; polls SRA.TXRDY */
 void serial_puts(const char *s);        /* '\n' -> "\r\n" */
 int serial_getc(void);                  /* -1 if none */
-void serial_tx_byte(int c);             /* sertx.S: bit-bang, IRQs masked ~87 us */
 void gpio_write(uint16_t v);
 void gpio_set(uint16_t bits);
 void gpio_clear(uint16_t bits);
 void led_set(int n, int on);
-void delay_loops(uint32_t n);           /* sertx.S: 18 clocks each */
+void delay_loops(uint32_t n);           /* duart.S: 18 clocks each */
 void delay_us(uint32_t us);
 
 /* ---- input.c ---- */
@@ -129,7 +128,7 @@ uint16_t irq_disable(void);             /* crt0.S */
 void irq_restore(uint16_t sr);
 void irq_vblank(void);
 void irq_ps2(void);
-void irq_serrx(void);
+void irq_duart(void);
 void irq_hsync(void);
 
 /* ---- exception.c ---- */

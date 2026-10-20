@@ -1,9 +1,10 @@
 /* other-m68k BIOS power-on self test. Runs before any RAM is trusted: registers only,
- * no stack, serial output through the stack-less routines in sertx.S.
+ * no stack, serial output through the stack-less DUART routines in duart.S (the DUART
+ * was initialised by _start).
  *
  * Register discipline (POST only):
- *   d7     GPIO shadow (LEDs, idle lines)         a0  IO_GPIO_ADDR (serial macro)
- *   d0-d2  serial scratch                         a4  return address for puts/puthex
+ *   d7     GPIO shadow (LEDs, idle lines)         a0  IO_GPIO_ADDR (LED writes)
+ *   d0     serial character                       a4  return address for puts/puthex
  *   d3,d5  puthex value / nibble count            a5  string pointer
  *   d6     16-bit ROM word sum (0 = good)         a6  return address for putc
  *   d4     RAM test pattern                       a1  RAM test pointer
