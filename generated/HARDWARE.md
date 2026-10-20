@@ -77,9 +77,9 @@ Interrupt enables (write-only, reads 0). A pending flag with its enable set driv
 | 2 | PS2 | Enable level-2 interrupt on PS2RDY. |
 | 3 | DUART | Enable level-3 interrupt while the DUART IRQ pin is asserted. |
 
-### SDIO @ 0xF00004 (W) reset 0x0003
+### SDIO @ 0xF00004 (W) reset 0x0001
 
-SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; MISO is read through INTSTAT.SDMISO.
+SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; reset = CS high, CLK low, MOSI low (SPI mode 0 idle). MISO is read through INTSTAT.SDMISO.
 
 | Bit | Name | Description |
 |---|---|---|

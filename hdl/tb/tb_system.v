@@ -510,7 +510,7 @@ initial begin
     cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0000, "SDIO is write-only (reads 0)");
     cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0000, "GPIO is write-only (reads 0)");
     cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0F00, "USERIO reset value (pins read high, OUT reads 0)");
-    check(sd_cs === 1 && sd_clk === 1 && sd_mosi === 0, "SDIO reset value on the pins");
+    check(sd_cs === 1 && sd_clk === 0 && sd_mosi === 0, "SDIO reset value on the pins");
     check(ps2_clk === 1'b1 && ps2_dat === 1'b1 && led === 2'b00 && audio === 1'b0, "GPIO reset value on the pins");
     cpu.write_word(io_addr(IO_INTEN_OFF), 16'hFFFF);
     cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h0000, "INTEN still reads 0 after write");

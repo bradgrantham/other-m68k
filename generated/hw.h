@@ -124,7 +124,7 @@
 #define IO_SDIO_OFFSET 4
 #define IO_SDIO_ADDR (IO_BASE + 4)
 #define IO_SDIO (*(volatile uint16_t *)IO_SDIO_ADDR)
-#define IO_SDIO_RESET 0x0003
+#define IO_SDIO_RESET 0x0001
 #define SDIO_CS_BIT 0
 #define SDIO_CS (1u << 0)
 #define SDIO_CLK_BIT 1

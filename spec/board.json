@@ -246,8 +246,8 @@
           "name": "SDIO",
           "offset": 4,
           "access": "w",
-          "reset": "0x0003",
-          "desc": "SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; MISO is read through INTSTAT.SDMISO.",
+          "reset": "0x0001",
+          "desc": "SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; reset = CS high, CLK low, MOSI low (SPI mode 0 idle). MISO is read through INTSTAT.SDMISO.",
           "fields": [
             {
               "name": "CS",

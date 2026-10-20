@@ -172,7 +172,7 @@ always @(posedge clk24 or negedge sysreset_n) begin
         pix      <= 8'd0;
         lo       <= 8'd0;
         inten    <= 4'd0;
-        sdio     <= 3'b011;             // SDIO reset 0x0003: CS high, CLK high
+        sdio     <= 3'b001;             // SDIO reset 0x0001: CS high, CLK low
         gpio     <= 5'b00011;           // GPIO reset 0x0003: PS/2 released
         uio_out  <= 4'hF;               // USERIO reset 0x000F
         ps2data  <= 8'd0; f_ps2err <= 1'b0;
