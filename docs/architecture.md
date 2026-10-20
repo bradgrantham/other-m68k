@@ -96,12 +96,15 @@ asserts ~62 ns after the S2 edge:
 | S0 at | AS low by | serviced at | cycle length |
 |---|---|---|---|
 | E0 | 145 (this slot) | this slot | 4 clocks (zero wait) |
-| E6 of previous slot | 62 (this slot) | this slot | 4 clocks |
+| E6 of previous slot | 62 (this slot) | this slot | 5 clocks (DTACK at E4 is first seen at E5) |
 | E2 | 229 (after E4) | next slot | 6 clocks |
 | E4 | 312 | next slot | 6 clocks |
 
-68000 bus cycles start on even CPU clocks relative to each other, so RAM accesses cost 4 or
-6 clocks; ROM accesses always 4. Expect code in ROM with data in RAM to run roughly 10%
+Every serviced cycle ends at E0, so after the first RAM or I/O access the CPU is realigned to
+the slot. 68000 bus cycles then start on even CPU clocks relative to each other (cycles are 4
+clocks, internal operations come in 2-clock units), so in steady state RAM accesses cost 4 or
+6 clocks; the odd-phase cases (E2, E6) occur only once, coming out of reset. ROM accesses
+always take 4 clocks. Expect code in ROM with data in RAM to run roughly 10%
 slower than an unshared system, code in RAM 15-25%. The video fetch itself never costs the
 CPU a slot.
 
