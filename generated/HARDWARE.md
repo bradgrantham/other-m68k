@@ -41,7 +41,7 @@ Encoder: AD724 (RGB in, composite out). Standard (NTSC/PAL) selected by on-board
 
 All horizontal quantities are CPU clocks and are multiples of the 4-clock slot, so the active region never jitters against the slot grid. Video fetches one 16-bit word (two pixels) per slot during the active region.
 
-Horizontal count 0 = first active pixel; vertical count 0 = first active line. VBLANK interrupt flag sets at the start of line v_active.
+Horizontal count 0 = first active pixel; vertical count 0 = first active line. The VBLANK interrupt flag sets at the leading edge of vertical sync (line v_active + v_bottom), not at the end of active video.
 
 ## IO registers (base 0xF00000, 16-bit)
 
