@@ -192,7 +192,7 @@ cards that reject ACMD41 get CMD1), CMD58 for CCS (block vs byte addressing), CM
 byte-addressed cards, then full speed, CMD9 (CSD, capacity for both CSD versions) and CMD10
 (CID). Every command carries a correct CRC7; data CRC16 is not checked (CMD59 off). Reads are
 CMD17 (0xFE token wait ~160 ms), writes CMD24 (data response token checked, busy poll up to
-~500 ms). Errors are `SD_ERR_*` (`sd_strerror`), mapped to `E_IO`/`E_INVAL` at the syscall
+~500 ms). Errors are `SD_ERR_*` (`sd_strerror`), mapped to `E_IO`/`E_NODEV`/`E_INVAL` at the syscall
 boundary. The `sd` monitor command re-initialises the card and prints type, capacity, CID
 and CSD; `sd rd <lba>` hex-dumps a block. Multi-block commands are not used.
 

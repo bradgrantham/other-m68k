@@ -317,7 +317,7 @@ autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied in
 
 **ps2**: rx: hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY; tx: software bit-bang via GPIO.PS2CLK/PS2DAT open-drain bits; connector: 6-pin mini-DIN, 5V
 
-**sd**: mode: SPI bit-bang via SDIO register; connector: microSD push-push socket; power: 3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input
+**sd**: mode: SPI bit-bang via SDIO register; connector: microSD push-push socket; power: 3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input; filesystem: FAT12/16/32 via FatFs (LFN off). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine).
 
 **audio**: enabled: True; desc: GPIO.AUDIO -> RC low-pass -> divider -> DC-blocking cap -> 3.5mm jack. Beeps by software toggling; sampled audio by toggling from the HSYNC interrupt (15.7 kHz).
 
@@ -342,7 +342,7 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | 8 | wait_vblank | `void sys_wait_vblank(void)` | Block until the next vertical blanking interval. |
 | 9 | video_info | `int sys_video_info(struct video_info * info)` | Fill in framebuffer geometry, page addresses and current page. |
 | 10 | video_set_page | `int sys_video_set_page(int page)` | Select displayed framebuffer page (0 or 1); takes effect at next frame. |
-| 11 | open | `int sys_open(int flags, const char * path)` | Open a file on the SD card. Returns fd >= 0 or negative error. |
+| 11 | open | `int sys_open(int flags, const char * path)` | Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. |
 | 12 | close | `int sys_close(int fd)` | Close a file. |
 | 13 | read | `int sys_read(int fd, unsigned len, void * buf)` | Read up to len bytes. Returns count or negative error. |
 | 14 | write | `int sys_write(int fd, unsigned len, const void * buf)` | Write len bytes. Returns count or negative error. |
@@ -357,7 +357,7 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | 23 | con_set_cursor | `int sys_con_set_cursor(int x, int y)` | Move the console text cursor. |
 | 24 | con_clear | `int sys_con_clear(void)` | Clear the console. |
 | 25 | con_info | `int sys_con_info(struct con_info * info)` | Console columns, rows, cursor position. |
-| 26 | exec | `int sys_exec(const char * path, const char * args)` | Load and run another ELF executable from the SD card (does not return on success). |
+| 26 | exec | `int sys_exec(const char * path, const char * args)` | Load and run another ELF executable from the SD card with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor. |
 | 27 | key_event | `int sys_key_event(void)` | Next raw keyboard event: bit 8 = release, bits 7..0 = PS/2 set-2 scan code (E0-prefixed codes have bit 9 set); -1 if none. |
 | 28 | sleep_ms | `void sys_sleep_ms(uint32_t ms)` | Delay for approximately ms milliseconds. |
 | 29 | set_audio_cb | `int sys_set_audio_cb(void * cb)` | Install a function called at 15.7 kHz from the HSYNC interrupt to drive GPIO.AUDIO; NULL disables. |
@@ -381,16 +381,21 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | VIDEO_STD_NTSC | 0 |
 | VIDEO_STD_PAL | 1 |
 | E_NOENT | -2 |
+| E_ACCES | -13 |
+| E_FAULT | -14 |
 | E_IO | -5 |
 | E_NOEXEC | -8 |
 | E_BADF | -9 |
 | E_NOMEM | -12 |
 | E_EXIST | -17 |
 | E_NOTDIR | -20 |
+| E_NODEV | -19 |
 | E_ISDIR | -21 |
 | E_INVAL | -22 |
 | E_NFILE | -23 |
 | E_NOSPC | -28 |
+| E_ROFS | -30 |
+| E_NAMETOOLONG | -36 |
 | E_NOSYS | -38 |
 | KEY_RELEASE | 256 |
 | KEY_EXTENDED | 512 |

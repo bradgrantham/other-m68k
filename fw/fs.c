@@ -20,14 +20,18 @@ static int fs_err(FRESULT r)
     switch (r) {
     case FR_OK: return 0;
     case FR_NO_FILE: case FR_NO_PATH: return E_NOENT;
-    case FR_INVALID_NAME: case FR_INVALID_DRIVE: case FR_INVALID_PARAMETER: return E_INVAL;
+    case FR_INVALID_NAME: return E_NAMETOOLONG;   /* not an 8.3 name */
+    case FR_INVALID_DRIVE: case FR_INVALID_PARAMETER: return E_INVAL;
     case FR_EXIST: return E_EXIST;
     case FR_DENIED: return E_NOSPC;         /* directory full / no free cluster (our own checks cover the rest) */
     case FR_INVALID_OBJECT: return E_BADF;
     case FR_TOO_MANY_OPEN_FILES: return E_NFILE;
     case FR_NOT_ENOUGH_CORE: return E_NOMEM;
-    case FR_DISK_ERR: case FR_NOT_READY: case FR_NO_FILESYSTEM:
-        fs_invalidate();                    /* card gone or unreadable: retry from scratch next time */
+    case FR_NOT_READY: case FR_NO_FILESYSTEM:
+        fs_invalidate();                    /* no card / no FAT volume: retry from scratch next time */
+        return E_NODEV;
+    case FR_DISK_ERR:
+        fs_invalidate();
         return E_IO;
     default: return E_IO;                   /* INT_ERR, WRITE_PROTECTED, NOT_ENABLED, MKFS, TIMEOUT, LOCKED */
     }
@@ -38,7 +42,10 @@ const char *fs_strerror(int err)
     switch (err) {
     case 0: return "ok";
     case E_NOENT: return "not found";
-    case E_IO: return "I/O error (no card or no FAT volume)";
+    case E_IO: return "I/O error";
+    case E_NODEV: return "no card or no FAT volume";
+    case E_NAMETOOLONG: return "not an 8.3 name";
+    case E_FAULT: return "bad address";
     case E_NOEXEC: return "not a runnable ELF";
     case E_BADF: return "bad descriptor";
     case E_NOMEM: return "does not fit in user RAM";

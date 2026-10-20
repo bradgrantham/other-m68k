@@ -66,7 +66,7 @@ void test_fs(const char *path)
     /* nothing works before the (lazy) mount reaches the card: emulate "no card" */
     fs_invalidate();
     FILE *save = img; img = 0;
-    CHECK_EQ(fs_open(O_RDONLY, "README.TXT"), E_IO);
+    CHECK_EQ(fs_open(O_RDONLY, "README.TXT"), E_NODEV);
     img = save;
 
     /* lazy mount on first use, files put there by mcopy */
@@ -95,11 +95,11 @@ void test_fs(const char *path)
     CHECK_EQ(fs_read(fd, buf, 1), E_BADF);
     CHECK_EQ(fs_read(99, buf, 1), E_BADF);
     CHECK_EQ(fs_read(2, buf, 1), E_BADF);                         /* console fds never reach fs.c, but be safe */
-    CHECK_EQ(fs_open(O_RDONLY, "lowercase.txt"), E_INVAL);        /* 9-character base name: not 8.3 */
+    CHECK_EQ(fs_open(O_RDONLY, "lowercase.txt"), E_NAMETOOLONG);        /* 9-character base name: not 8.3 */
     fd = fs_open(O_RDONLY, "hello.txt"); CHECK(fd >= 0); fs_close(fd);
     fd = fs_open(O_RDONLY, "/hello.txt"); CHECK(fd >= 0); fs_close(fd);
     CHECK_EQ(fs_open(O_RDONLY, "nope.txt"), E_NOENT);
-    CHECK_EQ(fs_open(O_RDONLY, "/"), E_INVAL);                   /* FatFs: the root is not a file name */
+    CHECK_EQ(fs_open(O_RDONLY, "/"), E_NAMETOOLONG);                   /* FatFs: the root is not a file name */
     CHECK_EQ(fs_open(O_RDONLY | O_CREAT, "x.txt"), E_INVAL);     /* create needs write access */
     CHECK_EQ(fs_open(O_WRONLY, "nope.txt"), E_NOENT);            /* no O_CREAT: must exist */
     CHECK_EQ(fs_open(3, "x.txt"), E_INVAL);
@@ -137,7 +137,7 @@ void test_fs(const char *path)
     CHECK_EQ(fs_size(fd), 0);
     fs_close(fd);
     CHECK_EQ(fs_open(O_WRONLY | O_CREAT, "a/b.txt"), E_NOENT);    /* missing directory */
-    CHECK_EQ(fs_open(O_WRONLY | O_CREAT, "toolongname.txt"), E_INVAL);   /* not 8.3 without LFN */
+    CHECK_EQ(fs_open(O_WRONLY | O_CREAT, "toolongname.txt"), E_NAMETOOLONG);   /* not 8.3 without LFN */
 
     /* table limits */
     int fds[FS_NFILES];

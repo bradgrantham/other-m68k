@@ -21,16 +21,21 @@
 #define VIDEO_STD_NTSC 0
 #define VIDEO_STD_PAL 1
 #define E_NOENT -2
+#define E_ACCES -13
+#define E_FAULT -14
 #define E_IO -5
 #define E_NOEXEC -8
 #define E_BADF -9
 #define E_NOMEM -12
 #define E_EXIST -17
 #define E_NOTDIR -20
+#define E_NODEV -19
 #define E_ISDIR -21
 #define E_INVAL -22
 #define E_NFILE -23
 #define E_NOSPC -28
+#define E_ROFS -30
+#define E_NAMETOOLONG -36
 #define E_NOSYS -38
 #define KEY_RELEASE 256
 #define KEY_EXTENDED 512
@@ -109,7 +114,7 @@ uint32_t sys_ticks(void); /* Frames since boot (VBLANK counter, ~60 Hz). */
 void sys_wait_vblank(void); /* Block until the next vertical blanking interval. */
 int sys_video_info(struct video_info * info); /* Fill in framebuffer geometry, page addresses and current page. */
 int sys_video_set_page(int page); /* Select displayed framebuffer page (0 or 1); takes effect at next frame. */
-int sys_open(int flags, const char * path); /* Open a file on the SD card. Returns fd >= 0 or negative error. */
+int sys_open(int flags, const char * path); /* Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. */
 int sys_close(int fd); /* Close a file. */
 int sys_read(int fd, unsigned len, void * buf); /* Read up to len bytes. Returns count or negative error. */
 int sys_write(int fd, unsigned len, const void * buf); /* Write len bytes. Returns count or negative error. */
@@ -124,7 +129,7 @@ int sys_mem_info(struct mem_info * info); /* Report the user RAM region availabl
 int sys_con_set_cursor(int x, int y); /* Move the console text cursor. */
 int sys_con_clear(void); /* Clear the console. */
 int sys_con_info(struct con_info * info); /* Console columns, rows, cursor position. */
-int sys_exec(const char * path, const char * args); /* Load and run another ELF executable from the SD card (does not return on success). */
+int sys_exec(const char * path, const char * args); /* Load and run another ELF executable from the SD card with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor. */
 int sys_key_event(void); /* Next raw keyboard event: bit 8 = release, bits 7..0 = PS/2 set-2 scan code (E0-prefixed codes have bit 9 set); -1 if none. */
 void sys_sleep_ms(uint32_t ms); /* Delay for approximately ms milliseconds. */
 int sys_set_audio_cb(void * cb); /* Install a function called at 15.7 kHz from the HSYNC interrupt to drive GPIO.AUDIO; NULL disables. */

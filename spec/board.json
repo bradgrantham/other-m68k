@@ -790,7 +790,8 @@
   "sd": {
     "mode": "SPI bit-bang via SDIO register",
     "connector": "microSD push-push socket",
-    "power": "3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input"
+    "power": "3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input",
+    "filesystem": "FAT12/16/32 via FatFs (LFN off). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine)."
   },
   "audio": {
     "enabled": true,
@@ -941,7 +942,7 @@
           "path"
         ]
       ],
-      "desc": "Open a file on the SD card. Returns fd >= 0 or negative error."
+      "desc": "Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console."
     },
     {
       "num": 12,
@@ -1164,7 +1165,7 @@
           "args"
         ]
       ],
-      "desc": "Load and run another ELF executable from the SD card (does not return on success)."
+      "desc": "Load and run another ELF executable from the SD card with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor."
     },
     {
       "num": 27,
@@ -1293,21 +1294,26 @@
       "VIDEO_STD_NTSC": 0,
       "VIDEO_STD_PAL": 1,
       "E_NOENT": -2,
+      "E_ACCES": -13,
+      "E_FAULT": -14,
       "E_IO": -5,
       "E_NOEXEC": -8,
       "E_BADF": -9,
       "E_NOMEM": -12,
       "E_EXIST": -17,
       "E_NOTDIR": -20,
+      "E_NODEV": -19,
       "E_ISDIR": -21,
       "E_INVAL": -22,
       "E_NFILE": -23,
       "E_NOSPC": -28,
+      "E_ROFS": -30,
+      "E_NAMETOOLONG": -36,
       "E_NOSYS": -38,
       "KEY_RELEASE": 256,
       "KEY_EXTENDED": 512
     },
-    "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host."
+    "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host. User program entry: USP points at {return address (exit stub), argc, argv} as for a C `_start(argc, argv)`; argv[0] is the path as given to `run`/`exec`, further words split on blanks (at most 16 words, 255 bytes). The monitor's `go` enters with argc 0 and argv[0] NULL. Filenames are 8.3 (FatFs with LFN off), case-insensitive; E_NAMETOOLONG for anything else. Pointers passed to syscalls must lie in user RAM (USER_BASE..RAM_END, framebuffers included) or the call fails with E_FAULT."
   },
   "glue": {
     "cpld1": {

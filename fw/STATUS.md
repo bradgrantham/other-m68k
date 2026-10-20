@@ -171,7 +171,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 Stage 2:
 
 * The ABI needs an error code for bad user pointers; `E_INVAL` is used now. Suggest
-  `E_FAULT -14`. Also useful: `E_NODEV -19` (no card / no FAT volume, now `E_IO`),
+  (resolved in spec rev 2: `E_FAULT -14` for bad pointers, `E_NODEV -19` for no card / no FAT volume, `E_NAMETOOLONG -36` for non-8.3 names are in the ABI and used.) Previously suggested: `E_NODEV -19`,
   `E_ROFS -30` (write-protected card), `E_NAMETOOLONG -36` (not 8.3, now `E_INVAL`),
   `E_ACCES -13`.
 * The argv convention should be in the spec (`abi` or `syscalls.exec`): user stack at entry

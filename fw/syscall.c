@@ -4,7 +4,7 @@
  *
  * User pointers are checked before use: they must lie in RAM above the BIOS area
  * (USER_BASE..RAM_END, which includes both framebuffers so a program may read a file
- * straight into a page). A bad pointer gives E_INVAL (the ABI has no E_FAULT yet). */
+ * straight into a page). A bad pointer gives E_FAULT. */
 #include "bios.h"
 #include "sd.h"
 #include "fs.h"
@@ -106,7 +106,7 @@ int bios_video_set_page(int page)
 
 int bios_open(int flags, const char *path)
 {
-    if (!user_str_ok(path, FS_PATH_MAX)) return E_INVAL;
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_FAULT;
     return fs_open(flags, path);
 }
 
@@ -118,7 +118,7 @@ int bios_close(int fd)
 
 int bios_read(int fd, unsigned len, void *buf)
 {
-    if (!user_range_ok(buf, len)) return E_INVAL;
+    if (!user_range_ok(buf, len)) return E_FAULT;
     if (fd == 0) {
         uint8_t *p = buf;
         unsigned n = 0;
@@ -137,7 +137,7 @@ int bios_read(int fd, unsigned len, void *buf)
 
 int bios_write(int fd, unsigned len, const void *buf)
 {
-    if (!user_range_ok(buf, len)) return E_INVAL;
+    if (!user_range_ok(buf, len)) return E_FAULT;
     if (fd == 1 || fd == 2) {
         const uint8_t *p = buf;
         for (unsigned i = 0; i < len; i++) putchar_both(p[i]);
@@ -155,13 +155,13 @@ int bios_lseek(int fd, int offset, int whence)
 
 int bios_opendir(const char *path)
 {
-    if (!user_str_ok(path, FS_PATH_MAX)) return E_INVAL;
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_FAULT;
     return fs_opendir(path);
 }
 
 int bios_readdir(int handle, struct dirent *ent)
 {
-    if (!user_range_ok(ent, sizeof *ent)) return E_INVAL;
+    if (!user_range_ok(ent, sizeof *ent)) return E_FAULT;
     return fs_readdir(handle, ent);
 }
 
@@ -178,14 +178,14 @@ static int sd_to_abi(int rc)
 
 int bios_sd_read_block(uint32_t lba, void *buf)
 {
-    if (!user_range_ok(buf, SD_BLOCK_SIZE)) return E_INVAL;
+    if (!user_range_ok(buf, SD_BLOCK_SIZE)) return E_FAULT;
     if (!sd_card.ready && sd_init() != SD_OK) return E_IO;
     return sd_to_abi(sd_read_block(lba, buf));
 }
 
 int bios_sd_write_block(uint32_t lba, const void *buf)
 {
-    if (!user_range_ok(buf, SD_BLOCK_SIZE)) return E_INVAL;
+    if (!user_range_ok(buf, SD_BLOCK_SIZE)) return E_FAULT;
     if (!sd_card.ready && sd_init() != SD_OK) return E_IO;
     return sd_to_abi(sd_write_block(lba, buf));
 }
@@ -198,8 +198,8 @@ int bios_exec(const char *path, const char *args)
     static struct exec_image img;
     static char args_copy[256];
     int rc;
-    if (!user_str_ok(path, FS_PATH_MAX)) return E_INVAL;
-    if (args && !user_str_ok(args, sizeof args_copy)) return E_INVAL;
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_FAULT;
+    if (args && !user_str_ok(args, sizeof args_copy)) return E_FAULT;
     rc = exec_prepare(path, &img);
     if (rc) return rc;
     if (args) strcpy(args_copy, args); else args_copy[0] = 0;
