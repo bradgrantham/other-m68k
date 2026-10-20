@@ -7,30 +7,18 @@
 * `tb/`: 68000 bus master, 70 ns SRAM model with timing checks, EPROM and 74AHCT245 models,
   whole-board testbench with 12 tests, a frame/pixel monitor and a bus-contention checker.
   `make -C hdl sim` ends in `RESULT: PASS` (12 tests, 0 errors; ~20 s).
-* **Real Atmel fits** (`make fit`, `fit.sh`; results table in README.md):
-  CPLD1 fits at 98/128 on pass 1. CPLD2 as written (no hardware TX, write-only control
-  registers, slot-tick UART counter, sentinel PS/2 shifter) reaches 127/128: it "fits" but
-  has no margin; the original with the hardware transmitter is refused outright.
-
-## Decision pending (CPLD2 budget)
-
-Either frame engine must leave CPLD2 (both measured at ~105/128):
-
-* `-DNO_PS2HW`: PS/2 becomes an interrupt per clock edge (PS2RDY = W1C edge flag, data bit
-  read live); the BIOS shifts bits in the level-2 ISR and bit-bangs host->device commands
-  with interrupts off. No board change. Emulator must model PS/2 at bit level.
-* `-DNO_SERHW`: serial moves to an external UART (68681 DUART): one more chip and crystal,
-  a chip-select and open-drain DTACK sharing in CPLD1, but hardware TX/RX with FIFOs, a
-  second port and a timer. The CPLD2 serial receiver and SERDATA go away.
-
-Already decided by the fitter (spec changes to make once the above is chosen): no hardware
-serial TX (SERDATA write ignored, SERTXBUSY reads 0); INTEN, SDIO, GPIO, USERIO.OUT are
-write-only (read as 0); PS/2 watchdog is ~3 HSYNC periods.
+* **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 103/128
+  and CPLD2 104/128, both pass 1 with the harvested pin blocks kept. JEDs in `build/fit/`.
+* **Spec rev 2 (2026-10-20)**: the user chose a 68681 DUART for serial after the fitter
+  showed CPLD2 could not hold both frame engines. CPLD1 decodes DUARTCS and releases DTACK in
+  the DUART region; CPLD2 lost the serial receiver and gained the DUART IRQ input; INTEN,
+  SDIO, GPIO, USERIO.OUT are write-only. The testbench has a 68681 bus-interface stub.
 
 ## Not done
 
-* Pin assignment blocks (`//PIN:`) and `-preassign keep` fits; depend on the board pinout.
-* SVF conversion and programming.
+* The pin blocks are a free-placement harvest, not yet reconciled with board routing.
+* SVF conversion and programming (ATMISP under wine, or prjbureau fuseconv; openocd not
+  installed).
 
 ## Findings against docs/architecture.md (please review)
 
@@ -61,9 +49,7 @@ write-only (read as 0); PS/2 watchdog is ~3 HSYNC periods.
    the firmware notes.
 6. **PS2ERR semantics.** The spec says both "framing/parity error on last byte" and "W1C".
    Implemented as: assigned (set or cleared) on every completed frame, and clearable by W1C.
-7. **Section 5 register select says A1..A4 in `spec/board.json` glue inputs** ("A1..A4") while
-   there are eight registers (A1..A3). CPLD2 takes `a[3:1]`; the A4 input is unused and
-   could be dropped from the pin list, or kept as a spare.
+7. (resolved) CPLD2 takes `a[3:1]`; the spec glue list says A1..A3.
 8. **Soft switches** "registered at the end of the write cycle": implemented as set while
    AS is low in the SWITCHES region with R/W low (idempotent, same visible behaviour since
    they only take effect at the frame start).

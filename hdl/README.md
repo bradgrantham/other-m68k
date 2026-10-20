@@ -15,6 +15,7 @@ from `generated/board_params.vh` (generated from `spec/board.json`), which both 
 | `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, EPROM, bus master, frame monitor, contention checker, 12 tests |
 | `Makefile` | `sim`, `wave`, `lint`, `synth`, `fit`, `clean` |
 | `fit.sh` | yosys -> EDIF -> Atmel fitter (wine); see "Synthesis and fitting" |
+| `pins.py` | harvest the fitter's pin choices into the sources' pin blocks / check them |
 | `STATUS.md` | what is done, what was found, what is open |
 
 ```
@@ -122,7 +123,7 @@ lands mid-frame. All compare constants are 2:1 muxes between the NTSC and PAL va
 Reset state: `ph=0`, `h=0`, `v=0`, `de=1`, `va=FB_PAGE0_WORD`, `overlay=1`, `page=0`,
 `pal=0`, all strobes inactive.
 
-## CPLD2 `cpld2_io` (parameter `SYNC_ACTIVE_LOW = 1`; options `-DNO_PS2HW`, `-DNO_SERHW`)
+## CPLD2 `cpld2_io` (parameter `SYNC_ACTIVE_LOW = 1`)
 
 | signal | dir | description |
 |---|---|---|
@@ -154,15 +155,9 @@ as in the spec. Address bits A4..A15 are not decoded (the register block is mirr
   bit 9 parity (accumulated into `ps2_par`), bit 10 stop: `ps2data <= ps2_sh`,
   `PS2RDY <= 1`, `PS2ERR <= !(stop & odd-parity-ok)`. A 3-bit watchdog counts HSYNC rising
   edges since the last PS/2 clock edge and aborts the frame after 3 (about 190 us).
-* **Serial receiver** (115200 8N1, `SERIAL_FAST_CLOCKS_PER_BIT` = 208 = 26 slots): the
-  falling edge on the synchronised RX starts a 5-bit slot-tick upcounter that terminates on
-  all-ones (loaded with 31-12 for the half bit, 31-25 for each full bit; the cheap counter
-  shape from docs/atf15xx.md). The sample shifter is 10 bits with a sentinel loaded in bit 9:
-  the sentinel reaching bit 0 marks the stop-bit sample and the byte sits in bits 9..2 (no
-  bit counter). A start sample that reads 1 aborts. A good stop bit moves the byte to
-  SERDATA and sets SERRX; SERRXOVR is set if SERRX was still set.
-* **No serial transmitter**: it did not fit (see below). `ser_tx` is GPIO.SERTX, a SERDATA
-  write is ignored and SERTXBUSY reads 0; the BIOS bit-bangs TX.
+* **Serial**: none. The 68681 DUART on the CPU bus does it (spec rev 2); CPLD2 takes the
+  DUART's open-drain IRQ on `duart_irq_n`, synchronises it, shows it as INTSTAT.DUARTIRQ and
+  encodes level 3 when INTEN.DUART is set.
 * **Write-only control registers**: INTEN, SDIO, GPIO and USERIO.OUT read as 0 (the BIOS keeps
   shadows). Every readable bit costs a product term and a fan-in on the data-bus LAB.
 * **Pixel path**: `pix` (the RGB pins) and `lo` as in the architecture doc (both zeroed when
@@ -206,8 +201,9 @@ Tests (all pass; the suite runs ~127 ms of board time in ~20 s):
    (7b) PAL soft switch: in effect at the next frame start; 312 lines, 192 slots
 8. PS/2 frame -> PS2DATA, PS2RDY, IPL 2, cleared by the read; bad parity -> PS2ERR (W1C);
    truncated frame + silence -> watchdog resynchronises
-9. serial RX: byte, IPL 3, overrun flag, W1C, 0x00 and 0xFF
-10. serial TX: SERDATA write ignored, SERTXBUSY reads 0, pin stays idle; GPIO.SERTX gating
+9. DUART cycles (stub 68681 with open-drain DTACK 2.5 X1 clocks after CS): DUARTCS, byte
+   read/write data and RS, CPLD1 releases DTACK, A5..A15 mirror, no IOCS/BUFEN/ROMCE
+10. DUART IRQ pin -> INTSTAT.DUARTIRQ, IPL 3 gated by INTEN.DUART
 11. no contention events, no SRAM timing violations, phase lock, every driver exercised
 
 ## Synthesis and fitting
@@ -228,37 +224,51 @@ symlink to it) with `atmel.std` copied in; and a missing `.pin` file makes it ex
 Only run one fit at a time. `docs/atf15xx.md` is the guide to reading `.fit` files and to
 what costs what on this part.
 
-### Results (free placement, `-preassign ignore`, JTAG on, power_reset on)
+### Results
+
+Current design (spec rev 2: DUART board), `-preassign keep` with the pin blocks in the
+sources, JTAG on, power_reset on, TDI/TMS pull-ups on:
+
+| chip | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in | I/O pins |
+|---|---|---|---|---|---|---|---|---|
+| `cpld1_mmu` | 1 | **103 / 128** | 70 | 21 | 112 | 371 | 27 / 40 | 63 / 64 (incl. 4 JTAG) |
+| `cpld2_io` | 1 | **104 / 128** | 71 | 8 | 105 | 309 | 27 / 40 | 56 / 64 (incl. 4 JTAG) |
+
+(Free placement gives 99 and 104.)  The pin blocks were harvested from a free fit with
+`pins.py harvest` and are **proposed**: nothing on the board depends on them yet; re-harvest
+after the schematic if routing wants pins moved, then re-verify with `pins.py check`.
+`build/fit/<chip>.pins.json` maps board signal names to pin numbers for the schematic.
+
+Ladder that led here (free placement, same strategies), for the record:
 
 | variant | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in |
 |---|---|---|---|---|---|---|---|
-| `cpld1_mmu` | 1 | **98 / 128** | 70 | 18 | 102 | 362 | 27 / 40 |
-| `cpld2_io` original, HW_TX=1 (107 flops) | - | refused ("design is large") | | | | | |
-| `cpld2_io` original, HW_TX=0 | fail | grouping fail at 125 | 88 | 70 | 195 | | 40 |
-| `cpld2_io` as now (no TX, write-only ctrl regs, slot-tick UART, sentinel PS/2) | 1 | 127 / 128 | 99 | 32 | 159 | 357 | 39 / 40 |
+| `cpld1_mmu`, rev 1 (no DUARTCS) | 1 | 98 / 128 | 70 | 18 | 102 | 362 | 27 / 40 |
+| `cpld2_io` rev 1, HW_TX=1 (107 flops) | - | refused ("design is large") | | | | | |
+| `cpld2_io` rev 1, HW_TX=0 | fail | grouping fail at 125 | 88 | 70 | 195 | | 40 |
+| rev 1 restructured (no TX, write-only ctrl regs, slot-tick UART, sentinel PS/2) | 1 | 127 / 128 | 99 | 32 | 159 | 357 | 39 / 40 |
 | ... minus ID register | 1 | 127 | 99 | 32 | 159 | 353 | 39 |
 | ... minus ID, USERIO | 1 | 126 | 95 | 14 | 131 | 421 | 36 |
 | ... minus ID, USERIO, LED1 | 1 | 125 | 94 | 14 | 130 | 416 | 36 |
 | ... minus ID, USERIO, LED1, DE/VSYNC pin bits | 1 | 125 | 94 | 14 | 130 | 414 | 35 |
 | byte-wide registers on D7..D0 (all features) | fail | grouping fail at 124 | | 28 | 152 | | 40 |
-| **`-DNO_PS2HW`** (PS/2 clock-edge interrupt, CPU shifts bits) | 2 | **105 / 128** | 76 | 11 | 116 | 343 | 27 |
-| **`-DNO_SERHW`** (external UART, e.g. 68681) | 1 | **104 / 128** | 70 | 8 | 103 | 309 | 29 |
-| `-DNO_PS2HW -DNO_SERHW` | 1 | 79 / 128 | 47 | 4 | 74 | 236 | 25 |
+| PS/2 receiver removed (clock-edge interrupt instead) | 2 | 105 / 128 | 76 | 11 | 116 | 343 | 27 |
+| serial receiver removed (external UART) -> chosen | 1 | 104 / 128 | 70 | 8 | 103 | 309 | 29 |
+| both removed | 1 | 79 / 128 | 47 | 4 | 74 | 236 | 25 |
 
 Reading: 127/128 "fits" but is not shippable (docs/atf15xx.md: aim for <= ~120 with no LAB
-above ~36 fan-in; at 126-128 every edit is a gamble). Removing the small features (ID,
-USERIO, a LED, live video bits) buys 2 cells: the fitter spends freed cells converting
-foldbacks into nodes. The two frame engines (PS/2 receiver, serial receiver) are the only
-levers that matter; removing either lands at ~105. Byte-wide registers made it worse: eight
-pins carrying six sources each exceed one LAB's fan-in.
+above ~36 fan-in). Removing the small features buys 2 cells because the fitter spends freed
+cells converting foldbacks into nodes. Only the frame engines matter; byte-wide registers
+made it worse (eight pins carrying six sources each exceed one LAB's fan-in).
 
-CPLD1 pins: 27 inputs + 31 outputs = 58 of the 60 regular I/O with JTAG on (2 spare), plus
-`clk24` on GCLK1 and `sysreset_n` on GCLR. CPLD2: 13 inputs, 22 bidirectional, 18 outputs =
-53 (7 spare).
+CPLD1 pins: 27 inputs + 32 outputs = 59 of the 60 regular I/O with JTAG on (1 spare), plus
+`clk24` on GCLK1 and `sysreset_n` on GCLR. CPLD2: 13 inputs, 22 bidirectional, 17 outputs =
+52 (8 spare).
 
 ### Flow to the device
 
-1. `make fit` (pin blocks `//PIN: net : pin` in the sources, `-preassign keep`).
+1. `make fit` (pin blocks `//PIN: net : pin` in the sources, `-preassign keep`); `make
+   pins-check` confirms the fitter honoured them.
 2. JED -> SVF with Atmel's ATMISP (wine) or `prjbureau`'s `fuseconv`.
 3. Program through the JTAG header with the FT232H:
    `openocd -f interface/ftdi/um232h.cfg -c 'adapter speed 1000; transport select jtag;

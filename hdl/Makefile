@@ -18,7 +18,7 @@ RTL      := cpld1_mmu.v cpld2_io.v
 TB       := tb/tb_m68k_bus.v tb/tb_sram.v tb/tb_system.v
 BUILD    := build
 
-.PHONY: all sim wave lint synth fit clean
+.PHONY: all sim wave lint synth fit pins-check clean
 
 all: lint sim synth
 
@@ -51,6 +51,10 @@ FITFLAGS ?= -preassign keep -strategy JTAG = on -strategy power_reset on -strate
 fit:
 	./fit.sh cpld1_mmu cpld1_mmu.v cpld1_mmu -- $(FITFLAGS)
 	./fit.sh cpld2_io  cpld2_io.v  cpld2_io  -- $(FITFLAGS)
+
+pins-check:
+	python3 pins.py check cpld1_mmu cpld1_mmu.v
+	python3 pins.py check cpld2_io  cpld2_io.v
 
 clean:
 	rm -rf $(BUILD)

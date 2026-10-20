@@ -33,6 +33,7 @@ module cpld1_mmu #(
     output wire        romce_n,
     output wire        iocs_n,
     output wire        bufen_n,       // 74AHCT245 enable
+    output wire        duartcs_n,     // 68681 chip select (CPU bus, byte registers)
     // to CPLD2 / AD724
     output reg         latch,         // high during F3 of every slot
     output reg         de,            // display enable, in the slot of the fetch
@@ -54,12 +55,13 @@ wire ram_region = (a[23:24-RAM_DECODE_BITS]      == RAM_BASE[23:24-RAM_DECODE_BI
 wire rom_region = (a[23:24-ROM_DECODE_BITS]      == ROM_BASE[23:24-ROM_DECODE_BITS]);
 wire io_region  = (a[23:24-IO_DECODE_BITS]       == IO_BASE[23:24-IO_DECODE_BITS]);
 wire sw_region  = (a[23:24-SWITCHES_DECODE_BITS] == SWITCHES_BASE[23:24-SWITCHES_DECODE_BITS]);
+wire du_region  = (a[23:24-DUART_DECODE_BITS]    == DUART_BASE[23:24-DUART_DECODE_BITS]);
 wire iack       = &a[23:4];
 
 reg  overlay;                          // set by reset; RAM region reads the EPROM while set
 wire rom_sel = rom_region | (ram_region & overlay);
 wire ram_sel = ram_region & ~overlay;
-wire mapped  = ram_region | rom_region | io_region | sw_region;
+wire mapped  = ram_region | rom_region | io_region | sw_region | du_region;
 wire as_low  = ~as_n;
 
 // ---------------------------------------------------------------- bus-cycle state
@@ -80,7 +82,10 @@ wire svc_now = as_low & (ram_sel | io_region) & ~serviced;
 assign romce_n = ~(as_low & rom_sel & rw);
 assign berr_n  = ~(as_low & ~mapped & ~iack);
 assign vpa_n   = ~(as_low & iack);
-assign dtack_n = ~(dtack_r | (as_low & (rom_sel | sw_region)));
+// DTACK is an open-drain bus shared with the DUART: released while AS is low in its region.
+wire   du_cycle = as_low & du_region;
+assign duartcs_n = ~du_cycle;
+assign dtack_n = du_cycle ? 1'bz : ~(dtack_r | (as_low & (rom_sel | sw_region)));
 assign weu_n   = ~(we_phase & ~uds_n);
 assign wel_n   = ~(we_phase & ~lds_n);
 assign ramoe_n = ~ramoe;
@@ -225,3 +230,68 @@ always @(posedge clk24 or negedge sysreset_n) begin
 end
 
 endmodule
+
+// ---- pin block (written by pins.py from a fitter run; see hdl/README.md) ----
+//PIN: CHIP "cpld1_mmu" ASSIGNED TO AN PLCC84
+//PIN: sysreset_n     : 1
+//PIN: A_9            : 4
+//PIN: A_10           : 5
+//PIN: A_16           : 6
+//PIN: A_15           : 8
+//PIN: A_11           : 9
+//PIN: A_12           : 10
+//PIN: A_13           : 11
+//PIN: A_14           : 12
+//PIN: vsync          : 15
+//PIN: A_22           : 16
+//PIN: A_4            : 17
+//PIN: A_5            : 18
+//PIN: A_6            : 20
+//PIN: A_7            : 21
+//PIN: A_8            : 22
+//PIN: berr_n         : 24
+//PIN: dtack_n        : 25
+//PIN: vpa_n          : 27
+//PIN: duartcs_n      : 28
+//PIN: A_19           : 29
+//PIN: A_20           : 30
+//PIN: A_21           : 31
+//PIN: ramoe_n        : 33
+//PIN: iocs_n         : 34
+//PIN: bufen_n        : 35
+//PIN: romce_n        : 36
+//PIN: cpuclk         : 37
+//PIN: A_1            : 39
+//PIN: A_3            : 40
+//PIN: A_18           : 41
+//PIN: A_0            : 44
+//PIN: rw             : 45
+//PIN: A_2            : 46
+//PIN: lds_n          : 48
+//PIN: uds_n          : 49
+//PIN: hsync          : 51
+//PIN: de             : 52
+//PIN: ma_0           : 54
+//PIN: ma_1           : 55
+//PIN: ma_2           : 56
+//PIN: ma_5           : 57
+//PIN: ma_4           : 58
+//PIN: ma_3           : 60
+//PIN: ma_6           : 61
+//PIN: ma_11          : 63
+//PIN: ma_10          : 64
+//PIN: ma_14          : 65
+//PIN: ma_12          : 67
+//PIN: ma_9           : 68
+//PIN: ma_8           : 69
+//PIN: ma_7           : 70
+//PIN: A_17           : 73
+//PIN: as_n           : 74
+//PIN: weu_n          : 75
+//PIN: wel_n          : 76
+//PIN: LATCH          : 77
+//PIN: ma_13          : 79
+//PIN: ma_15          : 80
+//PIN: ma_16          : 81
+//PIN: clk24          : 83
+// ---- end pin block ----

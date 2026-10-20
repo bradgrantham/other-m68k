@@ -43,6 +43,35 @@ module tb_ahct245 (
 endmodule
 
 // ---------------------------------------------------------------------------------
+// 68681 bus-interface stub: open-drain DTACK about 2.5 X1 periods (3.6864 MHz) after CS,
+// released after CS; reads return 8'hA0 | RS; writes are recorded.  IRQ is driven by the tb.
+module tb_duart (
+    input  wire       cs_n,
+    input  wire       rw,
+    input  wire [4:1] rs,
+    inout  wire [7:0] d,
+    output wire       dtack_n,         // open drain
+    output wire       driving
+);
+    localparam real T_X1 = 271.27;
+    reg ack = 1'b0;
+    reg [7:0] last_wr = 8'h00; reg [4:1] last_wr_rs = 4'h0; integer writes = 0, reads = 0;
+    assign dtack_n = ack ? 1'b0 : 1'bz;
+    wire   rd = ~cs_n & rw;
+    assign d = rd ? (8'hA0 | {4'b0000, rs}) : 8'bzzzzzzzz;
+    assign driving = rd;
+    always @(negedge cs_n) begin
+        #(2.5 * T_X1);
+        if (!cs_n) begin
+            ack = 1'b1;
+            if (rw) reads = reads + 1;
+            else begin writes = writes + 1; last_wr = d; last_wr_rs = rs; end
+        end
+    end
+    always @(posedge cs_n) begin #50; ack = 1'b0; end
+endmodule
+
+// ---------------------------------------------------------------------------------
 module tb_system;
 
 `ifdef BOARD_PARAMS_VH
@@ -52,7 +81,6 @@ module tb_system;
 
 localparam real T_CLK24 = 41.6667;
 localparam real T_PIN   = 7.5;             // CPLD output delay
-localparam real T_SERBIT = 1.0e9 / 115200.0;
 
 // ---- clocks and reset -----------------------------------------------------------
 reg clk24 = 1'b0;
@@ -60,7 +88,8 @@ always #(T_CLK24/2.0) clk24 = ~clk24;
 reg sysreset_n = 1'b0;
 
 // ---- CPLD1 ---------------------------------------------------------------------
-wire        cpuclk, dtack_n, berr_n, vpa_n, ramoe_n, weu_n, wel_n, romce_n, iocs_n, bufen_n;
+wire        cpuclk, berr_n, vpa_n, ramoe_n, weu_n, wel_n, romce_n, iocs_n, bufen_n, duartcs_n;
+tri1        dtack_n;                     // open-drain bus: CPLD1 and the DUART, 4.7k pull-up
 wire        latch, de, hsync, vsync;
 wire [16:0] ma;
 wire [23:1] a;
@@ -71,7 +100,7 @@ cpld1_mmu u1 (
     .a(a), .as_n(as_n), .uds_n(uds_n), .lds_n(lds_n), .rw(rw),
     .cpuclk(cpuclk), .dtack_n(dtack_n), .berr_n(berr_n), .vpa_n(vpa_n),
     .ma(ma), .ramoe_n(ramoe_n), .weu_n(weu_n), .wel_n(wel_n),
-    .romce_n(romce_n), .iocs_n(iocs_n), .bufen_n(bufen_n),
+    .romce_n(romce_n), .iocs_n(iocs_n), .bufen_n(bufen_n), .duartcs_n(duartcs_n),
     .latch(latch), .de(de), .hsync(hsync), .vsync(vsync)
 );
 
@@ -86,6 +115,7 @@ wire        #(T_PIN) wel_p    = wel_n;
 wire        #(T_PIN) romce_p  = romce_n;
 wire        #(T_PIN) iocs_p   = iocs_n;
 wire        #(T_PIN) bufen_p  = bufen_n;
+wire        #(T_PIN) duartcs_p = duartcs_n;
 wire        #(T_PIN) latch_p  = latch;
 wire        #(T_PIN) de_p     = de;
 wire        #(T_PIN) hsync_p  = hsync;
@@ -105,6 +135,11 @@ tb_m68k_bus cpu (
     .fast_phase(u1.ph), .driving(cpu_drv)
 );
 
+// ---- DUART (bus interface only) ----------------------------------------------------
+wire duart_drv;
+reg  duart_irq_n = 1'b1;
+tb_duart duart (.cs_n(duartcs_p), .rw(rw), .rs(a[4:1]), .d(cpu_d[7:0]), .dtack_n(dtack_n), .driving(duart_drv));
+
 // ---- EPROM ---------------------------------------------------------------------
 wire rom_drv;
 tb_rom rom (.a(a[16:1]), .ce_n(romce_p), .d(cpu_d), .driving(rom_drv));
@@ -122,9 +157,9 @@ tb_sram #(.NAME("SRAM-lo")) sram_lo (.a(ma_p), .d(sram_d[7:0]),  .ce_n(1'b0), .o
 // ---- CPLD2 -----------------------------------------------------------------------
 wire [2:0] ipl_n;
 wire [7:0] rgb;
-wire       sd_cs, sd_clk, sd_mosi, ser_tx, audio;
+wire       sd_cs, sd_clk, sd_mosi, audio;
 wire [1:0] led;
-reg        sd_miso = 1'b0, ser_rx = 1'b1, paljmp = 1'b0, nmibtn = 1'b0;
+reg        sd_miso = 1'b0, paljmp = 1'b0, nmibtn = 1'b0;
 tri1       ps2_clk, ps2_dat;
 tri1 [3:0] uio;
 reg        ps2_clk_drv = 1'b1, ps2_dat_drv = 1'b1;   // tb side of the open-drain lines
@@ -138,14 +173,14 @@ cpld2_io u2 (
     .d(sram_d), .ipl_n(ipl_n), .rgb(rgb),
     .sd_cs(sd_cs), .sd_clk(sd_clk), .sd_mosi(sd_mosi), .sd_miso(sd_miso),
     .ps2_clk(ps2_clk), .ps2_dat(ps2_dat),
-    .ser_tx(ser_tx), .ser_rx(ser_rx),
+    .duart_irq_n(duart_irq_n),
     .audio(audio), .led(led), .paljmp(paljmp), .nmibtn(nmibtn), .uio(uio)
 );
 
 // ---- bus contention checker ------------------------------------------------------
 // Driver counts on both buses; an overlap must persist >= 1 ns to count (filters the
 // zero-width ordering artefacts of same-timestep events).
-wire [2:0] cpu_bus_drivers  = cpu_drv + rom_drv + xh_da;
+wire [2:0] cpu_bus_drivers  = cpu_drv + rom_drv + xh_da + duart_drv;
 wire [2:0] sram_bus_drivers = sh_drv + xh_db + u2.io_rd;
 wire [2:0] #1 cpu_bus_drivers_f  = cpu_bus_drivers;
 wire [2:0] #1 sram_bus_drivers_f = sram_bus_drivers;
@@ -305,6 +340,9 @@ function integer exp_ram_clocks; input integer phase; begin
     endcase
 end endfunction
 
+// 68681 register offsets (byte registers at odd addresses; board_params.vh only carries CPLD blocks)
+localparam [4:0] DUART_SRA_OFFSET = 5'd3, DUART_TBA_OFFSET = 5'd7, DUART_RBA_OFFSET = 5'd7;
+
 // address helpers
 function [23:0] io_addr;  input [3:0] off; begin io_addr = IO_BASE + {off, 1'b0}; end endfunction
 function [23:0] sw_addr;  input [3:0] off; begin sw_addr = SWITCHES_BASE + {off, 1'b0}; end endfunction
@@ -336,21 +374,6 @@ task ps2_send_partial; input integer nbits; integer i; begin   // start + some d
     ps2_dat_drv = 1;
 end endtask
 
-task ser_send; input [7:0] b; integer i; begin
-    ser_rx = 0; #(T_SERBIT);
-    for (i = 0; i < 8; i = i + 1) begin ser_rx = b[i]; #(T_SERBIT); end
-    ser_rx = 1; #(T_SERBIT);
-end endtask
-
-reg [7:0] tx_byte; reg tx_ok; reg tx_seen;
-task ser_decode_tx; integer i; begin
-    tx_seen = 0;
-    @(negedge ser_tx);
-    tx_seen = 1;
-    #(T_SERBIT * 1.5);
-    for (i = 0; i < 8; i = i + 1) begin tx_byte[i] = ser_tx; #(T_SERBIT); end
-    tx_ok = ser_tx;                          // stop bit
-end endtask
 
 // ---- the tests -------------------------------------------------------------------
 integer i, k, n;
@@ -473,7 +496,7 @@ initial begin
     cpu.read_word(24'h800000);  check(cpu.last_status == 1, "BERR on read of 0x800000");
     cpu.write_word(24'h040000, 16'h0000); check(cpu.last_status == 1, "BERR on write just above RAM");
     cpu.read_word(24'hE20000);  check(cpu.last_status == 1, "BERR just above ROM");
-    cpu.read_word(24'hF20000);  check(cpu.last_status == 1, "BERR just above SWITCHES");
+    cpu.read_word(24'hF30000);  check(cpu.last_status == 1, "BERR just above DUART");
     cpu.read_word(24'hFFFFF3);  check(cpu.last_status == 2, "VPA on IACK level 1");
     cpu.read_word(24'hFFFFFF);  check(cpu.last_status == 2, "VPA on IACK level 7");
     cpu.read_word(24'h03FFFE);  check(cpu.last_status == 0, "top of RAM is mapped");
@@ -488,19 +511,19 @@ initial begin
     cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0000, "GPIO is write-only (reads 0)");
     cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0F00, "USERIO reset value (pins read high, OUT reads 0)");
     check(sd_cs === 1 && sd_clk === 1 && sd_mosi === 0, "SDIO reset value on the pins");
-    check(ps2_clk === 1'b1 && ps2_dat === 1'b1 && ser_tx === 1'b1 && led === 2'b00, "GPIO reset value on the pins");
+    check(ps2_clk === 1'b1 && ps2_dat === 1'b1 && led === 2'b00 && audio === 1'b0, "GPIO reset value on the pins");
     cpu.write_word(io_addr(IO_INTEN_OFF), 16'hFFFF);
     cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h0000, "INTEN still reads 0 after write");
     check_eq(u2.inten, 4'hF, "INTEN written (4 bits)");
     cpu.write_word(io_addr(IO_INTEN_OFF), 16'h0000);
-    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h003F);
+    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h001F);
     check(led === 2'b11 && audio === 1'b1, "LEDs and audio follow GPIO");
     cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0000, "GPIO reads 0");
-    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0004);        // pull PS/2 lines low, LEDs off, SERTX idle
+    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0000);        // pull PS/2 lines low, LEDs off
     check(ps2_clk === 1'b0 && ps2_dat === 1'b0 && led === 2'b00, "PS/2 open-drain pulled low");
     cpu.read_word(io_addr(IO_INTSTAT_OFF));
     check(cpu.last_data[INTSTAT_PS2CLK_BIT] == 0 && cpu.last_data[INTSTAT_PS2DAT_BIT] == 0, "INTSTAT shows PS/2 pins low");
-    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0007);
+    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0003);
     check(ps2_clk === 1'b1 && ps2_dat === 1'b1, "PS/2 lines released");
     sd_miso = 1;
     cpu.write_word(io_addr(IO_SDIO_OFF), 16'h0004);
@@ -513,7 +536,7 @@ initial begin
     cpu.write_word(io_addr(IO_USERIO_OFF), 16'h000F);
     paljmp = 1;
     cpu.read_word(io_addr(IO_INTSTAT_OFF));
-    check(cpu.last_data[INTSTAT_PALJMP_BIT] == 1 && cpu.last_data[INTSTAT_SDMISO_BIT] == 1 && cpu.last_data[INTSTAT_SERRXPIN_BIT] == 1, "INTSTAT live pins");
+    check(cpu.last_data[INTSTAT_PALJMP_BIT] == 1 && cpu.last_data[INTSTAT_SDMISO_BIT] == 1 && cpu.last_data[INTSTAT_DUARTIRQ_BIT] == 0, "INTSTAT live pins");
     paljmp = 0;
     // IO cycles are slot aligned like RAM
     cpu.read_word(24'h001000);
@@ -633,43 +656,35 @@ initial begin
     end_test;
 
     // ------------------------------------------------------------------ 9
-    begin_test("serial RX byte injection");
-    cpu.write_word(io_addr(IO_INTEN_OFF), 1 << INTEN_SERRX_BIT);
-    ser_send(8'h55);
-    #2000;
-    check_eq(~ipl_n & 3'b111, IRQ_SERRX_LEVEL, "IPL = SERRX level");
-    cpu.read_word(io_addr(IO_INTSTAT_OFF));
-    check(cpu.last_data[INTSTAT_SERRX_BIT] == 1 && cpu.last_data[INTSTAT_SERRXOVR_BIT] == 0, "SERRX set, no overrun");
-    cpu.read_word(io_addr(IO_SERDATA_OFF)); check_eq(cpu.last_data, 16'h0055, "SERDATA 0x55");
-    #200; check_eq(ipl_n, 3'b111, "IPL idle after SERDATA read");
-    ser_send(8'hA3); ser_send(8'h0F);                      // second byte before the first is read
-    #2000;
-    cpu.read_word(io_addr(IO_INTSTAT_OFF));
-    check(cpu.last_data[INTSTAT_SERRX_BIT] == 1 && cpu.last_data[INTSTAT_SERRXOVR_BIT] == 1, "SERRX and SERRXOVR");
-    cpu.read_word(io_addr(IO_SERDATA_OFF)); check_eq(cpu.last_data, 16'h000F, "SERDATA holds the latest byte");
-    cpu.write_word(io_addr(IO_INTSTAT_OFF), 1 << INTSTAT_SERRXOVR_BIT);
-    cpu.read_word(io_addr(IO_INTSTAT_OFF));
-    check(cpu.last_data[INTSTAT_SERRX_BIT] == 0 && cpu.last_data[INTSTAT_SERRXOVR_BIT] == 0, "flags cleared");
-    ser_send(8'h00); ser_send(8'hFF);
-    #2000;
-    cpu.read_word(io_addr(IO_SERDATA_OFF)); check_eq(cpu.last_data, 16'h00FF, "SERDATA 0xFF");
-    cpu.write_word(io_addr(IO_INTEN_OFF), 0);
-    cpu.write_word(io_addr(IO_INTSTAT_OFF), 16'hFFFF);
+    begin_test("DUART cycles: DUARTCS, DTACK from the chip, CPLD1 releases DTACK");
+    check(duartcs_n === 1'b1, "DUARTCS idle high");
+    cpu.read_byte(DUART_BASE + DUART_SRA_OFFSET);
+    check(cpu.last_status == 0, "DUART byte read gets DTACK");
+    check(cpu.last_clocks > 4, "DUART read waited for the chip");
+    check_eq(cpu.last_data[7:0], 8'hA0 | DUART_SRA_OFFSET[4:1], "DUART read data (RS = A4..A1)");
+    check_eq(duart.reads, 1, "one DUART read strobe");
+    cpu.write_byte(DUART_BASE + DUART_TBA_OFFSET, 8'h5A);
+    check(cpu.last_status == 0, "DUART byte write gets DTACK");
+    check_eq(duart.writes, 1, "one DUART write strobe");
+    check_eq(duart.last_wr, 8'h5A, "DUART write data");
+    check_eq(duart.last_wr_rs, DUART_TBA_OFFSET[4:1], "DUART write register select");
+    cpu.read_byte(DUART_BASE + 24'h00FF00 + DUART_RBA_OFFSET);   // A5..A15 ignored
+    check(cpu.last_status == 0 && cpu.last_data[7:0] == (8'hA0 | DUART_RBA_OFFSET[4:1]), "DUART mirror");
+    check(iocs_n === 1'b1 && bufen_n === 1'b1 && romce_n === 1'b1, "no IOCS/BUFEN/ROMCE during DUART cycles");
+    cpu.read_word(24'h001000);  check(cpu.last_status == 0, "RAM still answers after DUART cycles");
     end_test;
 
     // ------------------------------------------------------------------ 10
-    begin_test("serial TX via SERDATA");
-    check(ser_tx === 1'b1, "TX idles high");
-    cpu.write_word(io_addr(IO_SERDATA_OFF), 16'h00C9);     // ignored: no hardware transmitter
+    begin_test("DUART IRQ -> INTSTAT.DUARTIRQ and IPL 3");
+    duart_irq_n = 0; #300;
+    check_eq(ipl_n, 3'b111, "IPL idle while INTEN.DUART clear");
     cpu.read_word(io_addr(IO_INTSTAT_OFF));
-    check(cpu.last_data[INTSTAT_SERTXBUSY_BIT] == 0, "SERTXBUSY reads 0 (no hardware TX)");
-    #(T_SERBIT * 2);
-    check(ser_tx === 1'b1, "TX stays idle on SERDATA write");
-    // GPIO.SERTX = 0 forces the pin low (software bit-bang still works)
-    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0003);
-    check(ser_tx === 1'b0, "GPIO.SERTX drives the pin low");
-    cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0007);
-    check(ser_tx === 1'b1, "TX idle again");
+    check(cpu.last_data[INTSTAT_DUARTIRQ_BIT] == 1, "INTSTAT.DUARTIRQ follows the pin");
+    cpu.write_word(io_addr(IO_INTEN_OFF), 1 << INTEN_DUART_BIT);
+    #300; check_eq(~ipl_n & 3'b111, IRQ_DUART_LEVEL, "IPL = DUART level");
+    duart_irq_n = 1; #300;
+    check_eq(ipl_n, 3'b111, "IPL idle when the DUART releases IRQ");
+    cpu.write_word(io_addr(IO_INTEN_OFF), 0);
     end_test;
 
     // ------------------------------------------------------------------ 11
