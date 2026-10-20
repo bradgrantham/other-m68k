@@ -4,15 +4,16 @@
 #include <stdint.h>
 #include "hw.h"
 
-enum emu_region_kind { EMU_RAM, EMU_ROM, EMU_IO, EMU_SWITCHES };
+enum emu_region_kind { EMU_RAM, EMU_ROM, EMU_IO, EMU_SWITCHES, EMU_DUART };
 struct emu_region { const char *name; uint32_t base, size; enum emu_region_kind kind; };
 static const struct emu_region emu_regions[] = {
     { "RAM", 0x000000, 0x040000, EMU_RAM },
     { "ROM", 0xE00000, 0x020000, EMU_ROM },
     { "IO", 0xF00000, 0x010000, EMU_IO },
     { "SWITCHES", 0xF10000, 0x010000, EMU_SWITCHES },
+    { "DUART", 0xF20000, 0x010000, EMU_DUART },
 };
-#define EMU_REGION_COUNT 4
+#define EMU_REGION_COUNT 5
 
 static const char *const emu_io_reg_names[] = {
     "INTSTAT",
@@ -20,7 +21,7 @@ static const char *const emu_io_reg_names[] = {
     "SDIO",
     "GPIO",
     "PS2DATA",
-    "SERDATA",
+    "?",
     "USERIO",
     "ID",
 };
@@ -32,6 +33,25 @@ static const char *const emu_switches_reg_names[] = {
     "PAL",
 };
 #define EMU_SW_REG_COUNT 4
+static const char *const emu_duart_reg_names[] = {
+    "MRA",
+    "SRA/CSRA",
+    "CRA",
+    "RBA/TBA",
+    "IPCR/ACR",
+    "ISR/IMR",
+    "CUR/CTUR",
+    "CLR/CTLR",
+    "MRB",
+    "SRB/CSRB",
+    "CRB",
+    "RBB/TBB",
+    "IVR",
+    "IP/OPCR",
+    "START_CTR/OPR_SET",
+    "STOP_CTR/OPR_RESET",
+};
+#define EMU_DUART_REG_COUNT 16
 static const char *const emu_syscall_names[] = {
     "exit",
     "putchar",

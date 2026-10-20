@@ -14,20 +14,21 @@ this file explains the mechanism. If the two disagree, fix the spec and regenera
    |  /2 -> CPUCLK (12 MHz)             | LATCH  |  (ATF1508AS)                |
    |  decode, overlay, DTACK/BERR/VPA   |------->|  video word latch -> RGB332 |--> 8 R-DACs --> AD724 --> composite
    |  SRAM addr mux + video counter     | DE,HS, |  interrupt ctrl -> IPL0..2  |
-   |  H/V timing -> HSYNC,VSYNC         |  VS    |  PS/2 rx, serial rx         |
+   |  H/V timing -> HSYNC,VSYNC         |  VS    |  PS/2 rx, DUART IRQ -> IPL  |
    |  soft switches (page, PAL)         |        |  SD / GPIO / LED / audio    |
+   |  DUARTCS                           |        |                             |
    +---+---------------+----------------+        +------+----------------------+
        |A1..A23,AS,     |MA0..16, RAMOE, WEU/WEL         | D0..D15 (SRAM-side bus)
        |UDS,LDS,RW      |                                |
    +---+------+     +---v----------------+    +----------+-----+
    |  68000   |     | 2x KM681000 SRAM   |====| 2x 74AHCT245   |==== CPU data bus ==== 2x 27C512 EPROM
-   | 12 MHz   |==== | (SRAM-side bus)    |    | (BUFEN, dir=RW)|
+   | 12 MHz   |==== | (SRAM-side bus)    |    | (BUFEN, dir=RW)|                  \== 68681 DUART (D0..D7) -> serial
    +----------+     +--------------------+    +----------------+
 ```
 
 Two data buses:
 
-* **CPU bus**: 68000, EPROMs, A-side of the transceivers.
+* **CPU bus**: 68000, EPROMs, the 68681 DUART (low byte only), A-side of the transceivers.
 * **SRAM-side bus**: SRAMs, CPLD2, B-side of the transceivers.
 
 The transceivers are enabled only during the CPU half of a slot for RAM and I/O cycles, so
@@ -127,6 +128,7 @@ sits in S4 with the address and (for writes) data stable, which is what the sche
 | ROM 0xE00000-0xE1FFFF | A23..A17 = 1110000 | immediate | read only; writes get DTACK and are ignored |
 | IO 0xF00000-0xF0FFFF | A23..A16 = 0xF0 | slot-aligned | CPLD2 registers, A1..A3 select |
 | SWITCHES 0xF10000-0xF1FFFF | A23..A16 = 0xF1 | immediate | write performs action; A1..A2 select |
+| DUART 0xF20000-0xF2FFFF | A23..A16 = 0xF2 | **from the DUART** | DUARTCS asserted; byte registers at odd addresses, A1..A4 -> RS1..RS4 |
 | IACK | A23..A4 all 1 (and FC=7, not checked) | VPA instead | autovector |
 | anything else | | **BERR** | bus error exception |
 
@@ -138,6 +140,12 @@ instruction does not reset the CPLDs, so the overlay does not come back under so
 
 **BERR** is asserted combinationally (AS & unmapped & !IACK) so the CPU sees it at its first
 DTACK sample. The firmware's bus-error handler prints the faulting address.
+
+**DTACK sharing**: DTACK is an open-drain bus with a 4.7 k pull-up. CPLD1 drives it (low,
+then high again at the end of the cycle) for RAM, ROM, IO and SWITCHES cycles and releases it
+(high-Z) while AS is low in the DUART region; the 68681's open-drain DTACK answers those
+cycles, about 2-3 of its 3.6864 MHz clocks after DUARTCS (the CPU simply waits). The DUART
+sits on the CPU bus (D0..D7), so BUFEN stays off and the video fetch is undisturbed.
 
 **Soft switches** (0xF10000 + 2n): decoded from A1..A2 on a write; PAGE and PAL flip-flops.
 PAGE takes effect when VA is reloaded at the start of the frame; PAL swaps the H/V
@@ -164,24 +172,24 @@ comparison constants at the start of the next frame.
 
 Registers are 16-bit at `IO_BASE + 2n`, selected by A1..A3; see the spec for bits.
 Reads: CPLD2 drives D during F5..F7 of a serviced I/O read (IOCS low & R/W high). Writes:
-CPLD2 latches D at E0 when IOCS low & R/W low.
+CPLD2 latches D at E0 when IOCS low & R/W low. INTEN, SDIO, GPIO and USERIO.OUT are
+write-only (they read as 0): every readable bit is a product term and a fan-in on the
+data-bus LAB, and the fitter budget (section 7) does not allow them.
 
 * **Interrupt controller**: flags VBLANK (edge of VSYNC), HSYNC (edge of HSYNC), PS2RDY,
-  SERRX; enables in INTEN. IPL2..0 encodes the highest enabled pending level (1 VBLANK,
-  2 PS2, 3 SERRX, 4 HSYNC); NMIBTN pressed forces level 7. VPA is asserted by CPLD1 on
+  and the live DUART IRQ pin; enables in INTEN. IPL2..0 encodes the highest enabled pending
+  level (1 VBLANK, 2 PS2, 3 DUART, 4 HSYNC); NMIBTN pressed forces level 7. VPA is asserted by CPLD1 on
   IACK so all vectors are autovectors (24 + level).
 * **PS/2 receiver**: PS2_CLK synchronised to CLK24, falling-edge detect, 11-bit frame shift
   (start 0, 8 data LSB first, odd parity, stop 1). On the 11th bit: PS2DATA <- data, PS2RDY
-  <- 1, PS2ERR <- frame/parity bad. Bit counter resets if no PS/2 clock edge for 4 HSYNC
-  periods (~250 us) so a glitch cannot desynchronise it permanently. Host-to-device
+  <- 1, PS2ERR <- frame/parity bad. The frame aborts if no PS/2 clock edge for 3 HSYNC
+  periods (~190 us) so a glitch cannot desynchronise it permanently. Host-to-device
   transmission is bit-banged by software through GPIO.PS2CLK/PS2DAT (open-drain pins).
-* **Serial receiver**: fixed 115200 8N1. Start edge, sample at 1.5 then every 1.0 bit times
-  (208.33 fast clocks per bit; use 208, +0.16%). SERDATA holding register, SERRX flag,
-  SERRXOVR if a byte arrives before the previous was read.
-* **Serial transmitter**: software bit-bang on GPIO.SERTX from ROM (ROM fetches are
-  jitter-free; the GPIO write itself jitters 0/2 clocks, fine for 115200). If the fitter has
-  room, a hardware transmitter behind SERDATA/SERTXBUSY may be added; firmware detects it
-  by writing SERDATA and seeing SERTXBUSY go high.
+* **Serial**: not in the CPLDs. A 68681 DUART on the CPU bus provides channel A (FTDI
+  header, 38400 8N1, the top of the chip's fixed baud table) and channel B (expansion
+  header). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
+  set; INTSTAT.DUARTIRQ shows the pin. The DUART's IACK is tied high: all interrupts are
+  autovectored and the ISR reads the DUART's own ISR register.
 * **SD card**: SDIO register pins. Software SPI mode 0. 3.3 V card; CS/CLK/MOSI via
   resistor dividers, MISO 3.3 V straight into a TTL-threshold input.
 * **Audio**: GPIO.AUDIO -> 1 k / 10 nF low-pass -> 10 k : 2.2 k divider -> 10 uF -> 3.5 mm
@@ -196,20 +204,25 @@ from SYSRESET to the 68000's RESET and HALT (both pulled up separately, so the R
 instruction cannot pull HALT). SYSRESET is also the asynchronous reset of both CPLDs
 (overlay set, PAGE 0, NTSC, INTEN 0, GPIO released/idle, SDIO CS high).
 
-## 7. Pin budget (ATF1508AS PLCC84: 60 I/O with JTAG kept, plus 4 input-only)
+## 7. Pin and macrocell budget (ATF1508AS PLCC84: 60 I/O with JTAG kept, plus 4 input-only)
 
-CPLD1: 28 inputs (A1..A23, AS, UDS, LDS, RW, SYSRESET) + 31 outputs = 59 -> 56 regular I/O
-with three inputs on input-only pins. Spare ~4 (candidate: composite sync out).
+Measured with the Atmel fitter (hdl/README.md has the full ladder):
 
-CPLD2: 54 signals -> ~51 regular I/O. Spare ~9.
+* CPLD1: 27 inputs (A1..A23, AS, UDS, LDS, RW) + 32 outputs (incl. DUARTCS) = 59 regular
+  I/O of 60, plus CLK24 on GCLK1 and SYSRESET on GCLR. 98 of 128 macrocells before DUARTCS.
+* CPLD2: 13 inputs, 22 bidirectional, 17 outputs = 52 regular I/O. About 104 of 128
+  macrocells with the PS/2 receiver and no serial engine.
 
-Macrocell estimate: CPLD1 ~80 of 128 (17 VA + 17 mux + 8 H + 9 V + control). CPLD2 ~105
-of 128 with hardware serial RX and PS/2 RX; hardware serial TX only if it fits.
+History: the original plan (serial RX and PS/2 RX both in CPLD2, hardware serial TX
+optional) does not fit. The fitter refuses the transmitter outright and lands at 127/128
+without it even after the control registers were made write-only; removing small features
+(ID, USERIO, a LED) buys two cells. Either frame engine had to leave, and the serial side
+left for a 68681 (which also removes the interrupt-masking bit-banged transmitter).
 
 ## 8. Emulator timing model
 
 Musashi runs 764 x 262 = 200,168 CPU clocks per NTSC frame (768 x 312 = 239,616 for PAL).
 Per line: HSYNC flag at the line's sync start; VBLANK flag at the
 first vsync line. RAM accesses may optionally add the alignment penalty (average +1 clock)
-for realism; ROM accesses none. Serial TX is decoded from GPIO.SERTX edges using the cycle
-counter at 104.17 cycles per bit.
+for realism; ROM accesses none. The 68681 is modelled at register level (FIFOs, status,
+interrupts, baud-independent delivery); channel A is the emulator's serial console.

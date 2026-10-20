@@ -10,7 +10,7 @@ emulator, all generated from one specification.
 | ROM | 128 KB: 2x M27C512 EPROM, word wide, overlaid at address 0 at reset |
 | Video | memory-mapped 320x240, 8 bpp RGB332 framebuffer, two pages; AD724 composite encoder, NTSC (PAL by build option) |
 | Glue | two ATF1508AS CPLDs ("MMU" and "I/O + shifter"), two 74AHCT245 bus transceivers |
-| I/O | PS/2 keyboard, bit-banged SD card (microSD), 115200 TTL serial, 1-bit audio, 2 LEDs, 4 GPIO, NMI button |
+| I/O | PS/2 keyboard, bit-banged SD card (microSD), 68681 DUART serial (38400 8N1 on an FTDI header), 1-bit audio, 2 LEDs, 4 GPIO, NMI button |
 | Power | USB-C, 5 V |
 
 ## Layout

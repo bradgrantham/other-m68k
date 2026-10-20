@@ -28,6 +28,9 @@ def write(path, text):
         return True
     return False
 
+def block_prefix(blk_name):
+    return {"io": "IO", "switches": "SW"}.get(blk_name, blk_name.upper())
+
 def field_items(reg):
     for f in reg.get("fields", []):
         w = f.get("width", 1)
@@ -81,13 +84,14 @@ def gen_hw_h(d):
         A("#define VIDEO_%s_FRAME_CLOCKS (%dUL * %dUL)" % (S, t["line_clocks"], t["lines"]))
     A("\n/* ---- registers ---- */")
     for blk_name, blk in d["registers"].items():
-        prefix = "IO" if blk_name == "io" else "SW"
+        prefix = block_prefix(blk_name)
+        ctype = "uint16_t" if blk["width"] == 16 else "uint8_t"
         A("#define %s_BASE %sUL" % (prefix, hx(blk["base"])))
         for r in blk["regs"]:
             rn = cident(r["name"])
             A("#define %s_%s_OFFSET %d" % (prefix, rn, r["offset"]))
             A("#define %s_%s_ADDR (%s_BASE + %d)" % (prefix, rn, prefix, r["offset"]))
-            A("#define %s_%s (*(volatile uint16_t *)%s_%s_ADDR)" % (prefix, rn, prefix, rn))
+            A("#define %s_%s (*(volatile %s *)%s_%s_ADDR)" % (prefix, rn, ctype, prefix, rn))
             if "reset" in r:
                 A("#define %s_%s_RESET %s" % (prefix, rn, hx(r["reset"], 4)))
             for f, w, mask in field_items(r):
@@ -113,9 +117,11 @@ def gen_hw_h(d):
     A("\n/* ---- syscall ABI ---- */")
     A("#define SYSCALL_TRAP %d" % d["syscall"]["trap"])
     A("#define SYSCALL_VECTOR %d" % (32 + d["syscall"]["trap"]))
-    A("\n/* ---- serial ---- */")
+    A("\n/* ---- serial (68681 channel A) ---- */")
     A("#define SERIAL_BAUD %d" % d["serial"]["baud"])
-    A("#define SERIAL_CLOCKS_PER_BIT (CPU_CLOCK_HZ / SERIAL_BAUD)")
+    A("#define DUART_XTAL_HZ %dUL" % d["serial"]["xtal_hz"])
+    A("#define SERIAL_CSR_VALUE %s   /* CSRA: RX and TX baud code */" % hx(d["serial"]["csr"], 2))
+    A("#define SERIAL_ACR_BRG_SET %d  /* ACR[7] */" % d["serial"]["acr_brg_set"])
     A("\n#endif /* HW_H */")
     return "\n".join(o) + "\n"
 
@@ -140,7 +146,7 @@ def gen_hw_inc(d):
         for k in ("line_clocks", "h_active", "h_front", "h_sync", "h_back", "lines", "v_active", "v_bottom", "v_sync", "v_top"):
             eq("VIDEO_%s_%s" % (std.upper(), k.upper()), t[k])
     for blk_name, blk in d["registers"].items():
-        prefix = "IO" if blk_name == "io" else "SW"
+        prefix = block_prefix(blk_name)
         eq(prefix + "_BASE", hx(blk["base"]))
         for r in blk["regs"]:
             rn = cident(r["name"])
@@ -155,7 +161,9 @@ def gen_hw_inc(d):
         eq("IRQ_%s_LEVEL" % nm, i["level"])
         eq("IRQ_%s_VECTOR_ADDR" % nm, hx((24 + i["level"]) * 4, 3))
     eq("SYSCALL_TRAP", d["syscall"]["trap"])
-    eq("SERIAL_CLOCKS_PER_BIT", b["cpu_clock_hz"] // d["serial"]["baud"])
+    eq("SERIAL_BAUD", d["serial"]["baud"])
+    eq("SERIAL_CSR_VALUE", hx(d["serial"]["csr"], 2))
+    eq("SERIAL_ACR_BRG_SET", d["serial"]["acr_brg_set"])
     A("")
     for s in d["syscalls"]:
         eq("SYS_" + s["name"], s["num"])
@@ -219,7 +227,9 @@ def gen_vh(d):
         assert t["v_active"] + t["v_bottom"] + t["v_sync"] + t["v_top"] == t["lines"]
     A("")
     for blk_name, blk in d["registers"].items():
-        prefix = "IO" if blk_name == "io" else "SW"
+        if blk["width"] != 16:
+            continue                     # external chips (DUART) are not CPLD registers
+        prefix = block_prefix(blk_name)
         for r in blk["regs"]:
             A("localparam [3:0] %s_%s_OFF = 4'd%d; // byte offset %d" % (prefix, cident(r["name"]), r["offset"] // 2, r["offset"]))
             for f, w, mask in field_items(r):
@@ -229,7 +239,6 @@ def gen_vh(d):
     A("")
     for i in d["interrupts"]:
         A("localparam [2:0] IRQ_%s_LEVEL = 3'd%d;" % (cident(i["name"]), i["level"]))
-    A("localparam SERIAL_FAST_CLOCKS_PER_BIT = %d; // %d / %d" % (round(b["osc_hz"] / d["serial"]["baud"]), b["osc_hz"], d["serial"]["baud"]))
     A("")
     A("`endif")
     return "\n".join(o) + "\n"
@@ -337,22 +346,23 @@ def gen_bios_protos(d):
 def gen_emu_map(d):
     o = ["/* %s */" % HDR, "#ifndef EMU_MAP_H", "#define EMU_MAP_H", "#include <stdint.h>", '#include "hw.h"', ""]
     A = o.append
-    A("enum emu_region_kind { EMU_RAM, EMU_ROM, EMU_IO, EMU_SWITCHES };")
+    A("enum emu_region_kind { EMU_RAM, EMU_ROM, EMU_IO, EMU_SWITCHES, EMU_DUART };")
     A("struct emu_region { const char *name; uint32_t base, size; enum emu_region_kind kind; };")
     A("static const struct emu_region emu_regions[] = {")
     kinds = {"ram": "EMU_RAM", "rom": "EMU_ROM"}
     for r in d["memory_map"]:
-        k = kinds.get(r["kind"], "EMU_SWITCHES" if r["name"] == "SWITCHES" else "EMU_IO")
+        k = kinds.get(r["kind"], {"SWITCHES": "EMU_SWITCHES", "DUART": "EMU_DUART"}.get(r["name"], "EMU_IO"))
         A('    { "%s", %s, %s, %s },' % (r["name"], hx(r["base"]), hx(r["size"]), k))
     A("};")
     A("#define EMU_REGION_COUNT %d" % len(d["memory_map"]))
     A("")
     for blk_name, blk in d["registers"].items():
-        prefix = "IO" if blk_name == "io" else "SW"
+        prefix = block_prefix(blk_name)
         A("static const char *const emu_%s_reg_names[] = {" % blk_name)
         names = {}
         for r in blk["regs"]:
-            names[r["offset"] // 2] = r["name"]
+            i = r["offset"] // 2
+            names[i] = (names[i] + "/" + r["name"]) if i in names else r["name"]
         cnt = max(names) + 1
         for i in range(cnt):
             A('    "%s",' % names.get(i, "?"))
@@ -394,7 +404,9 @@ def gen_doc(d):
         A("| %s | %d | %d/%d/%d/%d | %d | %d/%d/%d/%d | %.3f kHz, %.2f Hz |" % (std.upper(), t["line_clocks"], t["h_active"], t["h_front"], t["h_sync"], t["h_back"], t["lines"], t["v_active"], t["v_bottom"], t["v_sync"], t["v_top"], hz / 1e3, hz / t["lines"]))
     A(""); A(v["timing_note"]); A(""); A(v["line_origin"]); A("")
     for blk_name, blk in d["registers"].items():
-        A("## %s registers (base %s, %d-bit)" % (blk_name.upper(), hx(blk["base"]), blk["width"])); A("")
+        A("## %s registers (base %s, %d-bit%s)" % (blk_name.upper(), hx(blk["base"]), blk["width"], ", byte access at odd addresses" if blk["width"] == 8 else "")); A("")
+        if "desc" in blk:
+            A(blk["desc"]); A("")
         for r in blk["regs"]:
             A("### %s @ %s (%s)%s" % (r["name"], hx(n(blk["base"]) + r["offset"]), r["access"].upper(), (" reset %s" % hx(r["reset"], 4)) if "reset" in r else ""))
             A(""); A(r["desc"]); A("")
@@ -402,7 +414,7 @@ def gen_doc(d):
                 A("| Bit | Name | Description |"); A("|---|---|---|")
                 for f, w, mask in field_items(r):
                     bits = "%d" % f["bit"] if w == 1 else "%d..%d" % (f["bit"] + w - 1, f["bit"])
-                    A("| %s | %s | %s%s |" % (bits, f["name"], f["desc"], " (read only)" if f.get("ro") else ""))
+                    A("| %s | %s | %s%s%s |" % (bits, f["name"], f["desc"], " (read only)" if f.get("ro") else "", " (write only)" if f.get("wo") else ""))
                 A("")
     A("## Interrupts"); A(""); A(d["interrupt_mode"]); A("")
     A("| Level | Name | Vector | Source | Description |"); A("|---|---|---|---|---|")
@@ -434,6 +446,8 @@ def gen_doc(d):
             A("* %s: %s" % (kind, ", ".join(sigs)))
         A("")
     A(d["glue"]["bus_buffers"]); A("")
+    if "dtack" in d["glue"]:
+        A(d["glue"]["dtack"]); A("")
     return "\n".join(o)
 
 # ---------------------------------------------------------------- main
@@ -499,8 +513,12 @@ def validate(d):
         ints = sum(1 for t, _ in s["args"] if not is_pointer(t)); ptrs = len(s["args"]) - ints
         assert ints <= 3 and ptrs <= 2, "syscall %s exceeds register budget" % s["name"]
     for blk in d["registers"].values():
-        offs = [r["offset"] for r in blk["regs"]]
-        assert len(offs) == len(set(offs)) and all(o % 2 == 0 for o in offs)
+        offs = [(r["offset"], r["access"]) for r in blk["regs"]]
+        assert len(offs) == len(set(offs)), "duplicate register offset/access"
+        for off, acc in offs:
+            assert off % 2 == (0 if blk["width"] == 16 else 1), "register offset parity vs block width"
+            if acc == "rw":
+                assert not any(o == off and a != "rw" for o, a in offs), "rw register shares an offset"
         for r in blk["regs"]:
             used = 0
             for f, w, mask in field_items(r):

@@ -1,7 +1,7 @@
 <!-- Generated from spec/board.json by tools/gen.py -- DO NOT EDIT; edit the spec and run `make gen`. -->
 # other-m68k hardware reference
 
-68000 SBC: 256K SRAM, 128K EPROM, memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, TTL serial, 1-bit audio.
+68000 SBC: 256K SRAM, 128K EPROM, memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 1-bit audio.
 
 CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 
@@ -11,8 +11,9 @@ CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 |---|---|---|---|---|---|
 | RAM | 0x000000 | 0x03FFFF | 256 KB | ram | 256 KB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). At reset the ROM is overlaid here until the first access to the ROM region. |
 | ROM | 0xE00000 | 0xE1FFFF | 128 KB | rom | 128 KB EPROM. Read-only; zero wait states; not subject to slot alignment. Vectors at offset 0 (overlaid at 0x000000 at reset). |
-| IO | 0xF00000 | 0xF0FFFF | 64 KB | io | CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). |
+| IO | 0xF00000 | 0xF0FFFF | 64 KB | io | CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). INTEN, SDIO, GPIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. |
 | SWITCHES | 0xF10000 | 0xF1FFFF | 64 KB | io | CPLD1 soft switches. Write-only; writing any value to the address performs the action. Reads return garbage. |
+| DUART | 0xF20000 | 0xF2FFFF | 64 KB | io | 68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use byte accesses only. DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned. |
 
 BERR asserted (bus error exception) for any access outside the regions above, except the interrupt-acknowledge pattern A23..A4 all ones, which is autovectored via VPA.
 
@@ -47,61 +48,56 @@ Horizontal count 0 = first active pixel; vertical count 0 = first active line. T
 
 ### INTSTAT @ 0xF00000 (RW)
 
-Interrupt and pin status. Reading returns flags and live pin levels. Writing 1 to a clearable bit clears it.
+Interrupt and pin status. Reading returns flags and live pin levels; bits not listed read 0. Writing 1 to a clearable bit clears it.
 
 | Bit | Name | Description |
 |---|---|---|
 | 0 | VBLANK | Set at the leading edge of vertical sync (3 lines after the last active line on NTSC). W1C. |
 | 1 | HSYNC | Set at start of each horizontal sync. W1C. |
 | 2 | PS2RDY | PS/2 byte received; cleared by reading PS2DATA. |
-| 3 | SERRX | Serial byte received; cleared by reading SERDATA. |
-| 4 | SERTXBUSY | Hardware serial transmitter busy (reads 0 if TX is software-only). |
+| 3 | DUARTIRQ | Live level of the DUART IRQ pin, inverted (1 = DUART requesting). Read the DUART ISR for the cause. |
 | 5 | PS2ERR | PS/2 framing/parity error on last byte. W1C. |
-| 6 | SERRXOVR | Serial receive overrun. W1C. |
 | 7 | NMIBTN | Live level of the NMI/break pushbutton (1 = pressed). |
 | 8 | SDMISO | Live level of SD MISO. |
 | 9 | PS2CLK | Live level of PS/2 clock line. |
 | 10 | PS2DAT | Live level of PS/2 data line. |
-| 11 | SERRXPIN | Live level of serial RX pin. |
 | 12 | PALJMP | 1 = PAL jumper fitted (encoder built for PAL). |
 | 13 | VSYNCPIN | Live vertical sync (1 during vsync lines). |
 | 14 | DEPIN | Live display enable (1 during active video). |
 | 15 | HSYNCPIN | Live horizontal sync (1 during sync). |
 
-### INTEN @ 0xF00002 (RW) reset 0x0000
+### INTEN @ 0xF00002 (W) reset 0x0000
 
-Interrupt enables. A pending flag with its enable set drives IPL at the level listed in interrupts[].
+Interrupt enables (write-only, reads 0). A pending flag with its enable set drives IPL at the level listed in interrupts[].
 
 | Bit | Name | Description |
 |---|---|---|
 | 0 | VBLANK | Enable level-1 interrupt on VBLANK flag. |
 | 1 | HSYNC | Enable level-4 interrupt on HSYNC flag. |
 | 2 | PS2 | Enable level-2 interrupt on PS2RDY. |
-| 3 | SERRX | Enable level-3 interrupt on SERRX. |
+| 3 | DUART | Enable level-3 interrupt while the DUART IRQ pin is asserted. |
 
-### SDIO @ 0xF00004 (RW) reset 0x0003
+### SDIO @ 0xF00004 (W) reset 0x0003
 
-SD card SPI bit-bang port. Bits are pin levels.
+SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; MISO is read through INTSTAT.SDMISO.
 
 | Bit | Name | Description |
 |---|---|---|
 | 0 | CS | SD chip select pin (card selected when 0). |
 | 1 | CLK | SD clock pin. |
 | 2 | MOSI | SD MOSI pin. |
-| 3 | MISO | SD MISO pin (read only). (read only) |
 
-### GPIO @ 0xF00006 (RW) reset 0x0007
+### GPIO @ 0xF00006 (W) reset 0x0003
 
-Misc outputs. PS/2 lines are open-drain: 1 releases the line (reads via INTSTAT), 0 pulls it low.
+Misc outputs (write-only, reads 0). PS/2 lines are open-drain: 1 releases the line (read it via INTSTAT), 0 pulls it low.
 
 | Bit | Name | Description |
 |---|---|---|
 | 0 | PS2CLK | PS/2 clock drive (1 = release). |
 | 1 | PS2DAT | PS/2 data drive (1 = release). |
-| 2 | SERTX | Serial TX pin level (idle 1) for software bit-bang. |
-| 3 | AUDIO | 1-bit audio output. |
-| 4 | LED0 | Diagnostic LED 0 (1 = on). |
-| 5 | LED1 | Diagnostic LED 1 (1 = on). |
+| 2 | AUDIO | 1-bit audio output. |
+| 3 | LED0 | Diagnostic LED 0 (1 = on). |
+| 4 | LED1 | Diagnostic LED 1 (1 = on). |
 
 ### PS2DATA @ 0xF00008 (R)
 
@@ -111,26 +107,18 @@ Last PS/2 byte received (bits 7..0). Reading clears INTSTAT.PS2RDY.
 |---|---|---|
 | 7..0 | DATA | Received scan code byte. |
 
-### SERDATA @ 0xF0000A (RW)
-
-Read: last serial byte received (clears INTSTAT.SERRX). Write: transmit byte if hardware TX is fitted (check SERTXBUSY).
-
-| Bit | Name | Description |
-|---|---|---|
-| 7..0 | DATA | Serial data byte. |
-
 ### USERIO @ 0xF0000C (RW) reset 0x000F
 
-Four open-drain user GPIO pins on the expansion header. Write 1 to release, 0 to pull low; read back the pin levels in bits 11..8.
+Four open-drain user GPIO pins on the expansion header. Write 1 to release, 0 to pull low (OUT is write-only, reads 0); read the pin levels in bits 11..8.
 
 | Bit | Name | Description |
 |---|---|---|
-| 3..0 | OUT | Drive bits (1 = release). |
+| 3..0 | OUT | Drive bits (1 = release). (write only) |
 | 11..8 | IN | Pin levels (read only). (read only) |
 
-### ID @ 0xF0000E (R) reset 0x6801
+### ID @ 0xF0000E (R) reset 0x6802
 
-Board/glue identification: 0x68 in the upper byte, CPLD2 logic revision in the lower byte.
+Board/glue identification: 0x68 in the upper byte, CPLD2 logic revision in the lower byte (2 = DUART board).
 
 | Bit | Name | Description |
 |---|---|---|
@@ -155,21 +143,177 @@ Select NTSC (262-line) timing table. Default at reset.
 
 Select PAL (312-line) timing table.
 
+## DUART registers (base 0xF20000, 8-bit, byte access at odd addresses)
+
+MC68681 registers; one name per direction where read and write differ at the same offset.
+
+### MRA @ 0xF20001 (RW)
+
+Mode register: first access after reset or a 'reset MR pointer' command is MR1 (bits: 1..0 bits per char 00=5..11=8, 2 parity mode, 4..3 parity type, 5 error mode, 6 RX interrupt select, 7 RX RTS control), the next is MR2 (bits: 3..0 stop bits (0x7 = 1 stop), 4 CTS enable TX, 5 RTS control, 7..6 channel mode 00 = normal).
+
+### SRA @ 0xF20003 (R)
+
+Status register A.
+
+| Bit | Name | Description |
+|---|---|---|
+| 0 | RXRDY | Receiver ready: a character is in the FIFO. |
+| 1 | FFULL | Receiver FIFO full (3 characters). |
+| 2 | TXRDY | Transmitter ready to accept a character. |
+| 3 | TXEMT | Transmitter empty. |
+| 4 | OE | Overrun error. |
+| 5 | PE | Parity error (of the character at the FIFO top). |
+| 6 | FE | Framing error. |
+| 7 | RB | Received break. |
+
+### CSRA @ 0xF20003 (W)
+
+Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600).
+
+### CRA @ 0xF20005 (W)
+
+Command register: bits 1..0 RX enable/disable (01 enable, 10 disable), 3..2 TX enable/disable, 7..4 misc command (0001 reset MR pointer, 0010 reset RX, 0011 reset TX, 0100 reset error status, 0101 reset break-change interrupt).
+
+### RBA @ 0xF20007 (R)
+
+Receiver buffer A (FIFO top); reading pops the FIFO.
+
+### TBA @ 0xF20007 (W)
+
+Transmitter buffer A.
+
+### IPCR @ 0xF20009 (R)
+
+Input port change register.
+
+### ACR @ 0xF20009 (W)
+
+Auxiliary control: bit 7 baud-rate set (1 = set 2, used here), bits 6..4 counter/timer mode and source, bits 3..0 IP change interrupt enables.
+
+### ISR @ 0xF2000B (R)
+
+Interrupt status register.
+
+| Bit | Name | Description |
+|---|---|---|
+| 0 | TXRDYA | TxRDY A |
+| 1 | RXRDYA | RxRDY/FFULL A |
+| 2 | DBA | Change in break A |
+| 3 | CTR | Counter/timer ready |
+| 4 | TXRDYB | TxRDY B |
+| 5 | RXRDYB | RxRDY/FFULL B |
+| 6 | DBB | Change in break B |
+| 7 | IPC | Input port change |
+
+### IMR @ 0xF2000B (W)
+
+Interrupt mask register (same bits as ISR).
+
+| Bit | Name | Description |
+|---|---|---|
+| 0 | TXRDYA | TxRDY A |
+| 1 | RXRDYA | RxRDY/FFULL A |
+| 2 | DBA | Change in break A |
+| 3 | CTR | Counter/timer ready |
+| 4 | TXRDYB | TxRDY B |
+| 5 | RXRDYB | RxRDY/FFULL B |
+| 6 | DBB | Change in break B |
+| 7 | IPC | Input port change |
+
+### CUR @ 0xF2000D (R)
+
+Counter upper byte.
+
+### CTUR @ 0xF2000D (W)
+
+Counter/timer upper preset.
+
+### CLR @ 0xF2000F (R)
+
+Counter lower byte.
+
+### CTLR @ 0xF2000F (W)
+
+Counter/timer lower preset.
+
+### MRB @ 0xF20011 (RW)
+
+Mode register: first access after reset or a 'reset MR pointer' command is MR1B (bits: 1..0 bits per char 00=5..11=8, 2 parity mode, 4..3 parity type, 5 error mode, 6 RX interrupt select, 7 RX RTS control), the next is MR2B (bits: 3..0 stop bits (0x7 = 1 stop), 4 CTS enable TX, 5 RTS control, 7..6 channel mode 00 = normal).
+
+### SRB @ 0xF20013 (R)
+
+Status register B.
+
+| Bit | Name | Description |
+|---|---|---|
+| 0 | RXRDY | Receiver ready: a character is in the FIFO. |
+| 1 | FFULL | Receiver FIFO full (3 characters). |
+| 2 | TXRDY | Transmitter ready to accept a character. |
+| 3 | TXEMT | Transmitter empty. |
+| 4 | OE | Overrun error. |
+| 5 | PE | Parity error (of the character at the FIFO top). |
+| 6 | FE | Framing error. |
+| 7 | RB | Received break. |
+
+### CSRB @ 0xF20013 (W)
+
+Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600).
+
+### CRB @ 0xF20015 (W)
+
+Command register: bits 1..0 RX enable/disable (01 enable, 10 disable), 3..2 TX enable/disable, 7..4 misc command (0001 reset MR pointer, 0010 reset RX, 0011 reset TX, 0100 reset error status, 0101 reset break-change interrupt).
+
+### RBB @ 0xF20017 (R)
+
+Receiver buffer B.
+
+### TBB @ 0xF20017 (W)
+
+Transmitter buffer B.
+
+### IVR @ 0xF20019 (RW)
+
+Interrupt vector register. Unused: IACK is tied high and interrupts are autovectored.
+
+### IP @ 0xF2001B (R)
+
+Input port IP0..IP6 (unlatched).
+
+### OPCR @ 0xF2001B (W)
+
+Output port configuration register.
+
+### START_CTR @ 0xF2001D (R)
+
+Address-triggered command: start counter/timer.
+
+### OPR_SET @ 0xF2001D (W)
+
+Output port register: set the bits written as 1.
+
+### STOP_CTR @ 0xF2001F (R)
+
+Address-triggered command: stop counter/timer.
+
+### OPR_RESET @ 0xF2001F (W)
+
+Output port register: clear the bits written as 1.
+
 ## Interrupts
 
-autovector (VPA asserted on IACK); vector = 24 + level
+autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied inactive); vector = 24 + level
 
 | Level | Name | Vector | Source | Description |
 |---|---|---|---|---|
 | 1 | VBLANK | 25 (0x064) | INTSTAT.VBLANK & INTEN.VBLANK | Leading edge of vertical sync, ~60 Hz (NTSC) / 50 Hz (PAL). |
 | 2 | PS2 | 26 (0x068) | INTSTAT.PS2RDY & INTEN.PS2 | PS/2 byte available. |
-| 3 | SERRX | 27 (0x06C) | INTSTAT.SERRX & INTEN.SERRX | Serial byte available. |
+| 3 | DUART | 27 (0x06C) | DUART IRQ pin & INTEN.DUART | 68681 interrupt (receiver ready, transmitter ready, counter/timer, ...): read the DUART ISR. Level sensitive; the DUART IACK pin is tied high, so this is autovectored like the others. |
 | 4 | HSYNC | 28 (0x070) | INTSTAT.HSYNC & INTEN.HSYNC | Line tick, 15.7 kHz; audio sample timer. |
 | 7 | NMI | 31 (0x07C) | pushbutton | Break into monitor. Edge-triggered by the 68000. |
 
 ## Peripherals
 
-**serial**: baud: 115200; format: 8N1; tx: software bit-bang on GPIO.SERTX (hardware TX via SERDATA if CPLD2 capacity allows); rx: hardware receiver, 8-bit holding register SERDATA; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant
+**serial**: device: MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header); baud: 38400; format: 8N1; xtal_hz: 3686400; csr: 0xCC; acr_brg_set: 1; init: MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x80, CSRA=0xCC, CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts; note: 38400 is the highest rate in the 68681's fixed table; the counter/timer or the X1/16 input could give more but are not used.; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected
 
 **ps2**: rx: hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY; tx: software bit-bang via GPIO.PS2CLK/PS2DAT open-drain bits; connector: 6-pin mini-DIN, 5V
 
@@ -263,15 +407,17 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 
 ## Glue logic
 
-**CPLD1** (ATF1508AS-7JX84): MMU: CPU clock divider, address decode, ROM overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches
+**CPLD1** (ATF1508AS-7JX84): MMU: CPU clock divider, address decode, ROM overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches, DUART chip select (DTACK released during DUART cycles)
 
 * inputs: CLK24, SYSRESET, A1..A23, AS, UDS, LDS, RW
-* outputs: CPUCLK, MA0..MA16, DTACK, BERR, VPA, RAMOE, WEU, WEL, ROMCE, IOCS, BUFEN, LATCH, DE, HSYNC, VSYNC
+* outputs: CPUCLK, MA0..MA16, DTACK, BERR, VPA, RAMOE, WEU, WEL, ROMCE, IOCS, BUFEN, LATCH, DE, HSYNC, VSYNC, DUARTCS
 
-**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller, PS/2 receiver, serial receiver, SD/GPIO bits, registers
+**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers
 
-* inputs: CLK24, SYSRESET, A1..A3, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, SER_RX, PALJMP, NMIBTN
+* inputs: CLK24, SYSRESET, A1..A3, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, PALJMP, NMIBTN, DUART_IRQ
 * bidir: D0..D15 (SRAM-side bus), PS2_CLK, PS2_DAT, UIO0..UIO3
-* outputs: IPL0, IPL1, IPL2, R2, R1, R0, G2, G1, G0, B1, B0, SD_CS, SD_CLK, SD_MOSI, SER_TX, AUDIO, LED0, LED1
+* outputs: IPL0, IPL1, IPL2, R2, R1, R0, G2, G1, G0, B1, B0, SD_CS, SD_CLK, SD_MOSI, AUDIO, LED0, LED1
 
-2x 74AHCT245 between the CPU data bus (CPU, EPROMs) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.
+2x 74AHCT245 between the CPU data bus (CPU, EPROMs, DUART on D0..D7) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.
+
+DTACK is an open-drain bus with a 4.7k pull-up: CPLD1 drives it low (and high again) for RAM, ROM, IO and SWITCHES cycles and releases it (high-Z) whenever AS is low in the DUART region; the DUART's open-drain DTACK answers those cycles. The DUART IRQ (open drain, pull-up) is an input of CPLD2; its IACK pin is tied high.

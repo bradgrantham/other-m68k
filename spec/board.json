@@ -1,14 +1,14 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 1,
+    "revision": 2,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
     "cpu_clock_div": 2,
     "slot_fast_clocks": 8,
     "slot_cpu_clocks": 4,
-    "desc": "68000 SBC: 256K SRAM, 128K EPROM, memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, TTL serial, 1-bit audio."
+    "desc": "68000 SBC: 256K SRAM, 128K EPROM, memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 1-bit audio."
   },
   "memory_map": [
     {
@@ -33,7 +33,7 @@
       "size": "0x010000",
       "kind": "io",
       "registers": "io",
-      "desc": "CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored)."
+      "desc": "CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). INTEN, SDIO, GPIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows."
     },
     {
       "name": "SWITCHES",
@@ -42,6 +42,15 @@
       "kind": "io",
       "registers": "switches",
       "desc": "CPLD1 soft switches. Write-only; writing any value to the address performs the action. Reads return garbage."
+    },
+    {
+      "name": "DUART",
+      "base": "0xF20000",
+      "size": "0x010000",
+      "kind": "io",
+      "device": "MC68681 / SCN68681 / SCC68681 DUART, 3.6864 MHz crystal",
+      "registers": "duart",
+      "desc": "68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use byte accesses only. DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned."
     }
   ],
   "unmapped_policy": "BERR asserted (bus error exception) for any access outside the regions above, except the interrupt-acknowledge pattern A23..A4 all ones, which is autovectored via VPA.",
@@ -132,7 +141,7 @@
           "name": "INTSTAT",
           "offset": 0,
           "access": "rw",
-          "desc": "Interrupt and pin status. Reading returns flags and live pin levels. Writing 1 to a clearable bit clears it.",
+          "desc": "Interrupt and pin status. Reading returns flags and live pin levels; bits not listed read 0. Writing 1 to a clearable bit clears it.",
           "fields": [
             {
               "name": "VBLANK",
@@ -152,25 +161,14 @@
               "desc": "PS/2 byte received; cleared by reading PS2DATA."
             },
             {
-              "name": "SERRX",
+              "name": "DUARTIRQ",
               "bit": 3,
-              "desc": "Serial byte received; cleared by reading SERDATA."
-            },
-            {
-              "name": "SERTXBUSY",
-              "bit": 4,
-              "desc": "Hardware serial transmitter busy (reads 0 if TX is software-only)."
+              "desc": "Live level of the DUART IRQ pin, inverted (1 = DUART requesting). Read the DUART ISR for the cause."
             },
             {
               "name": "PS2ERR",
               "bit": 5,
               "desc": "PS/2 framing/parity error on last byte. W1C.",
-              "w1c": true
-            },
-            {
-              "name": "SERRXOVR",
-              "bit": 6,
-              "desc": "Serial receive overrun. W1C.",
               "w1c": true
             },
             {
@@ -192,11 +190,6 @@
               "name": "PS2DAT",
               "bit": 10,
               "desc": "Live level of PS/2 data line."
-            },
-            {
-              "name": "SERRXPIN",
-              "bit": 11,
-              "desc": "Live level of serial RX pin."
             },
             {
               "name": "PALJMP",
@@ -223,9 +216,9 @@
         {
           "name": "INTEN",
           "offset": 2,
-          "access": "rw",
+          "access": "w",
           "reset": "0x0000",
-          "desc": "Interrupt enables. A pending flag with its enable set drives IPL at the level listed in interrupts[].",
+          "desc": "Interrupt enables (write-only, reads 0). A pending flag with its enable set drives IPL at the level listed in interrupts[].",
           "fields": [
             {
               "name": "VBLANK",
@@ -243,18 +236,18 @@
               "desc": "Enable level-2 interrupt on PS2RDY."
             },
             {
-              "name": "SERRX",
+              "name": "DUART",
               "bit": 3,
-              "desc": "Enable level-3 interrupt on SERRX."
+              "desc": "Enable level-3 interrupt while the DUART IRQ pin is asserted."
             }
           ]
         },
         {
           "name": "SDIO",
           "offset": 4,
-          "access": "rw",
+          "access": "w",
           "reset": "0x0003",
-          "desc": "SD card SPI bit-bang port. Bits are pin levels.",
+          "desc": "SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; MISO is read through INTSTAT.SDMISO.",
           "fields": [
             {
               "name": "CS",
@@ -270,21 +263,15 @@
               "name": "MOSI",
               "bit": 2,
               "desc": "SD MOSI pin."
-            },
-            {
-              "name": "MISO",
-              "bit": 3,
-              "desc": "SD MISO pin (read only).",
-              "ro": true
             }
           ]
         },
         {
           "name": "GPIO",
           "offset": 6,
-          "access": "rw",
-          "reset": "0x0007",
-          "desc": "Misc outputs. PS/2 lines are open-drain: 1 releases the line (reads via INTSTAT), 0 pulls it low.",
+          "access": "w",
+          "reset": "0x0003",
+          "desc": "Misc outputs (write-only, reads 0). PS/2 lines are open-drain: 1 releases the line (read it via INTSTAT), 0 pulls it low.",
           "fields": [
             {
               "name": "PS2CLK",
@@ -297,23 +284,18 @@
               "desc": "PS/2 data drive (1 = release)."
             },
             {
-              "name": "SERTX",
-              "bit": 2,
-              "desc": "Serial TX pin level (idle 1) for software bit-bang."
-            },
-            {
               "name": "AUDIO",
-              "bit": 3,
+              "bit": 2,
               "desc": "1-bit audio output."
             },
             {
               "name": "LED0",
-              "bit": 4,
+              "bit": 3,
               "desc": "Diagnostic LED 0 (1 = on)."
             },
             {
               "name": "LED1",
-              "bit": 5,
+              "bit": 4,
               "desc": "Diagnostic LED 1 (1 = on)."
             }
           ]
@@ -333,31 +315,18 @@
           ]
         },
         {
-          "name": "SERDATA",
-          "offset": 10,
-          "access": "rw",
-          "desc": "Read: last serial byte received (clears INTSTAT.SERRX). Write: transmit byte if hardware TX is fitted (check SERTXBUSY).",
-          "fields": [
-            {
-              "name": "DATA",
-              "bit": 0,
-              "width": 8,
-              "desc": "Serial data byte."
-            }
-          ]
-        },
-        {
           "name": "USERIO",
           "offset": 12,
           "access": "rw",
           "reset": "0x000F",
-          "desc": "Four open-drain user GPIO pins on the expansion header. Write 1 to release, 0 to pull low; read back the pin levels in bits 11..8.",
+          "desc": "Four open-drain user GPIO pins on the expansion header. Write 1 to release, 0 to pull low (OUT is write-only, reads 0); read the pin levels in bits 11..8.",
           "fields": [
             {
               "name": "OUT",
               "bit": 0,
               "width": 4,
-              "desc": "Drive bits (1 = release)."
+              "desc": "Drive bits (1 = release).",
+              "wo": true
             },
             {
               "name": "IN",
@@ -372,8 +341,8 @@
           "name": "ID",
           "offset": 14,
           "access": "r",
-          "reset": "0x6801",
-          "desc": "Board/glue identification: 0x68 in the upper byte, CPLD2 logic revision in the lower byte.",
+          "reset": "0x6802",
+          "desc": "Board/glue identification: 0x68 in the upper byte, CPLD2 logic revision in the lower byte (2 = DUART board).",
           "fields": [
             {
               "name": "REV",
@@ -420,6 +389,343 @@
           "desc": "Select PAL (312-line) timing table."
         }
       ]
+    },
+    "duart": {
+      "base": "0xF20000",
+      "width": 8,
+      "desc": "MC68681 registers; one name per direction where read and write differ at the same offset.",
+      "regs": [
+        {
+          "name": "MRA",
+          "offset": 1,
+          "access": "rw",
+          "desc": "Mode register: first access after reset or a 'reset MR pointer' command is MR1 (bits: 1..0 bits per char 00=5..11=8, 2 parity mode, 4..3 parity type, 5 error mode, 6 RX interrupt select, 7 RX RTS control), the next is MR2 (bits: 3..0 stop bits (0x7 = 1 stop), 4 CTS enable TX, 5 RTS control, 7..6 channel mode 00 = normal)."
+        },
+        {
+          "name": "SRA",
+          "offset": 3,
+          "access": "r",
+          "desc": "Status register A.",
+          "fields": [
+            {
+              "name": "RXRDY",
+              "bit": 0,
+              "desc": "Receiver ready: a character is in the FIFO."
+            },
+            {
+              "name": "FFULL",
+              "bit": 1,
+              "desc": "Receiver FIFO full (3 characters)."
+            },
+            {
+              "name": "TXRDY",
+              "bit": 2,
+              "desc": "Transmitter ready to accept a character."
+            },
+            {
+              "name": "TXEMT",
+              "bit": 3,
+              "desc": "Transmitter empty."
+            },
+            {
+              "name": "OE",
+              "bit": 4,
+              "desc": "Overrun error."
+            },
+            {
+              "name": "PE",
+              "bit": 5,
+              "desc": "Parity error (of the character at the FIFO top)."
+            },
+            {
+              "name": "FE",
+              "bit": 6,
+              "desc": "Framing error."
+            },
+            {
+              "name": "RB",
+              "bit": 7,
+              "desc": "Received break."
+            }
+          ]
+        },
+        {
+          "name": "CSRA",
+          "offset": 3,
+          "access": "w",
+          "desc": "Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600)."
+        },
+        {
+          "name": "CRA",
+          "offset": 5,
+          "access": "w",
+          "desc": "Command register: bits 1..0 RX enable/disable (01 enable, 10 disable), 3..2 TX enable/disable, 7..4 misc command (0001 reset MR pointer, 0010 reset RX, 0011 reset TX, 0100 reset error status, 0101 reset break-change interrupt)."
+        },
+        {
+          "name": "RBA",
+          "offset": 7,
+          "access": "r",
+          "desc": "Receiver buffer A (FIFO top); reading pops the FIFO."
+        },
+        {
+          "name": "TBA",
+          "offset": 7,
+          "access": "w",
+          "desc": "Transmitter buffer A."
+        },
+        {
+          "name": "IPCR",
+          "offset": 9,
+          "access": "r",
+          "desc": "Input port change register."
+        },
+        {
+          "name": "ACR",
+          "offset": 9,
+          "access": "w",
+          "desc": "Auxiliary control: bit 7 baud-rate set (1 = set 2, used here), bits 6..4 counter/timer mode and source, bits 3..0 IP change interrupt enables."
+        },
+        {
+          "name": "ISR",
+          "offset": 11,
+          "access": "r",
+          "desc": "Interrupt status register.",
+          "fields": [
+            {
+              "name": "TXRDYA",
+              "bit": 0,
+              "desc": "TxRDY A"
+            },
+            {
+              "name": "RXRDYA",
+              "bit": 1,
+              "desc": "RxRDY/FFULL A"
+            },
+            {
+              "name": "DBA",
+              "bit": 2,
+              "desc": "Change in break A"
+            },
+            {
+              "name": "CTR",
+              "bit": 3,
+              "desc": "Counter/timer ready"
+            },
+            {
+              "name": "TXRDYB",
+              "bit": 4,
+              "desc": "TxRDY B"
+            },
+            {
+              "name": "RXRDYB",
+              "bit": 5,
+              "desc": "RxRDY/FFULL B"
+            },
+            {
+              "name": "DBB",
+              "bit": 6,
+              "desc": "Change in break B"
+            },
+            {
+              "name": "IPC",
+              "bit": 7,
+              "desc": "Input port change"
+            }
+          ]
+        },
+        {
+          "name": "IMR",
+          "offset": 11,
+          "access": "w",
+          "desc": "Interrupt mask register (same bits as ISR).",
+          "fields": [
+            {
+              "name": "TXRDYA",
+              "bit": 0,
+              "desc": "TxRDY A"
+            },
+            {
+              "name": "RXRDYA",
+              "bit": 1,
+              "desc": "RxRDY/FFULL A"
+            },
+            {
+              "name": "DBA",
+              "bit": 2,
+              "desc": "Change in break A"
+            },
+            {
+              "name": "CTR",
+              "bit": 3,
+              "desc": "Counter/timer ready"
+            },
+            {
+              "name": "TXRDYB",
+              "bit": 4,
+              "desc": "TxRDY B"
+            },
+            {
+              "name": "RXRDYB",
+              "bit": 5,
+              "desc": "RxRDY/FFULL B"
+            },
+            {
+              "name": "DBB",
+              "bit": 6,
+              "desc": "Change in break B"
+            },
+            {
+              "name": "IPC",
+              "bit": 7,
+              "desc": "Input port change"
+            }
+          ]
+        },
+        {
+          "name": "CUR",
+          "offset": 13,
+          "access": "r",
+          "desc": "Counter upper byte."
+        },
+        {
+          "name": "CTUR",
+          "offset": 13,
+          "access": "w",
+          "desc": "Counter/timer upper preset."
+        },
+        {
+          "name": "CLR",
+          "offset": 15,
+          "access": "r",
+          "desc": "Counter lower byte."
+        },
+        {
+          "name": "CTLR",
+          "offset": 15,
+          "access": "w",
+          "desc": "Counter/timer lower preset."
+        },
+        {
+          "name": "MRB",
+          "offset": 17,
+          "access": "rw",
+          "desc": "Mode register: first access after reset or a 'reset MR pointer' command is MR1B (bits: 1..0 bits per char 00=5..11=8, 2 parity mode, 4..3 parity type, 5 error mode, 6 RX interrupt select, 7 RX RTS control), the next is MR2B (bits: 3..0 stop bits (0x7 = 1 stop), 4 CTS enable TX, 5 RTS control, 7..6 channel mode 00 = normal)."
+        },
+        {
+          "name": "SRB",
+          "offset": 19,
+          "access": "r",
+          "desc": "Status register B.",
+          "fields": [
+            {
+              "name": "RXRDY",
+              "bit": 0,
+              "desc": "Receiver ready: a character is in the FIFO."
+            },
+            {
+              "name": "FFULL",
+              "bit": 1,
+              "desc": "Receiver FIFO full (3 characters)."
+            },
+            {
+              "name": "TXRDY",
+              "bit": 2,
+              "desc": "Transmitter ready to accept a character."
+            },
+            {
+              "name": "TXEMT",
+              "bit": 3,
+              "desc": "Transmitter empty."
+            },
+            {
+              "name": "OE",
+              "bit": 4,
+              "desc": "Overrun error."
+            },
+            {
+              "name": "PE",
+              "bit": 5,
+              "desc": "Parity error (of the character at the FIFO top)."
+            },
+            {
+              "name": "FE",
+              "bit": 6,
+              "desc": "Framing error."
+            },
+            {
+              "name": "RB",
+              "bit": 7,
+              "desc": "Received break."
+            }
+          ]
+        },
+        {
+          "name": "CSRB",
+          "offset": 19,
+          "access": "w",
+          "desc": "Clock select: bits 7..4 receiver, 3..0 transmitter baud code from the data-sheet table (0xC = 38.4k with ACR[7]=1; 0xB = 9600)."
+        },
+        {
+          "name": "CRB",
+          "offset": 21,
+          "access": "w",
+          "desc": "Command register: bits 1..0 RX enable/disable (01 enable, 10 disable), 3..2 TX enable/disable, 7..4 misc command (0001 reset MR pointer, 0010 reset RX, 0011 reset TX, 0100 reset error status, 0101 reset break-change interrupt)."
+        },
+        {
+          "name": "RBB",
+          "offset": 23,
+          "access": "r",
+          "desc": "Receiver buffer B."
+        },
+        {
+          "name": "TBB",
+          "offset": 23,
+          "access": "w",
+          "desc": "Transmitter buffer B."
+        },
+        {
+          "name": "IVR",
+          "offset": 25,
+          "access": "rw",
+          "desc": "Interrupt vector register. Unused: IACK is tied high and interrupts are autovectored."
+        },
+        {
+          "name": "IP",
+          "offset": 27,
+          "access": "r",
+          "desc": "Input port IP0..IP6 (unlatched)."
+        },
+        {
+          "name": "OPCR",
+          "offset": 27,
+          "access": "w",
+          "desc": "Output port configuration register."
+        },
+        {
+          "name": "START_CTR",
+          "offset": 29,
+          "access": "r",
+          "desc": "Address-triggered command: start counter/timer."
+        },
+        {
+          "name": "OPR_SET",
+          "offset": 29,
+          "access": "w",
+          "desc": "Output port register: set the bits written as 1."
+        },
+        {
+          "name": "STOP_CTR",
+          "offset": 31,
+          "access": "r",
+          "desc": "Address-triggered command: stop counter/timer."
+        },
+        {
+          "name": "OPR_RESET",
+          "offset": 31,
+          "access": "w",
+          "desc": "Output port register: clear the bits written as 1."
+        }
+      ]
     }
   },
   "interrupts": [
@@ -437,9 +743,9 @@
     },
     {
       "level": 3,
-      "name": "SERRX",
-      "source": "INTSTAT.SERRX & INTEN.SERRX",
-      "desc": "Serial byte available."
+      "name": "DUART",
+      "source": "DUART IRQ pin & INTEN.DUART",
+      "desc": "68681 interrupt (receiver ready, transmitter ready, counter/timer, ...): read the DUART ISR. Level sensitive; the DUART IACK pin is tied high, so this is autovectored like the others."
     },
     {
       "level": 4,
@@ -454,13 +760,17 @@
       "desc": "Break into monitor. Edge-triggered by the 68000."
     }
   ],
-  "interrupt_mode": "autovector (VPA asserted on IACK); vector = 24 + level",
+  "interrupt_mode": "autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied inactive); vector = 24 + level",
   "serial": {
-    "baud": 115200,
+    "device": "MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header)",
+    "baud": 38400,
     "format": "8N1",
-    "tx": "software bit-bang on GPIO.SERTX (hardware TX via SERDATA if CPLD2 capacity allows)",
-    "rx": "hardware receiver, 8-bit holding register SERDATA",
-    "connector": "6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant"
+    "xtal_hz": 3686400,
+    "csr": "0xCC",
+    "acr_brg_set": 1,
+    "init": "MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x80, CSRA=0xCC, CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts",
+    "note": "38400 is the highest rate in the 68681's fixed table; the counter/timer or the X1/16 input could give more but are not used.",
+    "connector": "6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected"
   },
   "ps2": {
     "rx": "hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY",
@@ -992,7 +1302,7 @@
   "glue": {
     "cpld1": {
       "part": "ATF1508AS-7JX84",
-      "role": "MMU: CPU clock divider, address decode, ROM overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches",
+      "role": "MMU: CPU clock divider, address decode, ROM overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches, DUART chip select (DTACK released during DUART cycles)",
       "signals": {
         "inputs": [
           "CLK24",
@@ -1018,13 +1328,14 @@
           "LATCH",
           "DE",
           "HSYNC",
-          "VSYNC"
+          "VSYNC",
+          "DUARTCS"
         ]
       }
     },
     "cpld2": {
       "part": "ATF1508AS-7JX84",
-      "role": "I/O and shifter: video word latch and RGB332 pixel output, interrupt controller, PS/2 receiver, serial receiver, SD/GPIO bits, registers",
+      "role": "I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers",
       "signals": {
         "inputs": [
           "CLK24",
@@ -1037,9 +1348,9 @@
           "HSYNC",
           "VSYNC",
           "SD_MISO",
-          "SER_RX",
           "PALJMP",
-          "NMIBTN"
+          "NMIBTN",
+          "DUART_IRQ"
         ],
         "bidir": [
           "D0..D15 (SRAM-side bus)",
@@ -1062,13 +1373,13 @@
           "SD_CS",
           "SD_CLK",
           "SD_MOSI",
-          "SER_TX",
           "AUDIO",
           "LED0",
           "LED1"
         ]
       }
     },
-    "bus_buffers": "2x 74AHCT245 between the CPU data bus (CPU, EPROMs) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W."
+    "bus_buffers": "2x 74AHCT245 between the CPU data bus (CPU, EPROMs, DUART on D0..D7) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.",
+    "dtack": "DTACK is an open-drain bus with a 4.7k pull-up: CPLD1 drives it low (and high again) for RAM, ROM, IO and SWITCHES cycles and releases it (high-Z) whenever AS is low in the DUART region; the DUART's open-drain DTACK answers those cycles. The DUART IRQ (open drain, pull-up) is an input of CPLD2; its IACK pin is tied high."
   }
 }
