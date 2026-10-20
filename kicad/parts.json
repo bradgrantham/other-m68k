@@ -1,0 +1,467 @@
+{
+ "_comment": [
+  "Sourcing data for the BOM: board.py attaches these as symbol fields (Manufacturer, MPN,",
+  "LCSC, Assembly, Desc, Socket_Manufacturer, Socket_MPN) and fab_export.py turns them into",
+  "the JLCPCB and PCBWay assembly files.  Keys in by_value are 'value|footprint' (footprint",
+  "may be '*'); by_ref overrides per reference.",
+  "assembly: pcba      = the assembler buys and mounts it",
+  "          customer  = we supply and mount it ourselves (not in the assembly BOM/CPL)",
+  "          socket    = the assembler mounts the SOCKET (socket.* fields); the chip is a",
+  "                      separate BOM line, supplied by chip_supply (customer | pcba, inserted",
+  "                      after assembly)",
+  "          dnp       = not placed at all",
+  "verify: true marks a part number written from memory that has not been checked against a",
+  "distributor listing yet; fab_export.py lists them.  lcsc is only needed for JLCPCB and may",
+  "be left out: JLCPCB's BOM tool matches basic passives by value and footprint."
+ ],
+ "by_value": {
+  "100nF|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL10B104KB8NNNC",
+   "lcsc": "C1591",
+   "desc": "100 nF 50 V X7R 0603",
+   "assembly": "pcba"
+  },
+  "10nF|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL10B103KB8NNNC",
+   "lcsc": "C57112",
+   "desc": "10 nF 50 V X7R 0603",
+   "assembly": "pcba"
+  },
+  "10pF|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL10C100JB8NNNC",
+   "lcsc": "C32949",
+   "desc": "10 pF 50 V C0G 0603",
+   "assembly": "pcba"
+  },
+  "15pF|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL10C150JB8NNNC",
+   "lcsc": "C1644",
+   "desc": "15 pF 50 V C0G 0603",
+   "assembly": "pcba"
+  },
+  "1uF|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL10A105KB8NNNC",
+   "lcsc": "C15849",
+   "desc": "1 uF 50 V X5R 0603",
+   "assembly": "pcba"
+  },
+  "10uF|Capacitor_SMD:C_0805_2012Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL21A106KAYNNNE",
+   "lcsc": "C15850",
+   "desc": "10 uF 25 V X5R 0805",
+   "assembly": "pcba"
+  },
+  "DNP (0-5pF)|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "",
+   "mpn": "",
+   "desc": "not fitted (crystal trim)",
+   "assembly": "dnp"
+  },
+  "220uF|Capacitor_THT:CP_Radial_D6.3mm_P2.50mm": {
+   "mfr": "Rubycon",
+   "mpn": "16ZLH220MEFC6.3X11",
+   "desc": "220 uF 16 V electrolytic, 6.3 mm dia, 2.5 mm pitch",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "100uF|Capacitor_THT:CP_Radial_D6.3mm_P2.50mm": {
+   "mfr": "Rubycon",
+   "mpn": "16ZLH100MEFC6.3X11",
+   "desc": "100 uF 16 V electrolytic, 6.3 mm dia, 2.5 mm pitch",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "10k|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-0710KL",
+   "lcsc": "C25804",
+   "desc": "10 k 1% 0603",
+   "assembly": "pcba"
+  },
+  "4.7k|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-074K7L",
+   "lcsc": "C23162",
+   "desc": "4.7 k 1% 0603",
+   "assembly": "pcba"
+  },
+  "1k|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-071KL",
+   "lcsc": "C21190",
+   "desc": "1 k 1% 0603",
+   "assembly": "pcba"
+  },
+  "1.8k|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-071K8L",
+   "desc": "1.8 k 1% 0603",
+   "assembly": "pcba"
+  },
+  "3.3k|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-073K3L",
+   "lcsc": "C22978",
+   "desc": "3.3 k 1% 0603",
+   "assembly": "pcba"
+  },
+  "2.2k|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-072K2L",
+   "lcsc": "C4190",
+   "desc": "2.2 k 1% 0603",
+   "assembly": "pcba"
+  },
+  "5.1k|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-075K1L",
+   "lcsc": "C23186",
+   "desc": "5.1 k 1% 0603 (USB-C CC pull-downs)",
+   "assembly": "pcba"
+  },
+  "75|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-0775RL",
+   "desc": "75 ohm 1% 0603",
+   "assembly": "pcba"
+  },
+  "787 1%|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-07787RL",
+   "desc": "787 ohm 1% 0603 (DAC)",
+   "assembly": "pcba"
+  },
+  "1.58k 1%|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-071K58L",
+   "desc": "1.58 k 1% 0603 (DAC)",
+   "assembly": "pcba"
+  },
+  "3.16k 1%|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-073K16L",
+   "desc": "3.16 k 1% 0603 (DAC)",
+   "assembly": "pcba"
+  },
+  "681 1%|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-07681RL",
+   "desc": "681 ohm 1% 0603 (DAC)",
+   "assembly": "pcba"
+  },
+  "1.37k 1%|Resistor_SMD:R_0603_1608Metric": {
+   "mfr": "Yageo",
+   "mpn": "RC0603FR-071K37L",
+   "desc": "1.37 k 1% 0603 (DAC)",
+   "assembly": "pcba"
+  },
+  "1N4148W|Diode_SMD:D_SOD-123": {
+   "mfr": "Diodes Inc",
+   "mpn": "1N4148W-7-F",
+   "lcsc": "C81598",
+   "desc": "1N4148W SOD-123",
+   "assembly": "pcba"
+  },
+  "LED green|LED_SMD:LED_0805_2012Metric": {
+   "mfr": "Everlight",
+   "mpn": "19-217/GHC-YR1S2/3T",
+   "desc": "green LED 0805",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "LED red (power)|LED_SMD:LED_0805_2012Metric": {
+   "mfr": "Everlight",
+   "mpn": "19-217/R6C-AL1M2VY/3T",
+   "desc": "red LED 0805",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "600R@100MHz|Inductor_SMD:L_0603_1608Metric": {
+   "mfr": "Murata",
+   "mpn": "BLM18PG601SN1D",
+   "desc": "ferrite bead 600 ohm @ 100 MHz 0603",
+   "assembly": "pcba"
+  },
+  "USB-C power|*": {
+   "mfr": "GCT",
+   "mpn": "USB4125-GF-A-0190",
+   "desc": "USB-C receptacle, 6 pin, power only, right angle (DigiKey/Farnell/Future list it; stock varies)",
+   "assembly": "pcba"
+  },
+  "FTDI (GND CTS VCC TXD RXD RTS)|*": {
+   "mfr": "Sullins",
+   "mpn": "PRPC006SAAN-RC",
+   "desc": "pin header 1x6 2.54 mm",
+   "assembly": "pcba"
+  },
+  "PS/2|*": {
+   "mfr": "CUI Devices",
+   "mpn": "MD-60SM",
+   "desc": "mini-DIN 6 jack, right angle",
+   "assembly": "pcba"
+  },
+  "microSD DM3AT-SF-PEJM5|*": {
+   "mfr": "Hirose",
+   "mpn": "DM3AT-SF-PEJM5",
+   "desc": "microSD socket, push-push, card detect",
+   "assembly": "pcba"
+  },
+  "RCA composite|*": {
+   "mfr": "CUI Devices",
+   "mpn": "RCJ-041",
+   "desc": "RCA jack, right angle, yellow",
+   "assembly": "pcba"
+  },
+  "3.5mm audio|*": {
+   "mfr": "CUI Devices",
+   "mpn": "SJ1-3523N",
+   "desc": "3.5 mm stereo jack, right angle",
+   "assembly": "pcba"
+  },
+  "JTAG (ByteBlaster)|*": {
+   "mfr": "Sullins",
+   "mpn": "PRPC005DAAN-RC",
+   "desc": "pin header 2x5 2.54 mm",
+   "assembly": "pcba"
+  },
+  "Expansion|*": {
+   "mfr": "Sullins",
+   "mpn": "PRPC008DAAN-RC",
+   "desc": "pin header 2x8 2.54 mm",
+   "assembly": "pcba"
+  },
+  "RESET|*": {
+   "mfr": "Omron",
+   "mpn": "B3F-1000",
+   "desc": "tactile switch 6 mm THT",
+   "assembly": "pcba"
+  },
+  "NMI|*": {
+   "mfr": "Omron",
+   "mpn": "B3F-1000",
+   "desc": "tactile switch 6 mm THT",
+   "assembly": "pcba"
+  },
+  "M3|*": {
+   "mfr": "",
+   "mpn": "",
+   "desc": "mounting hole",
+   "assembly": "dnp"
+  },
+  "AD724JR|*": {
+   "mfr": "Analog Devices",
+   "mpn": "AD724JRZ",
+   "desc": "RGB to NTSC/PAL encoder, SOIC-16W. LAST TIME BUY (DigiKey LTB 2027-07-29): buy now, consign if the assembler cannot source",
+   "assembly": "pcba"
+  },
+  "AP2112K-3.3|*": {
+   "mfr": "Diodes Inc",
+   "mpn": "AP2112K-3.3TRG1",
+   "lcsc": "C51118",
+   "desc": "3.3 V 600 mA LDO SOT-23-5",
+   "assembly": "pcba"
+  },
+  "24MHz|*": {
+   "mfr": "ECS",
+   "mpn": "ECS-2100A-240",
+   "desc": "24 MHz 5 V HCMOS oscillator, half-size DIP-8 (DigiKey: 18 week lead time 2026-10; any 5 V half-size DIP-8 oscillator fits)",
+   "assembly": "pcba"
+  },
+  "3.6864MHz|*": {
+   "mfr": "ECS",
+   "mpn": "ECS-36-20-4X",
+   "desc": "3.6864 MHz crystal HC-49/US, 20 pF",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "2A|Fuse:Fuse_1206_3216Metric": {
+   "mfr": "Littelfuse",
+   "mpn": "1206L200PR",
+   "desc": "PTC resettable fuse 2 A hold / 3.5 A trip, 6 V, 1206",
+   "assembly": "pcba"
+  },
+  "MCP130T-450I/TT|*": {
+   "mfr": "Microchip",
+   "mpn": "MCP130T-450I/TT",
+   "desc": "4.50 V reset supervisor, open drain, SOT-23",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "3.579545MHz|*": {
+   "mfr": "ECS",
+   "mpn": "ECS-35-17-4X",
+   "desc": "3.579545 MHz crystal HC-49/US (NTSC subcarrier)",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "Logic analyzer (gusmanb 2x15)|*": {
+   "mfr": "Sullins",
+   "mpn": "PRPC015DAAN-RC",
+   "desc": "pin header 2x15 2.54 mm (logic analyzer channels)",
+   "assembly": "pcba"
+  },
+  "4x100|Resistor_SMD:R_Array_Convex_4x0603": {
+   "mfr": "Yageo",
+   "mpn": "YC124-JR-07100RL",
+   "desc": "4 x 100 ohm resistor array, 4x0603 convex",
+   "assembly": "pcba",
+   "verify": true
+  }
+ },
+ "by_ref": {
+  "U1": {
+   "mfr": "Motorola",
+   "mpn": "MC68000P12",
+   "desc": "68000 CPU 12 MHz DIP-64",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "Preci-dip",
+    "mpn": "110-83-964-41-001101",
+    "desc": "DIP-64 socket, 22.86 mm (0.9 in) rows: confirm the row spacing of this ordering code, or use 3M 264-4493-09-0602J",
+    "verify": true
+   }
+  },
+  "U2": {
+   "mfr": "Samsung",
+   "mpn": "KM681000BLP-7",
+   "desc": "128K x 8 SRAM DIP-32",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "Preci-dip",
+    "mpn": "110-99-632-41-001000",
+    "desc": "DIP-32 socket, 15.24 mm rows",
+    "verify": true
+   }
+  },
+  "U3": {
+   "mfr": "Samsung",
+   "mpn": "KM681000BLP-7",
+   "desc": "128K x 8 SRAM DIP-32",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "Preci-dip",
+    "mpn": "110-99-632-41-001000",
+    "desc": "DIP-32 socket, 15.24 mm rows",
+    "verify": true
+   }
+  },
+  "U4": {
+   "mfr": "STMicroelectronics",
+   "mpn": "M27C512-70XFI",
+   "desc": "64K x 8 EPROM DIP-28 (even byte)",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "3M",
+    "mpn": "228-1277-00-0602J",
+    "desc": "ZIF socket DIP-28, 15.24 mm rows, lever at pin 1"
+   }
+  },
+  "U5": {
+   "mfr": "STMicroelectronics",
+   "mpn": "M27C512-70XFI",
+   "desc": "64K x 8 EPROM DIP-28 (odd byte)",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "3M",
+    "mpn": "228-1277-00-0602J",
+    "desc": "ZIF socket DIP-28, 15.24 mm rows, lever at pin 1"
+   }
+  },
+  "U6": {
+   "mfr": "Microchip",
+   "mpn": "ATF1508AS-7JX84",
+   "desc": "CPLD PLCC-84 (MMU)",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "Preci-dip",
+    "mpn": "540-88-084-24-008",
+    "desc": "PLCC-84 through-hole socket, 1.27 mm pitch (RS 7019411)"
+   }
+  },
+  "U7": {
+   "mfr": "Microchip",
+   "mpn": "ATF1508AS-7JX84",
+   "desc": "CPLD PLCC-84 (I/O)",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "Preci-dip",
+    "mpn": "540-88-084-24-008",
+    "desc": "PLCC-84 through-hole socket, 1.27 mm pitch (RS 7019411)"
+   }
+  },
+  "U8": {
+   "mfr": "Texas Instruments",
+   "mpn": "SN74AHCT245DW",
+   "desc": "octal bus transceiver SOIC-20 wide",
+   "assembly": "pcba"
+  },
+  "U9": {
+   "mfr": "Texas Instruments",
+   "mpn": "SN74AHCT245DW",
+   "desc": "octal bus transceiver SOIC-20 wide",
+   "assembly": "pcba"
+  },
+  "U10": {
+   "mfr": "Motorola",
+   "mpn": "MC68681P",
+   "desc": "DUART DIP-40",
+   "assembly": "socket",
+   "chip_supply": "customer",
+   "socket": {
+    "mfr": "Preci-dip",
+    "mpn": "110-99-640-41-001000",
+    "desc": "DIP-40 socket, 15.24 mm rows",
+    "verify": true
+   }
+  },
+  "TP1": {
+   "mfr": "",
+   "mpn": "",
+   "desc": "test pad, composite video",
+   "assembly": "dnp"
+  },
+  "TP2": {
+   "mfr": "",
+   "mpn": "",
+   "desc": "test pad, +3.3 V",
+   "assembly": "dnp"
+  },
+  "TP3": {
+   "mfr": "",
+   "mpn": "",
+   "desc": "test pad, +5 V",
+   "assembly": "dnp"
+  },
+  "TP4": {
+   "mfr": "",
+   "mpn": "",
+   "desc": "test pad, GND",
+   "assembly": "dnp"
+  }
+ },
+ "extras": [
+  {
+   "qty": 2,
+   "mfr": "Sullins",
+   "mpn": "SPC02SYAN",
+   "desc": "2.54 mm shunt for JP1 (loose)"
+  }
+ ],
+ "jlc_rotation": {
+  "_comment": "footprint-name regex -> degrees to add to KiCad's rotation for the JLCPCB CPL; fill in after JLCPCB's DFM preview shows a turned part",
+  "rules": {}
+ }
+}

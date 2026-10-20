@@ -99,7 +99,7 @@
     ],
     "pixel_clocks": 2,
     "progressive": true,
-    "encoder": "AD724 (RGB in, composite out). Standard (NTSC/PAL) selected by on-board jumper plus matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP.",
+    "encoder": "AD724 (RGB in, composite out). Standard (NTSC/PAL) fixed by two pull resistors (STND, PALJMP) plus the matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP.",
     "timing": {
       "ntsc": {
         "line_clocks": 764,
@@ -194,7 +194,7 @@
             {
               "name": "PALJMP",
               "bit": 12,
-              "desc": "1 = PAL jumper fitted (encoder built for PAL)."
+              "desc": "1 = board built for PAL (PALJMP pulled high); rev B pulls it low (NTSC)."
             },
             {
               "name": "VSYNCPIN",

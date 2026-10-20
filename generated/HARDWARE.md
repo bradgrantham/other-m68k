@@ -33,7 +33,7 @@ BERR asserted (bus error exception) for any access outside the regions above, ex
 
 Pages: page 0 at 0x02D400, page 1 at 0x01A800
 
-Encoder: AD724 (RGB in, composite out). Standard (NTSC/PAL) selected by on-board jumper plus matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP.
+Encoder: AD724 (RGB in, composite out). Standard (NTSC/PAL) fixed by two pull resistors (STND, PALJMP) plus the matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP.
 
 | Standard | Line clocks | H active/front/sync/back | Lines | V active/bottom/sync/top | Rates |
 |---|---|---|---|---|---|
@@ -61,7 +61,7 @@ Interrupt and pin status. Reading returns flags and live pin levels; bits not li
 | 8 | SDMISO | Live level of SD MISO. |
 | 9 | PS2CLK | Live level of PS/2 clock line. |
 | 10 | PS2DAT | Live level of PS/2 data line. |
-| 12 | PALJMP | 1 = PAL jumper fitted (encoder built for PAL). |
+| 12 | PALJMP | 1 = board built for PAL (PALJMP pulled high); rev B pulls it low (NTSC). |
 | 13 | VSYNCPIN | Live vertical sync (1 during vsync lines). |
 | 14 | DEPIN | Live display enable (1 during active video). |
 | 15 | HSYNCPIN | Live horizontal sync (1 during sync). |

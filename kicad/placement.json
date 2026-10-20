@@ -1,0 +1,203 @@
+{
+ "_comment": [
+  "Hand-editable placement for gen_pcb.py.  x, y = centre of the footprint courtyard in mm",
+  "from the board's top-left corner (x right, y down); rot in degrees (KiCad sense, 90 turns",
+  "a vertical DIP horizontal, counter-clockwise on screen); side = top|bottom.  Parts not",
+  "listed are placed automatically next to the part named in their PcbNear schematic field",
+  "(decoupling caps, pull-ups ...).",
+  "Every part here is placed with its SOCKET footprint; the two EPROMs sit in 3M Textool ZIF",
+  "sockets whose courtyard includes the lever (23.4 mm beyond the pin-1 end).  Hand-placed",
+  "courtyards that collide are an error, not a warning (allow_overlap: true per part to accept",
+  "one).  checks.sockets demands a socket footprint for every DIP/PLCC part, checks.zif a",
+  "ZIF footprint for the listed refs.  A part may carry keepout: [[x0, y0, x1, y1, why], ...]",
+  "in footprint-local mm (unrotated, y down): each becomes a KiCad rule area that forbids",
+  "other footprints (DRC reports intruders) and that the auto-placer avoids.",
+  "Floorplan rev B: CPLD2 (I/O) left next to the connectors, DUART and AD724; CPLD1 (bus and",
+  "memory) right next to the SRAM pair (top right) and the two 74AHCT245 bus buffers; CPU",
+  "horizontal below both CPLDs; the EPROM ZIF sockets along the bottom edge, U5 lever to",
+  "the left, U4 lever to the right, so both levers lift at a board edge.",
+  "Edge connectors: J1 USB-C, J2 FTDI, J3 PS/2, J4 microSD on the left edge; J5 RCA and J6",
+  "audio on the bottom edge (left); J7 JTAG, J8 expansion, SW1 reset, SW2 NMI on the top edge.",
+  "J9 (logic analyzer, 2x15) on the top edge between the expansion header and the SRAMs; U8/U9 are SOIC-20 now, stacked between CPLD1 and the SRAMs; JP1 is gone (NTSC only)."
+ ],
+ "board": {
+  "width": 180,
+  "height": 125,
+  "corner_radius": 3,
+  "layers": 4,
+  "zones": {
+   "In1.Cu": "GND",
+   "In2.Cu": "VCC"
+  }
+ },
+ "checks": {
+  "sockets": true,
+  "zif": [
+   "U4",
+   "U5"
+  ]
+ },
+ "auto": {
+  "margin": 0.8,
+  "pitch": 0.5
+ },
+ "fanout": {
+  "nets": [
+   "GND",
+   "VCC"
+  ],
+  "via_diameter": 0.8,
+  "via_drill": 0.4,
+  "track_width": 0.25
+ },
+ "texts": [
+  {
+   "text": "other-m68k rev B",
+   "x": 166,
+   "y": 84,
+   "size": 2.0
+  }
+ ],
+ "parts": {
+  "H1": {
+   "x": 5,
+   "y": 5
+  },
+  "H2": {
+   "x": 175,
+   "y": 5
+  },
+  "H3": {
+   "x": 5,
+   "y": 120
+  },
+  "H4": {
+   "x": 175,
+   "y": 120
+  },
+  "J1": {
+   "x": 8,
+   "y": 15,
+   "rot": 270
+  },
+  "J2": {
+   "x": 6,
+   "y": 40,
+   "rot": 0
+  },
+  "J3": {
+   "x": 9,
+   "y": 62,
+   "rot": 270
+  },
+  "J4": {
+   "x": 10,
+   "y": 88,
+   "rot": 270
+  },
+  "J5": {
+   "x": 16,
+   "y": 118,
+   "rot": 90
+  },
+  "J6": {
+   "x": 29,
+   "y": 119.8,
+   "rot": 0
+  },
+  "J7": {
+   "x": 52,
+   "y": 7,
+   "rot": 90
+  },
+  "J8": {
+   "x": 72,
+   "y": 7,
+   "rot": 90
+  },
+  "SW1": {
+   "x": 24,
+   "y": 7
+  },
+  "SW2": {
+   "x": 36,
+   "y": 7
+  },
+  "U10": {
+   "x": 34,
+   "y": 50
+  },
+  "Y1": {
+   "x": 34,
+   "y": 81.5
+  },
+  "U12": {
+   "x": 25,
+   "y": 81
+  },
+  "U13": {
+   "x": 34,
+   "y": 88.5
+  },
+  "U11": {
+   "x": 27,
+   "y": 103
+  },
+  "Y2": {
+   "x": 39,
+   "y": 95.5
+  },
+  "U7": {
+   "x": 66,
+   "y": 46
+  },
+  "U6": {
+   "x": 109,
+   "y": 46
+  },
+  "X1": {
+   "x": 89,
+   "y": 18.6
+  },
+  "U1": {
+   "x": 100,
+   "y": 85.5,
+   "rot": 90
+  },
+  "U2": {
+   "x": 150,
+   "y": 12,
+   "rot": 90
+  },
+  "U3": {
+   "x": 150,
+   "y": 32,
+   "rot": 90
+  },
+  "U8": {
+   "x": 138,
+   "y": 50,
+   "rot": 90
+  },
+  "U9": {
+   "x": 138,
+   "y": 64,
+   "rot": 90
+  },
+  "U5": {
+   "x": 75,
+   "y": 112.2,
+   "rot": 90
+  },
+  "U4": {
+   "x": 139,
+   "y": 112.2,
+   "rot": 270
+  },
+  "J9": {
+   "x": 105,
+   "y": 7,
+   "rot": 90
+  }
+ }
+}

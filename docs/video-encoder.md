@@ -7,7 +7,7 @@ schematic generator implements for the video output section.
 
 | pin | name | our connection |
 |---|---|---|
-| 1 | STND | NTSC/PAL select: HIGH = NTSC, LOW = PAL. Jumper to 5V (default) or GND; the same net is read by CPLD2 as PALJMP (inverted sense: PALJMP = !STND) |
+| 1 | STND | NTSC/PAL select: HIGH = NTSC, LOW = PAL. Rev B board: 10 k pull-up (NTSC only, no jumper); CPLD2 PALJMP is pulled low separately |
 | 2 | AGND | ground plane |
 | 3 | FIN | parallel-resonant crystal to AGND: 3.579545 MHz (NTSC build) or 4.433619 MHz (PAL build), with a ~10 pF shunt footprint (datasheet found ~10 pF across the crystal correct on its eval board; 10-30 pF range) |
 | 4 | APOS | +5V analog, 0.1 uF + 10 uF |

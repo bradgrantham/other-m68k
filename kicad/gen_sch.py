@@ -22,6 +22,10 @@ import re
 import uuid
 
 SYMBOL_DIR = os.environ.get("KICAD_SYMBOL_DIR", "/usr/share/kicad/symbols")
+FOOTPRINT_DIR = os.environ.get("KICAD_FOOTPRINT_DIR", "/usr/share/kicad/footprints")
+# project-local libraries (kicad/lib/<name>.kicad_sym, kicad/lib/<name>.pretty) are used when
+# the system libraries have no library of that name
+LIB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib")
 GRID = 1.27           # schematic grid; every pin end and wire end must sit on it
 STUB = 3.81           # length of the wire from pin end to label (multiple of GRID)
 LABEL_MARGIN_H = 30.0  # space reserved left/right of a symbol for labels
@@ -260,10 +264,22 @@ class SymbolLibs:
     _flat = {}
 
     @classmethod
+    def path(cls, lib):
+        """File of a symbol library: system directory first, then the project lib/ directory."""
+        for d in (SYMBOL_DIR, LIB_DIR):
+            p = os.path.join(d, lib + ".kicad_sym")
+            if os.path.exists(p):
+                return p
+        raise FileNotFoundError(f"symbol library {lib!r} not found in {SYMBOL_DIR} or {LIB_DIR}")
+
+    @classmethod
+    def is_local(cls, lib):
+        return os.path.dirname(cls.path(lib)) == LIB_DIR
+
+    @classmethod
     def _load(cls, lib):
         if lib not in cls._files:
-            path = os.path.join(SYMBOL_DIR, lib + ".kicad_sym")
-            with open(path, encoding="utf-8") as f:
+            with open(cls.path(lib), encoding="utf-8") as f:
                 top = parse(f.read())[0]
             cls._files[lib] = {s[1]: s for s in find_all(top, "symbol")}
         return cls._files[lib]
@@ -338,9 +354,10 @@ class Part:
         self.value = value if value is not None else symbol
         self.sheet = sheet
         self.place = place or {}      # placement hints: row, col, x, y (schematic mm)
-        self.props = props            # extra properties (Datasheet, MPN, ...)
+        self.props = props            # extra properties (Datasheet, MPN, PcbNear, ...)
         self.nc_pins = set()          # pin numbers flagged no-connect
         self.nc_unused = False
+        self.dnp = False              # do-not-populate (footprint stays, BOM/pos exclude it)
 
     # -- pin lookup
     def _match(self, key):
@@ -387,6 +404,7 @@ class Net:
         self.name = name
         self.pins = []
         self.power = False
+        self.flag = True           # place a PWR_FLAG on the anchor (power nets)
         self.power_symbol = None   # e.g. "power:VCC"
 
     def add(self, *pins):
@@ -416,12 +434,13 @@ class Board:
         self.sheet_titles[name] = title or name
         return name
 
-    def part(self, ref, lib, symbol, footprint=None, value=None, sheet=None, place=None, **props):
+    def part(self, ref, lib, symbol, footprint=None, value=None, sheet=None, place=None, dnp=False, **props):
         if ref in self.parts:
             raise ValueError(f"duplicate reference {ref}")
         if sheet is not None:
             self.sheet(sheet)
         p = Part(self, ref, lib, symbol, footprint, value, sheet, place, props)
+        p.dnp = dnp
         self.parts[ref] = p
         return p
 
@@ -432,9 +451,12 @@ class Board:
         n.add(*pins)
         return n
 
-    def power(self, name, *pins, symbol=None):
+    def power(self, name, *pins, symbol=None, flag=True):
+        """A power net.  flag=False omits the PWR_FLAG anchor: use it when a power_out pin
+        (a regulator output) already drives the net, since PWR_FLAG + power_out is an ERC error."""
         n = self.net(name, *pins)
         n.power = True
+        n.flag = n.flag and flag
         if symbol is not None:
             n.power_symbol = symbol
         elif n.power_symbol is None:
@@ -504,6 +526,9 @@ class Board:
                                          f"connect it to {next(iter(nets)).name} too")
             for pin in part.libsym.pins:
                 k = (part.ref, pin.number)
+                if not pin.hidden and (abs(pin.x - grid(pin.x)) > 1e-3 or abs(pin.y - grid(pin.y)) > 1e-3):
+                    warnings.append(f"{part.ref} pin {pin.number} is off the {GRID} mm grid "
+                                    f"({pin.x}, {pin.y}); ERC will report it")
                 if k not in pin_net and pin.number not in part.nc_pins and not pin.hidden:
                     if part.nc_unused:
                         part.nc_pins.add(pin.number)
@@ -563,6 +588,7 @@ class Generator:
         self.sheets = []
         self.root = None
         self.power_symbol_count = 0
+        self.label_count = {}        # net name -> global labels emitted (for the anchor rule)
 
     # ---------------------------------------------------------------- layout
     def _make_sheets(self):
@@ -657,12 +683,12 @@ class Generator:
         sh.items.append(L("no_connect", L("at", pos[0], pos[1]),
                           L("uuid", det_uuid(self.board.name, "nc", tag))))
 
-    def _symbol_node(self, sh, libsym, ref, value, x, y, angle, unit, inst_uuid, footprint="", props=None):
+    def _symbol_node(self, sh, libsym, ref, value, x, y, angle, unit, inst_uuid, footprint="", props=None, dnp=False):
         """A placed symbol instance node, registering the lib symbol on the sheet."""
         sh.lib_symbols.setdefault(libsym.lib_id, libsym.node)
         node = L("symbol", L("lib_id", libsym.lib_id), L("at", x, y, angle), L("unit", unit),
                  L("exclude_from_sim", False), L("in_bom", not libsym.is_power()),
-                 L("on_board", not libsym.is_power()), L("dnp", False),
+                 L("on_board", not libsym.is_power()), L("dnp", bool(dnp)),
                  L("uuid", inst_uuid))
 
         def lib_prop_pos(name, default_dy):
@@ -724,6 +750,7 @@ class Generator:
                     self._place_power_symbol(sh, net, stub_end, tag)
                 else:
                     self._global_label(sh, net.name, stub_end, outward, label_shape(pin.etype), tag)
+                    self.label_count[net.name] = self.label_count.get(net.name, 0) + 1
 
     def _power_libsym(self, net):
         if not net.power_symbol:
@@ -755,7 +782,9 @@ class Generator:
                                               det_uuid(self.board.name, "flag", tag)))
 
     def _power_anchors(self, sh):
-        """One power symbol + PWR_FLAG per power net, in a strip at the top of the sheet."""
+        """One power symbol + PWR_FLAG per power net, in a strip at the top of the sheet.
+        Runs after all pins are wired: a power net whose sideways pins produced exactly one
+        global label gets a second label here, or ERC reports 'global label only once'."""
         x = SHEET_BORDER + 5.08
         y = grid(SHEET_BORDER + POWER_STRIP - 5.08)
         for net in self.board.nets.values():
@@ -772,7 +801,14 @@ class Generator:
                                                   grid(x + 5.08), y, 0, 1,
                                                   det_uuid(self.board.name, "flag", "anchor", net.name)))
             else:
-                self._place_power_symbol(sh, net, (grid(x), y), f"anchor/{net.name}", with_flag=True)
+                need_label = self.label_count.get(net.name, 0) == 1
+                if not net.flag and not need_label:
+                    continue       # a power_out pin drives it and no label needs a partner
+                self._place_power_symbol(sh, net, (grid(x), y), f"anchor/{net.name}", with_flag=net.flag)
+                if need_label:
+                    lpos = (grid(x - 5.08), y)
+                    self._wire(sh, lpos, (grid(x), y), f"anchor/{net.name}/label")
+                    self._global_label(sh, net.name, lpos, (-1, 0), "passive", f"anchor/{net.name}/label")
             x += 30.48
 
     # ---------------------------------------------------------------- output
@@ -806,13 +842,22 @@ class Generator:
         any user configuration (a fresh account has no ~/.config/kicad/9.0/sym-lib-table)."""
         sym_libs = sorted({lid.split(":", 1)[0] for sh in self.sheets for lid in sh.lib_symbols})
         fp_libs = sorted({p.footprint.split(":", 1)[0] for p in self.board.parts.values() if ":" in p.footprint})
-        for fname, head, libs, var, ext in (("sym-lib-table", "sym_lib_table", sym_libs, "KICAD9_SYMBOL_DIR", ".kicad_sym"),
-                                             ("fp-lib-table", "fp_lib_table", fp_libs, "KICAD9_FOOTPRINT_DIR", ".pretty")):
+        # project-local libraries are referenced relative to the project directory
+        local_rel = os.path.relpath(LIB_DIR, os.path.abspath(outdir)).replace(os.sep, "/")
+        for fname, head, libs, var, ext, sysdir in (
+                ("sym-lib-table", "sym_lib_table", sym_libs, "KICAD9_SYMBOL_DIR", ".kicad_sym", SYMBOL_DIR),
+                ("fp-lib-table", "fp_lib_table", fp_libs, "KICAD9_FOOTPRINT_DIR", ".pretty", FOOTPRINT_DIR)):
             path = os.path.join(outdir, fname)
             with open(path, "w", encoding="utf-8") as f:
                 f.write(f"({head}\n  (version 7)\n")
                 for lib in libs:
-                    f.write(f'  (lib (name "{lib}")(type "KiCad")(uri "${{{var}}}/{lib}{ext}")(options "")(descr ""))\n')
+                    if os.path.exists(os.path.join(sysdir, lib + ext)):
+                        uri = f"${{{var}}}/{lib}{ext}"
+                    elif os.path.exists(os.path.join(LIB_DIR, lib + ext)):
+                        uri = f"${{KIPRJMOD}}/{local_rel}/{lib}{ext}"
+                    else:
+                        raise FileNotFoundError(f"library {lib}{ext} not in {sysdir} or {LIB_DIR}")
+                    f.write(f'  (lib (name "{lib}")(type "KiCad")(uri "{uri}")(options "")(descr ""))\n')
                 f.write(")\n")
             written.append(path)
 
@@ -825,12 +870,12 @@ class Generator:
             if sh is self.root and len(self.sheets) > 1:
                 reserve += 40.0   # room for the sheet symbols
             self._layout_sheet(sh, reserve)
-            if sh is first_with_parts:
-                self._power_anchors(sh)
             for inst in sh.instances:
                 sh.items.insert(0, self._symbol_node(sh, inst.libsym, inst.ref, inst.value, inst.x, inst.y, 0,
-                                                     inst.unit, inst.uuid, inst.part.footprint, inst.part.props))
+                                                     inst.unit, inst.uuid, inst.part.footprint, inst.part.props,
+                                                     inst.part.dnp))
             self._wire_instances(sh)
+        self._power_anchors(first_with_parts)
         written = []
         for page_no, sh in enumerate(self.sheets, start=1):
             doc = L("kicad_sch", *self._sheet_header(sh, page_no))
@@ -883,10 +928,10 @@ def project_json(name):
         "boards": [], "cvpcb": {"equivalence_files": []}, "libraries": {"pinned_footprint_libs": [], "pinned_symbol_libs": []},
         "meta": {"filename": f"{name}.kicad_pro", "version": 3},
         "net_settings": {"classes": [{
-            "bus_width": 12, "clearance": 0.25, "diff_pair_gap": 0.25, "diff_pair_via_gap": 0.25,
+            "bus_width": 12, "clearance": 0.2, "diff_pair_gap": 0.25, "diff_pair_via_gap": 0.25,
             "diff_pair_width": 0.2, "line_style": 0, "microvia_diameter": 0.3, "microvia_drill": 0.1,
             "name": "Default", "pcb_color": "rgba(0, 0, 0, 0.000)", "priority": 2147483647,
-            "schematic_color": "rgba(0, 0, 0, 0.000)", "track_width": 0.3, "via_diameter": 0.8,
+            "schematic_color": "rgba(0, 0, 0, 0.000)", "track_width": 0.25, "via_diameter": 0.8,
             "via_drill": 0.4, "wire_width": 6}],
             "meta": {"version": 4}, "net_colors": None, "netclass_assignments": None, "netclass_patterns": []},
         "pcbnew": {"last_paths": {"gencad": "", "idf": "", "netlist": "", "plot": "", "pos_files": "",
