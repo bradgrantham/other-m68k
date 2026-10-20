@@ -296,7 +296,7 @@ static void cmd_beep(void)
 static void cmd_info(void)
 {
     print_banner();
-    kprintf("ticks %u (%u/s) INTSTAT %04x INTEN %04x\n", ticks, ticks_per_sec, IO_INTSTAT, IO_INTEN);
+    kprintf("ticks %u (%u/s) INTSTAT %04x INTEN %04x\n", ticks, ticks_per_sec, IO_INTSTAT, inten_shadow);
     kprintf("GPIO %04x rx overruns %u ps2 err %u\n", gpio_shadow, serial_rx_overruns, ps2_errors);
     kprintf("go default %06x\n", last_entry);
 }

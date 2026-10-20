@@ -6,11 +6,13 @@ volatile uint32_t ticks;
 volatile uint32_t ticks_per_sec = 60;
 irq_hook_fn irq_user_hook[8];
 irq_hook_fn audio_cb;
+uint16_t inten_shadow;      /* INTEN is write-only in the CPLD (fitter budget); keep a copy */
 
 void irq_update_inten(void)
 {
     uint16_t en = INTEN_VBLANK | INTEN_PS2 | INTEN_SERRX;
     if (audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL]) en |= INTEN_HSYNC;
+    inten_shadow = en;
     IO_INTEN = en;
 }
 

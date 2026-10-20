@@ -13,12 +13,13 @@ from `generated/board_params.vh` (generated from `spec/board.json`), which both 
 | `tb/tb_m68k_bus.v` | behavioural 68000 bus master with datasheet delays |
 | `tb/tb_sram.v` | 70 ns SRAM model with read timing and write-timing checks |
 | `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, EPROM, bus master, frame monitor, contention checker, 12 tests |
-| `Makefile` | `sim`, `sim-notx`, `wave`, `lint`, `synth`, `clean` |
+| `Makefile` | `sim`, `wave`, `lint`, `synth`, `fit`, `clean` |
+| `fit.sh` | yosys -> EDIF -> Atmel fitter (wine); see "Synthesis and fitting" |
 | `STATUS.md` | what is done, what was found, what is open |
 
 ```
 make -C hdl sim        # iverilog + vvp; ~20 s; nonzero exit on any failing test
-make -C hdl sim-notx   # same with HW_TX=0
+make -C hdl fit        # Atmel fitter: build/fit/*.{fit,jed} (needs the wine setup below)
 make -C hdl wave       # writes build/tb_system.vcd (first 2 ms; +vcd_all for everything)
 make -C hdl lint       # iverilog -tnull on the two CPLD sources
 make -C hdl synth      # yosys generic synthesis + cell counts -> build/synth_*.log
@@ -121,7 +122,7 @@ lands mid-frame. All compare constants are 2:1 muxes between the NTSC and PAL va
 Reset state: `ph=0`, `h=0`, `v=0`, `de=1`, `va=FB_PAGE0_WORD`, `overlay=1`, `page=0`,
 `pal=0`, all strobes inactive.
 
-## CPLD2 `cpld2_io` (parameters `SYNC_ACTIVE_LOW = 1`, `HW_TX = 1`)
+## CPLD2 `cpld2_io` (parameter `SYNC_ACTIVE_LOW = 1`; options `-DNO_PS2HW`, `-DNO_SERHW`)
 
 | signal | dir | description |
 |---|---|---|
@@ -152,19 +153,20 @@ as in the spec. Address bits A4..A15 are not decoded (the register block is mirr
   detection. Bit 0 is the start bit (must be 0), bits 1..8 data LSB first into `ps2_sh`,
   bit 9 parity (accumulated into `ps2_par`), bit 10 stop: `ps2data <= ps2_sh`,
   `PS2RDY <= 1`, `PS2ERR <= !(stop & odd-parity-ok)`. A 3-bit watchdog counts HSYNC rising
-  edges since the last PS/2 clock edge and resets the bit counter after 4 (about 250 us).
-* **Serial receiver** (115200 8N1, `SERIAL_FAST_CLOCKS_PER_BIT` = 208): falling edge on the
-  synchronised RX starts an 8-bit down-counter at 104 (half a bit) to the middle of the
-  start bit, then 208 per bit. The sample shifter is 10 bits with a sentinel loaded in bit 9:
+  edges since the last PS/2 clock edge and aborts the frame after 3 (about 190 us).
+* **Serial receiver** (115200 8N1, `SERIAL_FAST_CLOCKS_PER_BIT` = 208 = 26 slots): the
+  falling edge on the synchronised RX starts a 5-bit slot-tick upcounter that terminates on
+  all-ones (loaded with 31-12 for the half bit, 31-25 for each full bit; the cheap counter
+  shape from docs/atf15xx.md). The sample shifter is 10 bits with a sentinel loaded in bit 9:
   the sentinel reaching bit 0 marks the stop-bit sample and the byte sits in bits 9..2 (no
   bit counter). A start sample that reads 1 aborts. A good stop bit moves the byte to
   SERDATA and sets SERRX; SERRXOVR is set if SERRX was still set.
-* **Serial transmitter** (`HW_TX=1`): an 11-bit shifter `{sentinel, stop, data, start}`
-  shifted right with zero fill every 208 clocks; busy while anything is left above bit 0, so
-  SERTXBUSY needs no counter and the output returns to 1 by itself. With `HW_TX=0` the
-  transmitter is removed, `ser_tx` is just GPIO.SERTX and SERTXBUSY reads 0.
-* **Pixel path**: `pix` (the RGB pins), `lo`, `active` as in the architecture doc; pixels are
-  4 fast clocks each, the upper byte of the fetched word first.
+* **No serial transmitter**: it did not fit (see below). `ser_tx` is GPIO.SERTX, a SERDATA
+  write is ignored and SERTXBUSY reads 0; the BIOS bit-bangs TX.
+* **Write-only control registers**: INTEN, SDIO, GPIO and USERIO.OUT read as 0 (the BIOS keeps
+  shadows). Every readable bit costs a product term and a fan-in on the data-bus LAB.
+* **Pixel path**: `pix` (the RGB pins) and `lo` as in the architecture doc (both zeroed when
+  DE is low, so no `active` flop); pixels are 4 fast clocks each, upper byte first.
 
 ## Testbench
 
@@ -205,42 +207,61 @@ Tests (all pass; the suite runs ~127 ms of board time in ~20 s):
 8. PS/2 frame -> PS2DATA, PS2RDY, IPL 2, cleared by the read; bad parity -> PS2ERR (W1C);
    truncated frame + silence -> watchdog resynchronises
 9. serial RX: byte, IPL 3, overrun flag, W1C, 0x00 and 0xFF
-10. serial TX: SERDATA write decoded on the pin, SERTXBUSY high then low; GPIO.SERTX gating
-    (with `HW_TX=0`: SERTXBUSY reads 0, pin stays idle)
+10. serial TX: SERDATA write ignored, SERTXBUSY reads 0, pin stays idle; GPIO.SERTX gating
 11. no contention events, no SRAM timing violations, phase lock, every driver exercised
 
 ## Synthesis and fitting
 
-`make synth` runs yosys's generic `synth` and prints cell counts (`build/synth_*.log`):
+`make synth` runs yosys's generic `synth` and prints cell counts (`build/synth_*.log`).
+`make fit` (or `./fit.sh <variant> <source> <top> [chparam...] -- <fitter options>`) runs the
+real flow: yosys (hoglet67's atf15xx_yosys scripts: `read_liberty cells.lib`, `synth
+-flatten -noabc`, `techmap`, `dfflibmap`, `abc`, `iopadmap`, `splitnets`, `write_edif
+-lsbidx`) and then Atmel's `fit1508.exe` under wine. Results in `build/fit/<variant>.fit`
+(read the whole file), `.pin` (pins actually used) and `.jed`.
 
-| module | yosys cells | flops | comb.-only output pins | macrocell estimate | regular I/O pins |
-|---|---|---|---|---|---|
-| `cpld1_mmu` | 386 | 70 | 6 (DTACK, BERR, VPA, ROMCE, WEU, WEL) | **~76 / 128** | 58 (+ GCLK, GCLR) |
-| `cpld2_io` HW_TX=1 | 487 | 107 | 17 (D15..D0, SER_TX) | **~124 / 128** | 53 (+ GCLK, GCLR) |
-| `cpld2_io` HW_TX=0 | 404 | 88 | 16 (D15..D0) | **~104 / 128** | 53 (+ GCLK, GCLR) |
+Setup (once): `~/.local/src/atf15xx_yosys` with `vendor/` holding `fit1508.exe`,
+`aprim.lib` and `atmel.std` from a ProChip Designer installation (the WinCUPL fitters lack
+`aprim.lib`); a win32 wine prefix `~/.wine_atf` with `vcrun6sp6`. Two fitter quirks that
+`fit.sh` works around: it writes a scratch file and looks for `atmel.std` at the **root of
+the current drive**, so the workspace is `~/.wine_atf/drive_c/m68k_fit` (`build/fit` is a
+symlink to it) with `atmel.std` copied in; and a missing `.pin` file makes it exit silently.
+Only run one fit at a time. `docs/atf15xx.md` is the guide to reading `.fit` files and to
+what costs what on this part.
 
-The macrocell estimate is flops plus output pins that are purely combinational (each
-ATF1508AS pin has one macrocell; a registered output costs nothing extra). It ignores product
-term pressure: the 16 data-bus outputs each select from 8 registers and will need the
-fitter's cascade/foldback terms, and CPLD2 with the hardware transmitter is close enough to
-the limit that it may not fit. If the fitter rejects it, build CPLD2 with `HW_TX=0` (the
-firmware detects the absence by SERTXBUSY staying 0 after a SERDATA write).
+### Results (free placement, `-preassign ignore`, JTAG on, power_reset on)
 
-Pin budget: CPLD1 uses 27 inputs and 31 outputs = 58 of the 60 regular I/O (two of the
-A-bus inputs or UDS/LDS can sit on the two remaining dedicated-input pins, OE1 and
-GCLK2/OE2, to free more I/O). CPLD2 uses 13 inputs, 22 bidirectional and 18 outputs = 53.
+| variant | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in |
+|---|---|---|---|---|---|---|---|
+| `cpld1_mmu` | 1 | **98 / 128** | 70 | 18 | 102 | 362 | 27 / 40 |
+| `cpld2_io` original, HW_TX=1 (107 flops) | - | refused ("design is large") | | | | | |
+| `cpld2_io` original, HW_TX=0 | fail | grouping fail at 125 | 88 | 70 | 195 | | 40 |
+| `cpld2_io` as now (no TX, write-only ctrl regs, slot-tick UART, sentinel PS/2) | 1 | 127 / 128 | 99 | 32 | 159 | 357 | 39 / 40 |
+| ... minus ID register | 1 | 127 | 99 | 32 | 159 | 353 | 39 |
+| ... minus ID, USERIO | 1 | 126 | 95 | 14 | 131 | 421 | 36 |
+| ... minus ID, USERIO, LED1 | 1 | 125 | 94 | 14 | 130 | 416 | 36 |
+| ... minus ID, USERIO, LED1, DE/VSYNC pin bits | 1 | 125 | 94 | 14 | 130 | 414 | 35 |
+| byte-wide registers on D7..D0 (all features) | fail | grouping fail at 124 | | 28 | 152 | | 40 |
+| **`-DNO_PS2HW`** (PS/2 clock-edge interrupt, CPU shifts bits) | 2 | **105 / 128** | 76 | 11 | 116 | 343 | 27 |
+| **`-DNO_SERHW`** (external UART, e.g. 68681) | 1 | **104 / 128** | 70 | 8 | 103 | 309 | 29 |
+| `-DNO_PS2HW -DNO_SERHW` | 1 | 79 / 128 | 47 | 4 | 74 | 236 | 25 |
 
-Flow to the device (not run here; the Atmel fitter is Windows-only):
+Reading: 127/128 "fits" but is not shippable (docs/atf15xx.md: aim for <= ~120 with no LAB
+above ~36 fan-in; at 126-128 every edit is a gamble). Removing the small features (ID,
+USERIO, a LED, live video bits) buys 2 cells: the fitter spends freed cells converting
+foldbacks into nodes. The two frame engines (PS/2 receiver, serial receiver) are the only
+levers that matter; removing either lands at ~105. Byte-wide registers made it worse: eight
+pins carrying six sources each exceed one LAB's fan-in.
 
-1. `yosys -p 'read_verilog -Igenerated hdl/cpld1_mmu.v; synth -top cpld1_mmu; write_edif cpld1.edf'`
-   (likewise for `cpld2_io`; use `chparam` to set `HW_TX`).
-2. Atmel `fit1508.exe` (from the WinCUPL / ProChip distribution) under wine:
-   `fit1508 -i cpld1.edf -ifmt edif -o cpld1.jed -device P1508AS-7J84 -tech ATF1508AS
-   -preassign keep -strategy JTAG=on ...` with pin assignments given to the fitter (the
-   `atf15xx_yosys` project documents a working yosys -> fit15xx flow and its pin-constraint
-   handling). Keep JTAG enabled so the parts stay reprogrammable in circuit.
-3. JED -> SVF with Atmel's ATMISP (wine) or an equivalent converter.
-4. Program through the JTAG header with the FT232H:
+CPLD1 pins: 27 inputs + 31 outputs = 58 of the 60 regular I/O with JTAG on (2 spare), plus
+`clk24` on GCLK1 and `sysreset_n` on GCLR. CPLD2: 13 inputs, 22 bidirectional, 18 outputs =
+53 (7 spare).
+
+### Flow to the device
+
+1. `make fit` (pin blocks `//PIN: net : pin` in the sources, `-preassign keep`).
+2. JED -> SVF with Atmel's ATMISP (wine) or `prjbureau`'s `fuseconv`.
+3. Program through the JTAG header with the FT232H:
    `openocd -f interface/ftdi/um232h.cfg -c 'adapter speed 1000; transport select jtag;
    jtag newtap atf1508 tap -irlen 3 -expected-id 0x0150803f; init; svf cpld1.svf; shutdown'`
-   (the IDCODE is the ATF1508AS's; adjust if OpenOCD reports a different one).
+   (the IDCODE is the ATF1508AS's; adjust if OpenOCD reports a different one). Keep JTAG
+   enabled so the parts stay reprogrammable in circuit.

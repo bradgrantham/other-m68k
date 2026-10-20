@@ -43,9 +43,7 @@ module tb_ahct245 (
 endmodule
 
 // ---------------------------------------------------------------------------------
-module tb_system #(
-    parameter HW_TX = 1              // passed to CPLD2; test 10 adapts (iverilog -P tb_system.HW_TX=0)
-);
+module tb_system;
 
 `ifdef BOARD_PARAMS_VH
 `undef BOARD_PARAMS_VH
@@ -133,7 +131,7 @@ reg        ps2_clk_drv = 1'b1, ps2_dat_drv = 1'b1;   // tb side of the open-drai
 assign ps2_clk = ps2_clk_drv ? 1'bz : 1'b0;
 assign ps2_dat = ps2_dat_drv ? 1'bz : 1'b0;
 
-cpld2_io #(.HW_TX(HW_TX)) u2 (
+cpld2_io u2 (
     .clk24(clk24), .sysreset_n(sysreset_n),
     .a(a[3:1]), .iocs_n(iocs_p), .rw(rw),
     .latch(latch_p), .de(de_p), .hsync(hsync_p), .vsync(vsync_p),
@@ -485,16 +483,19 @@ initial begin
     // ------------------------------------------------------------------ 5
     begin_test("IO register write/read, ID, pins, NMI");
     cpu.read_word(io_addr(IO_ID_OFF));      check_eq(cpu.last_data, ID_VALUE, "ID register");
-    cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h0000, "INTEN reset value");
-    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0003, "SDIO reset value");
-    cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0007, "GPIO reset value");
-    cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0F0F, "USERIO reset value (pins read high)");
+    cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h0000, "INTEN is write-only (reads 0)");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0000, "SDIO is write-only (reads 0)");
+    cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0000, "GPIO is write-only (reads 0)");
+    cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0F00, "USERIO reset value (pins read high, OUT reads 0)");
+    check(sd_cs === 1 && sd_clk === 1 && sd_mosi === 0, "SDIO reset value on the pins");
+    check(ps2_clk === 1'b1 && ps2_dat === 1'b1 && ser_tx === 1'b1 && led === 2'b00, "GPIO reset value on the pins");
     cpu.write_word(io_addr(IO_INTEN_OFF), 16'hFFFF);
-    cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h000F, "INTEN written (4 bits)");
+    cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h0000, "INTEN still reads 0 after write");
+    check_eq(u2.inten, 4'hF, "INTEN written (4 bits)");
     cpu.write_word(io_addr(IO_INTEN_OFF), 16'h0000);
     cpu.write_word(io_addr(IO_GPIO_OFF), 16'h003F);
     check(led === 2'b11 && audio === 1'b1, "LEDs and audio follow GPIO");
-    cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h003F, "GPIO read back");
+    cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0000, "GPIO reads 0");
     cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0004);        // pull PS/2 lines low, LEDs off, SERTX idle
     check(ps2_clk === 1'b0 && ps2_dat === 1'b0 && led === 2'b00, "PS/2 open-drain pulled low");
     cpu.read_word(io_addr(IO_INTSTAT_OFF));
@@ -504,11 +505,11 @@ initial begin
     sd_miso = 1;
     cpu.write_word(io_addr(IO_SDIO_OFF), 16'h0004);
     check(sd_cs === 0 && sd_clk === 0 && sd_mosi === 1, "SD pins follow SDIO");
-    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h000C, "SDIO read back with MISO");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0000, "SDIO reads 0 (MISO via INTSTAT)");
     cpu.write_word(io_addr(IO_SDIO_OFF), 16'h0003);
     cpu.write_word(io_addr(IO_USERIO_OFF), 16'h000A);
     check(uio === 4'b1010, "USERIO pins");
-    cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0A0A, "USERIO read back");
+    cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0A00, "USERIO pins read back in IN, OUT reads 0");
     cpu.write_word(io_addr(IO_USERIO_OFF), 16'h000F);
     paljmp = 1;
     cpu.read_word(io_addr(IO_INTSTAT_OFF));
@@ -624,7 +625,7 @@ initial begin
     // watchdog: a truncated frame followed by silence must not desynchronise the receiver
     ps2_send_partial(3);
     #400000;                                               // > 4 HSYNC periods (~254 us)
-    check(u2.ps2_cnt == 0, "bit counter reset by watchdog");
+    check(u2.ps2_busy == 0, "receiver reset by watchdog");
     ps2_send(8'hA7, 1);
     #1000;
     cpu.read_word(io_addr(IO_PS2DATA_OFF)); check_eq(cpu.last_data, 16'h00A7, "byte after resync");
@@ -659,35 +660,11 @@ initial begin
     // ------------------------------------------------------------------ 10
     begin_test("serial TX via SERDATA");
     check(ser_tx === 1'b1, "TX idles high");
-    if (HW_TX != 0) begin
-        fork
-            ser_decode_tx;
-            begin
-                cpu.write_word(io_addr(IO_SERDATA_OFF), 16'h00C9);
-                cpu.read_word(io_addr(IO_INTSTAT_OFF));
-                check(cpu.last_data[INTSTAT_SERTXBUSY_BIT] == 1, "SERTXBUSY while shifting");
-            end
-        join
-        check(tx_seen, "start bit seen");
-        check_eq(tx_byte, 8'hC9, "decoded TX byte");
-        check(tx_ok === 1'b1, "stop bit");
-        #(T_SERBIT);
-        cpu.read_word(io_addr(IO_INTSTAT_OFF));
-        check(cpu.last_data[INTSTAT_SERTXBUSY_BIT] == 0, "SERTXBUSY clear after frame");
-        fork
-            ser_decode_tx;
-            cpu.write_word(io_addr(IO_SERDATA_OFF), 16'h0000);
-        join
-        check_eq(tx_byte, 8'h00, "decoded TX byte 0x00");
-        check(tx_ok === 1'b1, "stop bit after 0x00");
-        #(T_SERBIT * 2);
-    end else begin
-        cpu.write_word(io_addr(IO_SERDATA_OFF), 16'h00C9);
-        cpu.read_word(io_addr(IO_INTSTAT_OFF));
-        check(cpu.last_data[INTSTAT_SERTXBUSY_BIT] == 0, "SERTXBUSY reads 0 without hardware TX");
-        #(T_SERBIT * 2);
-        check(ser_tx === 1'b1, "TX stays idle without hardware TX");
-    end
+    cpu.write_word(io_addr(IO_SERDATA_OFF), 16'h00C9);     // ignored: no hardware transmitter
+    cpu.read_word(io_addr(IO_INTSTAT_OFF));
+    check(cpu.last_data[INTSTAT_SERTXBUSY_BIT] == 0, "SERTXBUSY reads 0 (no hardware TX)");
+    #(T_SERBIT * 2);
+    check(ser_tx === 1'b1, "TX stays idle on SERDATA write");
     // GPIO.SERTX = 0 forces the pin low (software bit-bang still works)
     cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0003);
     check(ser_tx === 1'b0, "GPIO.SERTX drives the pin low");

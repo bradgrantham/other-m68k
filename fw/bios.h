@@ -121,6 +121,7 @@ extern volatile uint32_t ticks;
 extern volatile uint32_t ticks_per_sec;
 extern irq_hook_fn irq_user_hook[8];    /* indexed by level 1..4 */
 extern irq_hook_fn audio_cb;
+extern uint16_t inten_shadow;         /* last value written to the write-only INTEN */
 void irq_init(void);
 void irq_reset_user(void);              /* drop user hooks, default INTEN */
 void irq_update_inten(void);

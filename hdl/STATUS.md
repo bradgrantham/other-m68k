@@ -3,22 +3,34 @@
 ## Done
 
 * `cpld1_mmu.v`, `cpld2_io.v`: complete implementations of architecture.md sections 2-5,
-  Verilog-2001, one clock, async reset, no inferred memories. Lint clean (`iverilog -Wall`),
-  synthesise with yosys 0.33 with no warnings about latches or undriven signals.
+  Verilog-2001, one clock, async reset, no inferred memories. Lint clean (`iverilog -Wall`).
 * `tb/`: 68000 bus master, 70 ns SRAM model with timing checks, EPROM and 74AHCT245 models,
   whole-board testbench with 12 tests, a frame/pixel monitor and a bus-contention checker.
-  `make -C hdl sim` and `make -C hdl sim-notx` both end in `RESULT: PASS`
-  (12 tests, 0 errors; ~20 s each). The contention checker was verified to fire when BUFEN
-  is deliberately moved from E5 to E4.
-* yosys: CPLD1 386 cells / 70 flops (~76 macrocells); CPLD2 487 cells / 107 flops
-  (~124 macrocells) with the hardware serial TX, 404 / 88 (~104) without.
+  `make -C hdl sim` ends in `RESULT: PASS` (12 tests, 0 errors; ~20 s).
+* **Real Atmel fits** (`make fit`, `fit.sh`; results table in README.md):
+  CPLD1 fits at 98/128 on pass 1. CPLD2 as written (no hardware TX, write-only control
+  registers, slot-tick UART counter, sentinel PS/2 shifter) reaches 127/128: it "fits" but
+  has no margin; the original with the hardware transmitter is refused outright.
 
-## Not done / needs the real tools
+## Decision pending (CPLD2 budget)
 
-* No Atmel fit (fit1508 is Windows-only, not installed). The macrocell numbers above are
-  estimates; CPLD2 with `HW_TX=1` is within 4 of the limit and may need `HW_TX=0`.
-* No pin assignment file yet; depends on the KiCad symbol pinout.
-* No JED/SVF produced.
+Either frame engine must leave CPLD2 (both measured at ~105/128):
+
+* `-DNO_PS2HW`: PS/2 becomes an interrupt per clock edge (PS2RDY = W1C edge flag, data bit
+  read live); the BIOS shifts bits in the level-2 ISR and bit-bangs host->device commands
+  with interrupts off. No board change. Emulator must model PS/2 at bit level.
+* `-DNO_SERHW`: serial moves to an external UART (68681 DUART): one more chip and crystal,
+  a chip-select and open-drain DTACK sharing in CPLD1, but hardware TX/RX with FIFOs, a
+  second port and a timer. The CPLD2 serial receiver and SERDATA go away.
+
+Already decided by the fitter (spec changes to make once the above is chosen): no hardware
+serial TX (SERDATA write ignored, SERTXBUSY reads 0); INTEN, SDIO, GPIO, USERIO.OUT are
+write-only (read as 0); PS/2 watchdog is ~3 HSYNC periods.
+
+## Not done
+
+* Pin assignment blocks (`//PIN:`) and `-preassign keep` fits; depend on the board pinout.
+* SVF conversion and programming.
 
 ## Findings against docs/architecture.md (please review)
 
@@ -55,8 +67,8 @@
 8. **Soft switches** "registered at the end of the write cycle": implemented as set while
    AS is low in the SWITCHES region with R/W low (idempotent, same visible behaviour since
    they only take effect at the frame start).
-9. **Macrocell estimate in section 7** (CPLD2 ~105 with RX+PS/2) matches the yosys-based
-   estimate with `HW_TX=0` (~104). With the transmitter it is ~124.
+9. **Macrocell estimate in section 7** (CPLD2 ~105 with RX+PS/2) was optimistic: the real
+   fitter needs 127 for that feature set and refuses it with the transmitter (see README).
 
 ## Open questions for the schematic
 
