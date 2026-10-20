@@ -237,7 +237,7 @@ sources, JTAG on, power_reset on, TDI/TMS pull-ups on:
 (Free placement gives 99 and 104.)  The pin blocks were harvested from a free fit with
 `pins.py harvest` and are **proposed**: nothing on the board depends on them yet; re-harvest
 after the schematic if routing wants pins moved, then re-verify with `pins.py check`.
-`build/fit/<chip>.pins.json` maps board signal names to pin numbers for the schematic.
+`hdl/pins_<chip>.json` maps board signal names to pin numbers for the schematic.
 
 Ladder that led here (free placement, same strategies), for the record:
 

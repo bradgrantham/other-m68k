@@ -62,8 +62,8 @@ def main():
         m = current_block(src)
         src = src[:m.start()] + blk + src[m.end():] if m else src.rstrip("\n") + "\n\n" + blk
         open(source, "w").write(src)
-        json.dump({schematic_name(n, variant): p for n, p in pins}, open("build/fit/%s.pins.json" % variant, "w"), indent=1, sort_keys=True)
-        print("%s: %d pins written to %s and build/fit/%s.pins.json" % (variant, len(pins), source, variant))
+        json.dump({schematic_name(n, variant): p for n, p in pins}, open("pins_%s.json" % variant, "w"), indent=1, sort_keys=True)
+        print("%s: %d pins written to %s and pins_%s.json" % (variant, len(pins), source, variant))
     elif cmd == "check":
         m = current_block(src)
         want = dict(pins)
