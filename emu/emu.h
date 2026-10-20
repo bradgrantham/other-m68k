@@ -9,7 +9,9 @@ struct emu_opts {
     const char *rom_path;
     const char *sd_path;
     const char *serial_log_path;
+    const char *duart_b_log_path;
     const char *type_text;
+    const char *serial_type_text;
     int scale;
     int pal_jumper;
     int fast;
@@ -19,8 +21,8 @@ struct emu_opts {
     uint32_t trace_from;
     int have_break;
     uint32_t break_addr;
-    int hw_serial_tx;
     int type_delay;
+    int serial_type_delay;
     int sd_trace;
     int io_trace;
     int exit_on_berr;

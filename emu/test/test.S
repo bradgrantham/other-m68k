@@ -1,9 +1,10 @@
 /* Emulator self-test ROM (68000, GNU as syntax).
  *
- * Exercises RAM, the LEDs, the framebuffer, a cycle-counted serial bit-bang,
- * the VBLANK autovector interrupt, the bus-error frame and the SD card, and
- * leaves its findings in a result block at RES_BASE that check.sh reads back
- * with --dump-mem.
+ * Exercises RAM, the LEDs, the framebuffer, the 68681 DUART (init, polled
+ * transmit, receive FIFO and overrun, level-3 interrupt gated by INTEN.DUART,
+ * counter and timer modes), the VBLANK autovector interrupt, the bus-error
+ * frame and the SD card, and leaves its findings in a result block at
+ * RES_BASE that check.sh reads back with --dump-mem.
  */
 #include "hw.inc"
 
@@ -24,6 +25,28 @@
 	.equ RES_LINES0,   RES_BASE+48     /* .w lines per frame measured (NTSC) */
 	.equ RES_LINES1,   RES_BASE+50     /* .w ... after SW_PAL (312) */
 	.equ RES_LINES2,   RES_BASE+52     /* .w ... after SW_NTSC again (262) */
+	.equ RES_SRA0,     RES_BASE+54     /* .b SRA right after enabling RX+TX (0x0C) */
+	.equ RES_SRA1,     RES_BASE+55     /* .b SRA after two back-to-back TBA writes (0x00) */
+	.equ RES_SRARX,    RES_BASE+56     /* .b SRA after 6 bytes arrived unread (0x13) */
+	.equ RES_RXFIRST,  RES_BASE+57     /* .b first byte popped ('A') */
+	.equ RES_RXBUF,    RES_BASE+58     /* .b x4 bytes popped by the level-3 handler ("BCF") */
+	.equ RES_IRQCNT,   RES_BASE+62     /* .w DUART RX interrupts taken (1) */
+	.equ RES_ISRVAL,   RES_BASE+64     /* .b ISR sampled in the handler (bit 1 set) */
+	.equ RES_INTSTAT3, RES_BASE+65     /* .b INTSTAT low byte in the handler (bit 3 set) */
+	.equ RES_GATED,    RES_BASE+66     /* .w INTSTAT with IMR set but INTEN.DUART clear */
+	.equ RES_GATEDCNT, RES_BASE+68     /* .w interrupts taken while gated (0) */
+	.equ RES_CTCNT,    RES_BASE+70     /* .w timer-mode CTR interrupts during the VBLANK wait */
+	.equ RES_CTPOLL,   RES_BASE+72     /* .w counter mode: polls until ISR.CTR */
+	.equ RES_ISRSTOP,  RES_BASE+74     /* .b ISR after STOP_CTR (CTR clear) */
+	.equ RES_ISRTC,    RES_BASE+75     /* .b ISR at terminal count (CTR set) */
+	.equ RES_SRAERR,   RES_BASE+76     /* .b SRA after reset-error-status (0x0C) */
+	.equ RES_MR1RD,    RES_BASE+77     /* .b MR1A read back */
+	.equ RES_MR2RD,    RES_BASE+78     /* .b MR2A read back */
+	.equ RES_IVR,      RES_BASE+79     /* .b IVR before anything wrote it (0x0F) */
+	.equ RES_CUR,      RES_BASE+80     /* .w CUR:CLR after the counter stopped */
+	.equ RES_WORDRD,   RES_BASE+82     /* .w word read of SRA (0xFF in the upper byte) */
+	.equ GPIO_SHADOW,  0x000900        /* .w GPIO is write-only: software shadow */
+	.equ RXBUF_PTR,    0x000904        /* .l fill pointer into RES_RXBUF */
 	.equ SD_BUF,       0x001000        /* 512-byte block buffer */
 
 	.equ SD_OK_CMD0,   0x0001
@@ -33,7 +56,10 @@
 	.equ SD_OK_CMD17,  0x0010
 	.equ SD_OK_DATA,   0x0020
 
-	.equ GPIO_IDLE,    0x0007          /* PS/2 released, SERTX high */
+	.equ GPIO_IDLE,    IO_GPIO_RESET   /* PS/2 released */
+	.equ ACR_CT_COUNTER_X16, 0x30      /* ACR[6:4] = 011: counter mode, X1/16 */
+	.equ ACR_CT_TIMER_X16,   0x70      /* ACR[6:4] = 111: timer mode, X1/16 */
+	.equ SRA_RXFULL_OE, SRA_FFULL_MASK+SRA_OE_MASK
 
 /* ---------------------------------------------------------------------- */
 	.section .vectors,"a"
@@ -45,7 +71,9 @@
 	.long vec_unexpected
 	.endr
 	.long vec_vblank                   /* 25: level 1 autovector */
-	.rept 230                          /* 26..255 */
+	.long vec_unexpected               /* 26 */
+	.long vec_duart                    /* 27: level 3 autovector (DUART) */
+	.rept 228                          /* 28..255 */
 	.long vec_unexpected
 	.endr
 
@@ -65,15 +93,17 @@ _start:
 
 	/* Clear the result block. */
 	lea	RES_BASE,%a0
-	moveq	#15,%d0
+	moveq	#23,%d0
 1:	clr.l	(%a0)+
 	dbra	%d0,1b
+	move.l	#RES_RXBUF,RXBUF_PTR
 
 	/* Glue ID. */
 	move.w	IO_ID_ADDR,RES_ID
 
-	/* LED0 on. */
-	move.w	#GPIO_IDLE+GPIO_LED0_MASK,IO_GPIO_ADDR
+	/* LED0 on (GPIO is write-only: keep a shadow). */
+	move.w	#GPIO_IDLE+GPIO_LED0_MASK,GPIO_SHADOW
+	move.w	GPIO_SHADOW,IO_GPIO_ADDR
 
 	/* ---- RAM pattern: long, word, two bytes, top of RAM ---- */
 	move.l	#0x12345678,0x2000
@@ -94,6 +124,39 @@ _start:
 ram_done:
 	move.w	%d1,RES_RAMOK
 
+	/* ---- DUART channel A: the spec's init sequence ---- */
+	move.b	DUART_IVR_ADDR,RES_IVR
+	move.b	#DUART_CR_RESET_MR,DUART_CRA_ADDR
+	move.b	#DUART_CR_RESET_RX,DUART_CRA_ADDR
+	move.b	#DUART_CR_RESET_TX,DUART_CRA_ADDR
+	move.b	#SERIAL_MR1_VALUE,DUART_MRA_ADDR
+	move.b	#SERIAL_MR2_VALUE,DUART_MRA_ADDR
+	move.b	#SERIAL_ACR_VALUE,DUART_ACR_ADDR
+	move.b	#SERIAL_CSR_VALUE,DUART_CSRA_ADDR
+	clr.b	DUART_IMR_ADDR
+	move.b	#DUART_CR_RESET_MR,DUART_CRA_ADDR
+	move.b	DUART_MRA_ADDR,RES_MR1RD	/* pointer back at MR1 */
+	move.b	DUART_MRA_ADDR,RES_MR2RD
+	move.b	#DUART_CR_ENABLE,DUART_CRA_ADDR
+	move.b	DUART_SRA_ADDR,RES_SRA0		/* TXRDY + TXEMT */
+	move.w	DUART_SRA_ADDR-1,RES_WORDRD	/* word access: only the odd byte is real */
+
+	/* "HELLO\n" polled on TXRDY; SRA sampled after the second write while
+	 * the first byte is still shifting out (holding register occupied). */
+	lea	msg,%a1
+	moveq	#0,%d2
+nextch:	move.b	(%a1)+,%d0
+	beq.s	serial_done
+1:	btst	#SRA_TXRDY_BIT,DUART_SRA_ADDR
+	beq.s	1b
+	move.b	%d0,DUART_TBA_ADDR
+	addq.w	#1,%d2
+	cmp.w	#2,%d2
+	bne.s	nextch
+	move.b	DUART_SRA_ADDR,RES_SRA1
+	bra.s	nextch
+serial_done:
+
 	/* ---- Gradient into framebuffer page 0: pixel = x + y ---- */
 	lea	FB_PAGE0_ADDR,%a0
 	moveq	#0,%d0				/* y */
@@ -108,34 +171,74 @@ xloop:	move.w	%d1,%d2
 	cmp.w	#240,%d0			/* VIDEO_HEIGHT */
 	bne.s	yloop
 
-	/* ---- Bit-bang "HELLO\n" on GPIO.SERTX at 115200 ---- */
-	lea	msg,%a1
-	lea	IO_GPIO_ADDR,%a0
-	move.w	#(GPIO_IDLE+GPIO_LED0_MASK)&~GPIO_SERTX_MASK,%d4
-nextch:	moveq	#0,%d0
-	move.b	(%a1)+,%d0
-	beq.s	serial_done
-	bsr	ser_putc
-	bra.s	nextch
-serial_done:
-	/* Hardware transmitter (only with --hw-serial-tx; otherwise the writes
-	 * are ignored and SERTXBUSY reads 0). */
-	lea	hwmsg,%a1
-hwnext:	moveq	#0,%d0
-	move.b	(%a1)+,%d0
-	beq.s	hw_done
-	move.w	%d0,IO_SERDATA_ADDR
-1:	btst	#INTSTAT_SERTXBUSY_BIT,IO_INTSTAT_ADDR+1
+	/* ---- DUART receive: check.sh injects "ABCDEF" after frame 1.  With the
+	 * interrupt masked the FIFO holds A B C, F waits in the shift register
+	 * and D, E were lost (OE).  Wait (bounded) for FFULL + OE. ---- */
+	move.l	#400000,%d7
+1:	move.b	DUART_SRA_ADDR,%d0
+	and.b	#SRA_RXFULL_OE,%d0
+	cmp.b	#SRA_RXFULL_OE,%d0
+	beq.s	2f
+	subq.l	#1,%d7
 	bne.s	1b
-	bra.s	hwnext
-hw_done:
+2:	move.b	DUART_SRA_ADDR,RES_SRARX
+	move.b	DUART_RBA_ADDR,RES_RXFIRST	/* pops A; F enters the FIFO */
+
+	/* IRQ pin asserted but gated: IMR passes RXRDYA, INTEN.DUART clear. */
+	move.b	#IMR_RXRDYA_MASK,DUART_IMR_ADDR
+	clr.w	IO_INTEN_ADDR
+	move.w	#0x2000,%sr
+	nop
+	nop
+	nop
+	nop
+	move.w	IO_INTSTAT_ADDR,RES_GATED
+	move.w	RES_IRQCNT,RES_GATEDCNT
+	/* Open the gate: level 3 fires at once and the handler drains B C F. */
+	move.w	#INTEN_DUART_MASK,IO_INTEN_ADDR
+	nop
+	nop
+	nop
+	nop
+	move.w	#0x2700,%sr
+	move.b	#DUART_CR_RESET_ERR,DUART_CRA_ADDR
+	move.b	DUART_SRA_ADDR,RES_SRAERR	/* OE gone, FIFO empty, TX idle */
+
+	/* ---- Counter mode, X1/16 (230.4 kHz): 64 ticks, poll for terminal
+	 * count, stop, read the count (rolled past 0 -> 0xFFxx). ---- */
+	move.b	#SERIAL_ACR_VALUE+ACR_CT_COUNTER_X16,DUART_ACR_ADDR
+	clr.b	DUART_CTUR_ADDR
+	move.b	#0x40,DUART_CTLR_ADDR
+	tst.b	DUART_START_CTR_ADDR
+	moveq	#0,%d7
+1:	addq.w	#1,%d7
+	cmp.w	#0x7FFF,%d7
+	beq.s	2f
+	btst	#ISR_CTR_BIT,DUART_ISR_ADDR
+	beq.s	1b
+2:	move.w	%d7,RES_CTPOLL
+	move.b	DUART_ISR_ADDR,RES_ISRTC
+	tst.b	DUART_STOP_CTR_ADDR
+	move.b	DUART_ISR_ADDR,RES_ISRSTOP
+	move.b	DUART_CUR_ADDR,RES_CUR
+	move.b	DUART_CLR_ADDR,RES_CUR+1
+
+	/* ---- Timer mode, X1/16, preload 72: ISR.CTR every 2*72 ticks = 625 us.
+	 * Counted by the level-3 handler while waiting for three VBLANKs. ---- */
+	move.b	#SERIAL_ACR_VALUE+ACR_CT_TIMER_X16,DUART_ACR_ADDR
+	clr.b	DUART_CTUR_ADDR
+	move.b	#72,DUART_CTLR_ADDR
+	tst.b	DUART_START_CTR_ADDR
+	move.b	#IMR_RXRDYA_MASK+IMR_CTR_MASK,DUART_IMR_ADDR
 
 	/* ---- VBLANK interrupt: count three frames ---- */
 	move.w	#INTSTAT_VBLANK_MASK,IO_INTSTAT_ADDR	/* clear a stale flag */
-	move.w	#INTEN_VBLANK_MASK,IO_INTEN_ADDR
+	move.w	#INTEN_VBLANK_MASK+INTEN_DUART_MASK,IO_INTEN_ADDR
 	move.w	#0x2000,%sr
 wait3:	cmp.l	#3,RES_VBLANKS
 	blo.s	wait3
+	move.b	#IMR_RXRDYA_MASK,DUART_IMR_ADDR	/* timer interrupts off */
+	tst.b	DUART_STOP_CTR_ADDR
 
 	/* ---- Soft switches: measure lines per frame in NTSC, PAL, NTSC ---- */
 	bsr	count_lines
@@ -160,33 +263,10 @@ berr_cont:
 
 	/* ---- Done ---- */
 	move.w	#0xBEEF,RES_MARKER
-	move.w	#GPIO_IDLE+GPIO_LED0_MASK+GPIO_LED1_MASK,IO_GPIO_ADDR
+	move.w	#GPIO_IDLE+GPIO_LED0_MASK+GPIO_LED1_MASK,GPIO_SHADOW
+	move.w	GPIO_SHADOW,IO_GPIO_ADDR
 idle:	stop	#0x2000				/* VBLANK keeps counting */
 	bra.s	idle
-
-/* ---------------------------------------------------------------------- */
-/* ser_putc: d0.b = character.  a0 = IO_GPIO_ADDR, d4 = GPIO value with
- * SERTX low.  Each bit takes exactly 104 clocks (115385 baud, +0.16%):
- * moveq 4 + lsr 8 + addx 4 + lsl 10 + or 4 + move 8 + moveq 4 + dbra
- * 3*10+14 + nop 4 + nop 4 + dbra 10 = 104.  Clobbers d1-d3, d5. */
-ser_putc:
-	move.w	%d0,%d1
-	lsl.w	#1,%d1				/* start bit 0 at bit 0 */
-	ori.w	#0x0200,%d1			/* stop bit at bit 9 */
-	moveq	#9,%d5
-bitloop:
-	moveq	#0,%d3
-	lsr.w	#1,%d1				/* X = C = bit */
-	addx.w	%d3,%d3				/* d3 = bit */
-	lsl.w	#GPIO_SERTX_BIT,%d3
-	or.w	%d4,%d3
-	move.w	%d3,(%a0)
-	moveq	#3,%d2
-1:	dbra	%d2,1b
-	nop
-	nop
-	dbra	%d5,bitloop
-	rts
 
 /* ---------------------------------------------------------------------- */
 /* count_lines: d0.l = number of HSYNC flags between two VBLANK flags, i.e.
@@ -212,8 +292,8 @@ count_lines:
 
 /* ---------------------------------------------------------------------- */
 /* spi_byte: d0.b out -> d0.b in.  a0 = IO_SDIO_ADDR, d6 = CS bit (0 =
- * selected).  Mode 0: set MOSI with CLK low, raise CLK, sample MISO, lower
- * CLK.  Clobbers d1-d5. */
+ * selected).  Mode 0: set MOSI with CLK low, raise CLK, sample MISO (via
+ * INTSTAT.SDMISO: SDIO is write-only), lower CLK.  Clobbers d1-d5. */
 spi_byte:
 	moveq	#7,%d2
 	moveq	#0,%d3
@@ -226,9 +306,9 @@ spi_bit:
 	move.w	%d1,%d5
 	ori.w	#SDIO_CLK_MASK,%d5
 	move.w	%d5,(%a0)			/* CLK high: card samples MOSI */
-	move.w	(%a0),%d4
+	move.w	IO_INTSTAT_ADDR,%d4
 	add.b	%d3,%d3
-	btst	#SDIO_MISO_BIT,%d4
+	btst	#INTSTAT_SDMISO_BIT,%d4
 	beq.s	2f
 	addq.b	#1,%d3
 2:	move.w	%d1,(%a0)			/* CLK low */
@@ -359,9 +439,36 @@ sd_fail:
 /* Level-1 autovector: count, sample INTSTAT, clear the flag. */
 vec_vblank:
 	addq.l	#1,RES_VBLANKS
-	eori.w	#GPIO_AUDIO_MASK,IO_GPIO_ADDR	/* 30 Hz square wave on AUDIO */
+	eori.w	#GPIO_AUDIO_MASK,GPIO_SHADOW	/* 30 Hz square wave on AUDIO */
+	move.w	GPIO_SHADOW,IO_GPIO_ADDR
 	move.w	IO_INTSTAT_ADDR,RES_INTSTAT
 	move.w	#INTSTAT_VBLANK_MASK,IO_INTSTAT_ADDR
+	rte
+
+/* Level-3 autovector (DUART): drain the channel A FIFO into RES_RXBUF,
+ * acknowledge a counter/timer tick with STOP_CTR. */
+vec_duart:
+	movem.l	%d0-%d1/%a0,-(%sp)
+	move.b	DUART_ISR_ADDR,%d1
+	btst	#ISR_RXRDYA_BIT,%d1
+	beq.s	3f
+	addq.w	#1,RES_IRQCNT
+	move.b	%d1,RES_ISRVAL
+	move.b	IO_INTSTAT_ADDR+1,RES_INTSTAT3
+	move.l	RXBUF_PTR,%a0
+1:	btst	#SRA_RXRDY_BIT,DUART_SRA_ADDR
+	beq.s	2f
+	move.b	DUART_RBA_ADDR,%d0
+	cmpa.l	#RES_RXBUF+4,%a0
+	bhs.s	1b				/* buffer full: discard */
+	move.b	%d0,(%a0)+
+	bra.s	1b
+2:	move.l	%a0,RXBUF_PTR
+3:	btst	#ISR_CTR_BIT,%d1
+	beq.s	4f
+	tst.b	DUART_STOP_CTR_ADDR		/* clears ISR.CTR (timer keeps running) */
+	addq.w	#1,RES_CTCNT
+4:	movem.l	(%sp)+,%d0-%d1/%a0
 	rte
 
 /* Bus error.  68000 group-0 frame: +0 access info, +2 fault address,
@@ -387,7 +494,6 @@ vec_unexpected:
 /* ---------------------------------------------------------------------- */
 	.section .rodata
 msg:	.asciz	"HELLO\n"
-hwmsg:	.asciz	"HW\n"
 	.even
 cmd0:	.byte	0x40,0x00,0x00,0x00,0x00,0x95
 cmd8:	.byte	0x48,0x00,0x00,0x01,0xAA,0x87

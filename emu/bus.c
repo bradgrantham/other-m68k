@@ -2,8 +2,10 @@
  *
  * Regions (generated/hw.h): RAM 0x000000 (256 KB, overlaid by ROM at reset),
  * ROM 0xE00000 (128 KB), IO 0xF00000 (CPLD2 registers), SWITCHES 0xF10000
- * (CPLD1 soft switches).  Anything else asserts BERR, except the interrupt
- * acknowledge pattern A23..A4 = 1 (0xFFFFF0..0xFFFFFF) which gets VPA.
+ * (CPLD1 soft switches), DUART 0xF20000 (68681 on D0..D7, odd addresses,
+ * A1..A4 = RS1..RS4, mirrored).  Anything else asserts BERR, except the
+ * interrupt acknowledge pattern A23..A4 = 1 (0xFFFFF0..0xFFFFFF) which gets
+ * VPA.
  *
  * All CPU accesses funnel through bus_read16/bus_write16 (the board is 16-bit
  * wide); byte accesses are lane-masked halves and long accesses two words,
@@ -20,6 +22,7 @@
 #include "emu.h"
 #include "bus.h"
 #include "io.h"
+#include "duart.h"
 
 uint8_t bus_ram[RAM_SIZE];
 uint8_t bus_rom[ROM_SIZE];
@@ -131,6 +134,49 @@ static inline void wr16(uint8_t *p, uint16_t v)
     p[1] = (uint8_t)v;
 }
 
+/* ---- DUART ------------------------------------------------------------ */
+
+/* The 68681 sits on D0..D7, i.e. the odd byte lane, with RS4..RS1 = A4..A1.
+ * CPLD1 asserts DUARTCS for any access in the region, so word and even-byte
+ * accesses complete (DTACK from the chip) but only the odd byte carries data:
+ * a word read returns 0xFF in the upper byte, a word write delivers its low
+ * byte, an even-byte access reaches no register here (its data bus half is
+ * floating; what the chip makes of it on hardware is undefined). */
+static int duart_warned_word, duart_warned_even;
+
+static void duart_width_warning(int *flag, const char *what, uint32_t addr, int write)
+{
+    if (*flag)
+        return;
+    *flag = 1;
+    fprintf(stderr, "m68k-emu: %s %s %06X at PC=%06X: only odd-address byte accesses reach the DUART; "
+            "further occurrences not shown\n", what, write ? "write to" : "read of", addr,
+            m68k_get_reg(NULL, M68K_REG_PPC) & 0xFFFFFF);
+}
+
+static uint16_t duart_read16(uint32_t addr, int lanes)
+{
+    unsigned rs = (addr >> 1) & 0xF;
+    if (lanes == 3)
+        duart_width_warning(&duart_warned_word, "word", addr, 0);
+    else if (!(lanes & 1))
+        duart_width_warning(&duart_warned_even, "even-byte", addr, 0);
+    if (!(lanes & 1))
+        return 0xFFFF;
+    return (uint16_t)(0xFF00 | duart_read(rs));
+}
+
+static void duart_write16(uint32_t addr, uint16_t val, int lanes)
+{
+    unsigned rs = (addr >> 1) & 0xF;
+    if (lanes == 3)
+        duart_width_warning(&duart_warned_word, "word", addr, 1);
+    else if (!(lanes & 1))
+        duart_width_warning(&duart_warned_even, "even-byte", addr, 1);
+    if (lanes & 1)
+        duart_write(rs, (uint8_t)val);
+}
+
 /* One 16-bit CPU bus cycle.  lanes: bit 1 = upper byte (even address, UDS),
  * bit 0 = lower byte (odd address, LDS). */
 static uint16_t bus_read16(uint32_t addr, int lanes)
@@ -151,6 +197,8 @@ static uint16_t bus_read16(uint32_t addr, int lanes)
         v = io_read16(a & 0xE, lanes);
     } else if (in_region(a, SWITCHES_BASE, SWITCHES_SIZE)) {
         v = 0xFFFF;                     /* write-only; floating bus */
+    } else if (in_region(a, DUART_BASE, DUART_SIZE)) {
+        v = duart_read16(addr, lanes);
     } else if (a >= IACK_BASE) {
         if (addr == DOUBLE_FAULT_ADDR)
             emu_cpu_halted();
@@ -179,6 +227,8 @@ static void bus_write16(uint32_t addr, uint16_t val, int lanes)
         io_write16(a & 0xE, val, lanes);
     } else if (in_region(a, SWITCHES_BASE, SWITCHES_SIZE)) {
         io_switch_write(a & 6);
+    } else if (in_region(a, DUART_BASE, DUART_SIZE)) {
+        duart_write16(addr, val, lanes);
     } else if (a >= IACK_BASE) {
         /* nothing there; VPA, ignored */
     } else {
@@ -240,6 +290,8 @@ uint8_t bus_peek8(uint32_t addr)
         uint16_t w = io_peek16(addr & 0xE);
         return (addr & 1) ? (uint8_t)w : (uint8_t)(w >> 8);
     }
+    if (in_region(addr, DUART_BASE, DUART_SIZE))
+        return (addr & 1) ? duart_peek((addr >> 1) & 0xF) : 0xFF;
     return 0xFF;
 }
 

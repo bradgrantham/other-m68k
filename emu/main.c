@@ -8,8 +8,8 @@
  * next line so long-term timing is exact.  Memory handlers that change the
  * interrupt level end the Musashi timeslice so the CPU samples IPL after the
  * current instruction (Musashi only checks interrupts at m68k_execute()
- * entry and on SR writes).  Peripherals that need the clock (serial decoder,
- * stdin RX, PS/2 delivery) are polled at the end of each line; the
+ * entry and on SR writes).  Peripherals that need the clock (DUART, console
+ * RX, PS/2 delivery) are polled at the end of each line; the
  * framebuffer is converted at the end of the last active line and shown,
  * paced to real time, at the end of the frame.
  */
@@ -30,6 +30,7 @@
 #include "io.h"
 #include "video.h"
 #include "serial.h"
+#include "duart.h"
 #include "ps2.h"
 #include "sdcard.h"
 #include "audio.h"
@@ -38,6 +39,7 @@ struct emu_opts opts = {
     .scale = 3,
     .frames = -1,
     .type_delay = 120,
+    .serial_type_delay = 120,
 };
 
 static uint64_t cycle_base;         /* cycles completed before the current m68k_execute() */
@@ -144,7 +146,7 @@ static void system_reset(void)
     bus_reset();
     io_reset();
     video_reset();
-    serial_reset();
+    duart_reset();
     sd_reset();
     ps2_reset();
     audio_reset();
@@ -226,10 +228,12 @@ static void usage(FILE *f)
         "  --trace             disassemble every instruction to stderr\n"
         "  --trace-from ADDR   start tracing when PC first reaches ADDR\n"
         "  --break ADDR        dump registers and exit when PC reaches ADDR\n"
-        "  --serial-log FILE   also write decoded serial TX bytes to FILE\n"
-        "  --hw-serial-tx      emulate a hardware transmitter behind SERDATA\n"
+        "  --serial-log FILE   also write serial (DUART channel A) output to FILE\n"
+        "  --duart-b-log FILE  write DUART channel B output to FILE (dropped otherwise)\n"
         "  --type STR          type STR on the PS/2 keyboard (\\n = Enter)\n"
         "  --type-delay N      ... after N frames (default 120)\n"
+        "  --serial-type STR   feed STR into the serial port (DUART channel A, \\n = CR)\n"
+        "  --serial-type-delay N  ... after N frames (default 120)\n"
         "  --sd-trace          log SD card commands to stderr\n"
         "  --io-trace          log CPLD2 register accesses and soft switches to stderr\n"
         "  --exit-on-berr      exit with status 2 on the first bus error\n"
@@ -238,7 +242,7 @@ static void usage(FILE *f)
         "  --no-audio          disable audio output\n"
         "  --no-stdin          do not read serial RX bytes from stdin\n"
         "Keys: F11 reset button, F12 or Pause NMI button, others -> PS/2 keyboard.\n"
-        "Serial TX bytes go to stdout; diagnostics go to stderr.\n");
+        "Serial (DUART channel A) output goes to stdout; diagnostics go to stderr.\n");
 }
 
 static uint32_t parse_num(const char *s, const char *what)
@@ -283,9 +287,11 @@ static void parse_args(int argc, char **argv)
             opts.break_addr = parse_num(need_arg(argc, argv, &i), "address") & 0xFFFFFF;
         }
         else if (!strcmp(a, "--serial-log")) opts.serial_log_path = need_arg(argc, argv, &i);
-        else if (!strcmp(a, "--hw-serial-tx")) opts.hw_serial_tx = 1;
+        else if (!strcmp(a, "--duart-b-log")) opts.duart_b_log_path = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--type")) opts.type_text = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--type-delay")) opts.type_delay = (int)parse_num(need_arg(argc, argv, &i), "frame count");
+        else if (!strcmp(a, "--serial-type")) opts.serial_type_text = need_arg(argc, argv, &i);
+        else if (!strcmp(a, "--serial-type-delay")) opts.serial_type_delay = (int)parse_num(need_arg(argc, argv, &i), "frame count");
         else if (!strcmp(a, "--sd-trace")) opts.sd_trace = 1;
         else if (!strcmp(a, "--io-trace")) opts.io_trace = 1;
         else if (!strcmp(a, "--exit-on-berr")) opts.exit_on_berr = 1;
@@ -330,7 +336,7 @@ static void on_signal(int sig)
 
 static void cleanup(void)
 {
-    serial_shutdown();              /* flushes the decoder, restores the tty */
+    serial_shutdown();              /* flushes the logs, restores the tty */
     sd_shutdown();
     audio_shutdown();
     video_shutdown();
@@ -359,7 +365,7 @@ int main(int argc, char **argv)
 
     if (bus_load_rom(opts.rom_path) != 0)
         return 1;
-    if (serial_init(opts.serial_log_path, !opts.no_stdin) != 0)
+    if (serial_init(opts.serial_log_path, opts.duart_b_log_path, !opts.no_stdin) != 0)
         return 1;
     atexit(cleanup);
     signal(SIGINT, on_signal);
@@ -392,14 +398,14 @@ int main(int argc, char **argv)
     system_reset();
 
     int typed = (opts.type_text == NULL);
+    int serial_typed = (opts.serial_type_text == NULL);
     while (!exit_requested) {
         int v = 0;
         for (;;) {
             video_line_start(v, cycle_base);
             const struct video_timing *t = video_timing();
             run_line(t->line_clocks);
-            serial_tx_decode(cycle_base);
-            serial_rx_poll(cycle_base);
+            duart_tick(cycle_base);
             ps2_tick(cycle_base);
             if (v == t->v_active - 1)
                 video_render();
@@ -423,6 +429,10 @@ int main(int argc, char **argv)
             ps2_type_text(opts.type_text);
             typed = 1;
         }
+        if (!serial_typed && frames_done >= opts.serial_type_delay) {
+            serial_inject_text(opts.serial_type_text);
+            serial_typed = 1;
+        }
         if (opts.frames >= 0 && frames_done >= opts.frames)
             break;
         if (!opts.fast && !opts.headless)
@@ -430,9 +440,10 @@ int main(int argc, char **argv)
     }
 
     serial_flush();
-    fprintf(stderr, "m68k-emu: %ld frames, %llu cycles, %lu serial bytes, %lu bus errors%s\n",
-            frames_done, (unsigned long long)cycle_base, serial_tx_bytes, bus_berr_count,
-            cpu_halted ? ", CPU halted" : "");
+    fprintf(stderr, "m68k-emu: %ld frames, %llu cycles, %lu serial bytes out, %lu in (%lu overruns, %lu lost), "
+            "%lu bus errors%s\n",
+            frames_done, (unsigned long long)cycle_base, duart_tx_bytes[0], duart_rx_bytes, duart_rx_overruns,
+            duart_rx_dropped, bus_berr_count, cpu_halted ? ", CPU halted" : "");
     if (opts.dump_regs)
         emu_dump_regs(stderr);
     for (int i = 0; i < opts.dump_mem_count; i++)

@@ -1,5 +1,5 @@
 # Emulator self-test: builds a small 68000 ROM, runs it headless and checks
-# the results it leaves in RAM plus the decoded serial output.
+# the results it leaves in RAM plus the serial (DUART channel A) output.
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
 CROSS   = $(XTOOLS)/m68k-unknown-elf-
 CC      = $(CROSS)gcc

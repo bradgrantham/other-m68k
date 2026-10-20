@@ -3,7 +3,9 @@
  * Registers are 16 bits at IO_BASE + 2n (n = A1..A3, mirrored through the
  * region).  CPLD2 has no UDS/LDS, so byte accesses are undefined on the real
  * board; here a byte read returns its half of the word and a byte write
- * updates only that half (the least surprising choice for software).
+ * updates only that half of the shadow (the least surprising choice for
+ * software).  INTEN, SDIO, GPIO and USERIO.OUT are write-only on the board
+ * (they read as 0); the emulator keeps the written values as the pin state.
  */
 #include <stdio.h>
 #include <string.h>
@@ -14,28 +16,26 @@
 #include "emu.h"
 #include "io.h"
 #include "video.h"
-#include "serial.h"
+#include "duart.h"
 #include "sdcard.h"
 #include "audio.h"
 
-static uint16_t flags;          /* INTSTAT bits 0..6 that are flags */
+static uint16_t flags;          /* INTSTAT bits that are flags */
 static uint16_t inten;
 static uint16_t sdio;
 static uint16_t gpio;
 static uint16_t ps2data;
-static uint16_t serdata;
 static uint16_t userio;
 static int nmi_held;
 static int cur_ipl = -1;
 static int pending_page;
 static int pending_pal;
 
-#define FLAG_MASK (INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2RDY | INTSTAT_SERRX | \
-                   INTSTAT_PS2ERR | INTSTAT_SERRXOVR)
-#define W1C_MASK  (INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2ERR | INTSTAT_SERRXOVR)
-#define INTEN_MASK (INTEN_VBLANK | INTEN_HSYNC | INTEN_PS2 | INTEN_SERRX)
+#define FLAG_MASK (INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2RDY | INTSTAT_PS2ERR)
+#define W1C_MASK  (INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2ERR)
+#define INTEN_MASK (INTEN_VBLANK | INTEN_HSYNC | INTEN_PS2 | INTEN_DUART)
 #define SDIO_OUT_MASK (SDIO_CS | SDIO_CLK | SDIO_MOSI)
-#define GPIO_MASK (GPIO_PS2CLK | GPIO_PS2DAT | GPIO_SERTX | GPIO_AUDIO | GPIO_LED0 | GPIO_LED1)
+#define GPIO_MASK (GPIO_PS2CLK | GPIO_PS2DAT | GPIO_AUDIO | GPIO_LED0 | GPIO_LED1)
 
 static void io_trace(const char *what, uint32_t offset, uint16_t val)
 {
@@ -51,7 +51,6 @@ void io_reset(void)
     sdio = IO_SDIO_RESET;
     gpio = IO_GPIO_RESET;
     ps2data = 0;
-    serdata = 0;
     userio = IO_USERIO_RESET;
     pending_page = 0;
     pending_pal = 0;
@@ -69,8 +68,8 @@ int io_current_ipl(void)
         level = IRQ_VBLANK_LEVEL;
     if ((flags & INTSTAT_PS2RDY) && (inten & INTEN_PS2) && level < IRQ_PS2_LEVEL)
         level = IRQ_PS2_LEVEL;
-    if ((flags & INTSTAT_SERRX) && (inten & INTEN_SERRX) && level < IRQ_SERRX_LEVEL)
-        level = IRQ_SERRX_LEVEL;
+    if (duart_irq() && (inten & INTEN_DUART) && level < IRQ_DUART_LEVEL)
+        level = IRQ_DUART_LEVEL;
     if ((flags & INTSTAT_HSYNC) && (inten & INTEN_HSYNC) && level < IRQ_HSYNC_LEVEL)
         level = IRQ_HSYNC_LEVEL;
     if (nmi_held)
@@ -121,18 +120,6 @@ int io_ps2_ready(void)
     return (flags & INTSTAT_PS2RDY) != 0;
 }
 
-void io_serial_deliver(uint8_t byte)
-{
-    if (opts.io_trace)
-        fprintf(stderr, "m68k-emu: io: %10llu serial RX byte %02X%s\n", (unsigned long long)emu_cycles(),
-                byte, (flags & INTSTAT_SERRX) ? " (overrun)" : "");
-    if (flags & INTSTAT_SERRX)
-        flags |= INTSTAT_SERRXOVR;
-    serdata = byte;
-    flags |= INTSTAT_SERRX;
-    io_update_ipl();
-}
-
 uint16_t io_gpio(void)
 {
     return gpio;
@@ -152,10 +139,9 @@ int io_pending_pal(void)
 
 static uint16_t intstat_value(void)
 {
-    uint64_t now = emu_cycles();
     uint16_t v = flags;
-    if (serial_hw_busy(now))
-        v |= INTSTAT_SERTXBUSY;
+    if (duart_irq())
+        v |= INTSTAT_DUARTIRQ;
     if (nmi_held)
         v |= INTSTAT_NMIBTN;
     if (sd_miso())
@@ -166,37 +152,31 @@ static uint16_t intstat_value(void)
         v |= INTSTAT_PS2CLK;
     if (gpio & GPIO_PS2DAT)
         v |= INTSTAT_PS2DAT;
-    v |= INTSTAT_SERRXPIN;          /* idle high */
     if (opts.pal_jumper)
         v |= INTSTAT_PALJMP;
     v |= video_live_pins();
     return v;
 }
 
-static uint16_t sdio_value(void)
-{
-    return (uint16_t)((sdio & SDIO_OUT_MASK) | (sd_miso() ? SDIO_MISO : 0));
-}
-
 static uint16_t userio_value(void)
 {
-    /* Nothing external drives the header pins: they read back the drive. */
-    return (uint16_t)((userio & USERIO_OUT_MASK) | ((userio & USERIO_OUT_MASK) << USERIO_IN_SHIFT));
+    /* OUT is write-only.  Nothing external drives the header pins, so the IN
+     * nibble reads back the open-drain drive (pulled up when released). */
+    return (uint16_t)((userio & USERIO_OUT_MASK) << USERIO_IN_SHIFT);
 }
 
 uint16_t io_peek16(uint32_t offset)
 {
     switch (offset & 0xE) {
     case IO_INTSTAT_OFFSET: return intstat_value();
-    case IO_INTEN_OFFSET:   return inten;
-    case IO_SDIO_OFFSET:    return sdio_value();
-    case IO_GPIO_OFFSET:    return gpio;
+    case IO_INTEN_OFFSET:   return 0;                   /* write-only */
+    case IO_SDIO_OFFSET:    return 0;                   /* write-only */
+    case IO_GPIO_OFFSET:    return 0;                   /* write-only */
     case IO_PS2DATA_OFFSET: return ps2data;
-    case IO_SERDATA_OFFSET: return serdata;
     case IO_USERIO_OFFSET:  return userio_value();
     case IO_ID_OFFSET:      return IO_ID_RESET;
+    default:                return 0;                   /* unassigned: no register */
     }
-    return 0xFFFF;
 }
 
 uint16_t io_read16(uint32_t offset, int lanes)
@@ -209,12 +189,6 @@ uint16_t io_read16(uint32_t offset, int lanes)
     case IO_PS2DATA_OFFSET:
         if (flags & INTSTAT_PS2RDY) {
             flags &= (uint16_t)~INTSTAT_PS2RDY;
-            io_update_ipl();
-        }
-        break;
-    case IO_SERDATA_OFFSET:
-        if (flags & INTSTAT_SERRX) {
-            flags &= (uint16_t)~INTSTAT_SERRX;
             io_update_ipl();
         }
         break;
@@ -235,8 +209,6 @@ static void gpio_write(uint16_t val)
     uint16_t old = gpio;
     gpio = val & GPIO_MASK;
     uint16_t changed = old ^ gpio;
-    if (changed & GPIO_SERTX)
-        serial_tx_edge(emu_cycles(), (gpio & GPIO_SERTX) != 0);
     if (changed & GPIO_AUDIO)
         audio_edge(emu_cycles(), (gpio & GPIO_AUDIO) != 0);
 }
@@ -266,15 +238,13 @@ void io_write16(uint32_t offset, uint16_t val, int lanes)
         break;
     case IO_PS2DATA_OFFSET:
         break;                      /* read only */
-    case IO_SERDATA_OFFSET:
-        if (opts.hw_serial_tx && (lanes & 1))
-            serial_hw_tx((uint8_t)val, emu_cycles());
-        break;
     case IO_USERIO_OFFSET:
         userio = lane_merge(userio, val, lanes) & USERIO_OUT_MASK;
         break;
     case IO_ID_OFFSET:
         break;                      /* read only */
+    default:
+        break;                      /* unassigned: ignored */
     }
 }
 
