@@ -208,8 +208,8 @@ of 128 with hardware serial RX and PS/2 RX; hardware serial TX only if it fits.
 
 ## 8. Emulator timing model
 
-Musashi runs 12e6/59.95 ≈ 200,167 cycles per NTSC frame (764*262/... = 200,168 CPU clocks:
-764 clocks * 262 lines). Per line: HSYNC flag at the line's sync start; VBLANK flag at the
+Musashi runs 764 x 262 = 200,168 CPU clocks per NTSC frame (768 x 312 = 239,616 for PAL).
+Per line: HSYNC flag at the line's sync start; VBLANK flag at the
 first vsync line. RAM accesses may optionally add the alignment penalty (average +1 clock)
 for realism; ROM accesses none. Serial TX is decoded from GPIO.SERTX edges using the cycle
 counter at 104.17 cycles per bit.

@@ -131,8 +131,14 @@ def gen_hw_inc(d):
         eq(nm + "_BASE", hx(r["base"])); eq(nm + "_SIZE", hx(r["size"]))
         eq(nm + "_END", hx(n(r["base"]) + n(r["size"])))
     eq("SYS_STACK_TOP", hx(n(d["ram_layout"][1]["base"]) + n(d["ram_layout"][1]["size"])))
-    for i, p in enumerate(d["video"]["pages"]):
+    v = d["video"]
+    eq("VIDEO_WIDTH", v["width"]); eq("VIDEO_HEIGHT", v["height"]); eq("VIDEO_BPP", v["bpp"])
+    eq("VIDEO_BYTES_PER_LINE", v["bytes_per_line"]); eq("FB_SIZE", v["bytes_per_line"] * v["height"])
+    for i, p in enumerate(v["pages"]):
         eq("FB_PAGE%d_ADDR" % i, hx(p))
+    for std, t in v["timing"].items():
+        for k in ("line_clocks", "h_active", "h_front", "h_sync", "h_back", "lines", "v_active", "v_bottom", "v_sync", "v_top"):
+            eq("VIDEO_%s_%s" % (std.upper(), k.upper()), t[k])
     for blk_name, blk in d["registers"].items():
         prefix = "IO" if blk_name == "io" else "SW"
         eq(prefix + "_BASE", hx(blk["base"]))
