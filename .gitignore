@@ -1,0 +1,13 @@
+build/
+*.o
+*.elf
+*.bin
+*.map
+*.jed
+*.vcd
+__pycache__/
+emu/build/
+fw/build/
+sdk/build/
+*.img
+!spec/*.json

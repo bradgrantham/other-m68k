@@ -1,0 +1,1074 @@
+{
+  "board": {
+    "name": "other-m68k",
+    "revision": 1,
+    "cpu": "MC68000P12",
+    "osc_hz": 24000000,
+    "cpu_clock_hz": 12000000,
+    "cpu_clock_div": 2,
+    "slot_fast_clocks": 8,
+    "slot_cpu_clocks": 4,
+    "desc": "68000 SBC: 256K SRAM, 128K EPROM, memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, TTL serial, 1-bit audio."
+  },
+  "memory_map": [
+    {
+      "name": "RAM",
+      "base": "0x000000",
+      "size": "0x040000",
+      "kind": "ram",
+      "device": "2x KM681000BLP-7 (128Kx8, 70ns), word wide",
+      "desc": "256 KB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). At reset the ROM is overlaid here until the first access to the ROM region."
+    },
+    {
+      "name": "ROM",
+      "base": "0xE00000",
+      "size": "0x020000",
+      "kind": "rom",
+      "device": "2x M27C512-70 (64Kx8, 70ns), word wide",
+      "desc": "128 KB EPROM. Read-only; zero wait states; not subject to slot alignment. Vectors at offset 0 (overlaid at 0x000000 at reset)."
+    },
+    {
+      "name": "IO",
+      "base": "0xF00000",
+      "size": "0x010000",
+      "kind": "io",
+      "registers": "io",
+      "desc": "CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored)."
+    },
+    {
+      "name": "SWITCHES",
+      "base": "0xF10000",
+      "size": "0x010000",
+      "kind": "io",
+      "registers": "switches",
+      "desc": "CPLD1 soft switches. Write-only; writing any value to the address performs the action. Reads return garbage."
+    }
+  ],
+  "unmapped_policy": "BERR asserted (bus error exception) for any access outside the regions above, except the interrupt-acknowledge pattern A23..A4 all ones, which is autovectored via VPA.",
+  "ram_layout": [
+    {
+      "name": "VECTORS",
+      "base": "0x000000",
+      "size": "0x000400",
+      "desc": "Exception vector table (RAM after overlay clears)."
+    },
+    {
+      "name": "SYSDATA",
+      "base": "0x000400",
+      "size": "0x003C00",
+      "desc": "BIOS .data/.bss; supervisor stack grows down from the top (0x004000)."
+    },
+    {
+      "name": "USER",
+      "base": "0x004000",
+      "size": "0x016800",
+      "desc": "User program load region (ELF link address 0x004000). User stack grows down from the top (0x01A800). Extends to 0x02D400 if page 1 of the framebuffer is not used."
+    },
+    {
+      "name": "FB1",
+      "base": "0x01A800",
+      "size": "0x012C00",
+      "desc": "Framebuffer page 1 (optional double buffer)."
+    },
+    {
+      "name": "FB0",
+      "base": "0x02D400",
+      "size": "0x012C00",
+      "desc": "Framebuffer page 0 (default, displayed after reset)."
+    }
+  ],
+  "video": {
+    "width": 320,
+    "height": 240,
+    "bpp": 8,
+    "format": "RGB332",
+    "pixel_desc": "bits 7..5 red, 4..2 green, 1..0 blue. Byte at the even (upper, D15..D8) address is the left pixel of the word.",
+    "bytes_per_line": 320,
+    "pages": [
+      "0x02D400",
+      "0x01A800"
+    ],
+    "pixel_clocks": 2,
+    "progressive": true,
+    "encoder": "AD724 (RGB in, composite out). Standard (NTSC/PAL) selected by on-board jumper plus matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP.",
+    "timing": {
+      "ntsc": {
+        "line_clocks": 764,
+        "h_active": 640,
+        "h_front": 16,
+        "h_sync": 56,
+        "h_back": 52,
+        "lines": 262,
+        "v_active": 240,
+        "v_bottom": 3,
+        "v_sync": 3,
+        "v_top": 16,
+        "desc": "12 MHz CPU clocks per line; 191 slots of 4 clocks. 15.707 kHz / 59.95 Hz, non-interlaced ('240p')."
+      },
+      "pal": {
+        "line_clocks": 768,
+        "h_active": 640,
+        "h_front": 16,
+        "h_sync": 56,
+        "h_back": 56,
+        "lines": 312,
+        "v_active": 240,
+        "v_bottom": 30,
+        "v_sync": 3,
+        "v_top": 39,
+        "desc": "192 slots of 4 clocks. 15.625 kHz / 50.08 Hz, non-interlaced; 240 active lines letterboxed."
+      }
+    },
+    "line_origin": "Horizontal count 0 = first active pixel; vertical count 0 = first active line. VBLANK interrupt flag sets at the start of line v_active.",
+    "slot_clocks": 4,
+    "timing_note": "All horizontal quantities are CPU clocks and are multiples of the 4-clock slot, so the active region never jitters against the slot grid. Video fetches one 16-bit word (two pixels) per slot during the active region."
+  },
+  "registers": {
+    "io": {
+      "base": "0xF00000",
+      "width": 16,
+      "regs": [
+        {
+          "name": "INTSTAT",
+          "offset": 0,
+          "access": "rw",
+          "desc": "Interrupt and pin status. Reading returns flags and live pin levels. Writing 1 to a clearable bit clears it.",
+          "fields": [
+            {
+              "name": "VBLANK",
+              "bit": 0,
+              "desc": "Set at the leading edge of vertical sync (3 lines after the last active line on NTSC). W1C.",
+              "w1c": true
+            },
+            {
+              "name": "HSYNC",
+              "bit": 1,
+              "desc": "Set at start of each horizontal sync. W1C.",
+              "w1c": true
+            },
+            {
+              "name": "PS2RDY",
+              "bit": 2,
+              "desc": "PS/2 byte received; cleared by reading PS2DATA."
+            },
+            {
+              "name": "SERRX",
+              "bit": 3,
+              "desc": "Serial byte received; cleared by reading SERDATA."
+            },
+            {
+              "name": "SERTXBUSY",
+              "bit": 4,
+              "desc": "Hardware serial transmitter busy (reads 0 if TX is software-only)."
+            },
+            {
+              "name": "PS2ERR",
+              "bit": 5,
+              "desc": "PS/2 framing/parity error on last byte. W1C.",
+              "w1c": true
+            },
+            {
+              "name": "SERRXOVR",
+              "bit": 6,
+              "desc": "Serial receive overrun. W1C.",
+              "w1c": true
+            },
+            {
+              "name": "NMIBTN",
+              "bit": 7,
+              "desc": "Live level of the NMI/break pushbutton (1 = pressed)."
+            },
+            {
+              "name": "SDMISO",
+              "bit": 8,
+              "desc": "Live level of SD MISO."
+            },
+            {
+              "name": "PS2CLK",
+              "bit": 9,
+              "desc": "Live level of PS/2 clock line."
+            },
+            {
+              "name": "PS2DAT",
+              "bit": 10,
+              "desc": "Live level of PS/2 data line."
+            },
+            {
+              "name": "SERRXPIN",
+              "bit": 11,
+              "desc": "Live level of serial RX pin."
+            },
+            {
+              "name": "PALJMP",
+              "bit": 12,
+              "desc": "1 = PAL jumper fitted (encoder built for PAL)."
+            },
+            {
+              "name": "VSYNCPIN",
+              "bit": 13,
+              "desc": "Live vertical sync (1 during vsync lines)."
+            },
+            {
+              "name": "DEPIN",
+              "bit": 14,
+              "desc": "Live display enable (1 during active video)."
+            },
+            {
+              "name": "HSYNCPIN",
+              "bit": 15,
+              "desc": "Live horizontal sync (1 during sync)."
+            }
+          ]
+        },
+        {
+          "name": "INTEN",
+          "offset": 2,
+          "access": "rw",
+          "reset": "0x0000",
+          "desc": "Interrupt enables. A pending flag with its enable set drives IPL at the level listed in interrupts[].",
+          "fields": [
+            {
+              "name": "VBLANK",
+              "bit": 0,
+              "desc": "Enable level-1 interrupt on VBLANK flag."
+            },
+            {
+              "name": "HSYNC",
+              "bit": 1,
+              "desc": "Enable level-4 interrupt on HSYNC flag."
+            },
+            {
+              "name": "PS2",
+              "bit": 2,
+              "desc": "Enable level-2 interrupt on PS2RDY."
+            },
+            {
+              "name": "SERRX",
+              "bit": 3,
+              "desc": "Enable level-3 interrupt on SERRX."
+            }
+          ]
+        },
+        {
+          "name": "SDIO",
+          "offset": 4,
+          "access": "rw",
+          "reset": "0x0003",
+          "desc": "SD card SPI bit-bang port. Bits are pin levels.",
+          "fields": [
+            {
+              "name": "CS",
+              "bit": 0,
+              "desc": "SD chip select pin (card selected when 0)."
+            },
+            {
+              "name": "CLK",
+              "bit": 1,
+              "desc": "SD clock pin."
+            },
+            {
+              "name": "MOSI",
+              "bit": 2,
+              "desc": "SD MOSI pin."
+            },
+            {
+              "name": "MISO",
+              "bit": 3,
+              "desc": "SD MISO pin (read only).",
+              "ro": true
+            }
+          ]
+        },
+        {
+          "name": "GPIO",
+          "offset": 6,
+          "access": "rw",
+          "reset": "0x0007",
+          "desc": "Misc outputs. PS/2 lines are open-drain: 1 releases the line (reads via INTSTAT), 0 pulls it low.",
+          "fields": [
+            {
+              "name": "PS2CLK",
+              "bit": 0,
+              "desc": "PS/2 clock drive (1 = release)."
+            },
+            {
+              "name": "PS2DAT",
+              "bit": 1,
+              "desc": "PS/2 data drive (1 = release)."
+            },
+            {
+              "name": "SERTX",
+              "bit": 2,
+              "desc": "Serial TX pin level (idle 1) for software bit-bang."
+            },
+            {
+              "name": "AUDIO",
+              "bit": 3,
+              "desc": "1-bit audio output."
+            },
+            {
+              "name": "LED0",
+              "bit": 4,
+              "desc": "Diagnostic LED 0 (1 = on)."
+            },
+            {
+              "name": "LED1",
+              "bit": 5,
+              "desc": "Diagnostic LED 1 (1 = on)."
+            }
+          ]
+        },
+        {
+          "name": "PS2DATA",
+          "offset": 8,
+          "access": "r",
+          "desc": "Last PS/2 byte received (bits 7..0). Reading clears INTSTAT.PS2RDY.",
+          "fields": [
+            {
+              "name": "DATA",
+              "bit": 0,
+              "width": 8,
+              "desc": "Received scan code byte."
+            }
+          ]
+        },
+        {
+          "name": "SERDATA",
+          "offset": 10,
+          "access": "rw",
+          "desc": "Read: last serial byte received (clears INTSTAT.SERRX). Write: transmit byte if hardware TX is fitted (check SERTXBUSY).",
+          "fields": [
+            {
+              "name": "DATA",
+              "bit": 0,
+              "width": 8,
+              "desc": "Serial data byte."
+            }
+          ]
+        },
+        {
+          "name": "USERIO",
+          "offset": 12,
+          "access": "rw",
+          "reset": "0x000F",
+          "desc": "Four open-drain user GPIO pins on the expansion header. Write 1 to release, 0 to pull low; read back the pin levels in bits 11..8.",
+          "fields": [
+            {
+              "name": "OUT",
+              "bit": 0,
+              "width": 4,
+              "desc": "Drive bits (1 = release)."
+            },
+            {
+              "name": "IN",
+              "bit": 8,
+              "width": 4,
+              "desc": "Pin levels (read only).",
+              "ro": true
+            }
+          ]
+        },
+        {
+          "name": "ID",
+          "offset": 14,
+          "access": "r",
+          "reset": "0x6801",
+          "desc": "Board/glue identification: 0x68 in the upper byte, CPLD2 logic revision in the lower byte.",
+          "fields": [
+            {
+              "name": "REV",
+              "bit": 0,
+              "width": 8,
+              "desc": "Glue logic revision."
+            },
+            {
+              "name": "MAGIC",
+              "bit": 8,
+              "width": 8,
+              "desc": "Always 0x68."
+            }
+          ]
+        }
+      ]
+    },
+    "switches": {
+      "base": "0xF10000",
+      "width": 16,
+      "regs": [
+        {
+          "name": "PAGE0",
+          "offset": 0,
+          "access": "w",
+          "desc": "Display framebuffer page 0 (0x02D400) starting next frame."
+        },
+        {
+          "name": "PAGE1",
+          "offset": 2,
+          "access": "w",
+          "desc": "Display framebuffer page 1 (0x01A800) starting next frame."
+        },
+        {
+          "name": "NTSC",
+          "offset": 4,
+          "access": "w",
+          "desc": "Select NTSC (262-line) timing table. Default at reset."
+        },
+        {
+          "name": "PAL",
+          "offset": 6,
+          "access": "w",
+          "desc": "Select PAL (312-line) timing table."
+        }
+      ]
+    }
+  },
+  "interrupts": [
+    {
+      "level": 1,
+      "name": "VBLANK",
+      "source": "INTSTAT.VBLANK & INTEN.VBLANK",
+      "desc": "Leading edge of vertical sync, ~60 Hz (NTSC) / 50 Hz (PAL)."
+    },
+    {
+      "level": 2,
+      "name": "PS2",
+      "source": "INTSTAT.PS2RDY & INTEN.PS2",
+      "desc": "PS/2 byte available."
+    },
+    {
+      "level": 3,
+      "name": "SERRX",
+      "source": "INTSTAT.SERRX & INTEN.SERRX",
+      "desc": "Serial byte available."
+    },
+    {
+      "level": 4,
+      "name": "HSYNC",
+      "source": "INTSTAT.HSYNC & INTEN.HSYNC",
+      "desc": "Line tick, 15.7 kHz; audio sample timer."
+    },
+    {
+      "level": 7,
+      "name": "NMI",
+      "source": "pushbutton",
+      "desc": "Break into monitor. Edge-triggered by the 68000."
+    }
+  ],
+  "interrupt_mode": "autovector (VPA asserted on IACK); vector = 24 + level",
+  "serial": {
+    "baud": 115200,
+    "format": "8N1",
+    "tx": "software bit-bang on GPIO.SERTX (hardware TX via SERDATA if CPLD2 capacity allows)",
+    "rx": "hardware receiver, 8-bit holding register SERDATA",
+    "connector": "6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant"
+  },
+  "ps2": {
+    "rx": "hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY",
+    "tx": "software bit-bang via GPIO.PS2CLK/PS2DAT open-drain bits",
+    "connector": "6-pin mini-DIN, 5V"
+  },
+  "sd": {
+    "mode": "SPI bit-bang via SDIO register",
+    "connector": "microSD push-push socket",
+    "power": "3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input"
+  },
+  "audio": {
+    "enabled": true,
+    "desc": "GPIO.AUDIO -> RC low-pass -> divider -> DC-blocking cap -> 3.5mm jack. Beeps by software toggling; sampled audio by toggling from the HSYNC interrupt (15.7 kHz)."
+  },
+  "power": {
+    "input": "USB-C receptacle, 5V only (5.1k CC pull-downs)",
+    "rails": [
+      "5V",
+      "3.3V (SD card only)"
+    ]
+  },
+  "reset": {
+    "supervisor": "open-drain voltage supervisor + pushbutton -> SYSRESET; diodes to 68000 RESET and HALT; SYSRESET also resets both CPLDs. The RESET instruction does not reset the glue (so the ROM overlay is not re-armed by software)."
+  },
+  "syscall": {
+    "trap": 15,
+    "number_reg": "d0",
+    "arg_regs": [
+      "d1",
+      "d2",
+      "d3",
+      "a0",
+      "a1"
+    ],
+    "ret_reg": "d0",
+    "desc": "TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A0..A1 in the order listed. Result in D0.L. All other registers preserved."
+  },
+  "syscalls": [
+    {
+      "num": 0,
+      "name": "exit",
+      "ret": "void",
+      "args": [
+        [
+          "int",
+          "code"
+        ]
+      ],
+      "desc": "Terminate the program and return to the monitor."
+    },
+    {
+      "num": 1,
+      "name": "putchar",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "c"
+        ]
+      ],
+      "desc": "Write a character to the console (video + serial)."
+    },
+    {
+      "num": 2,
+      "name": "getchar",
+      "ret": "int",
+      "args": [],
+      "desc": "Blocking read of one character from keyboard or serial."
+    },
+    {
+      "num": 3,
+      "name": "pollchar",
+      "ret": "int",
+      "args": [],
+      "desc": "Non-blocking read; -1 if no character is available."
+    },
+    {
+      "num": 4,
+      "name": "puts",
+      "ret": "int",
+      "args": [
+        [
+          "const char *",
+          "s"
+        ]
+      ],
+      "desc": "Write a NUL-terminated string to the console (no newline added)."
+    },
+    {
+      "num": 5,
+      "name": "serial_putc",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "c"
+        ]
+      ],
+      "desc": "Write a byte to the serial port only."
+    },
+    {
+      "num": 6,
+      "name": "serial_getc",
+      "ret": "int",
+      "args": [],
+      "desc": "Non-blocking serial read; -1 if none."
+    },
+    {
+      "num": 7,
+      "name": "ticks",
+      "ret": "uint32_t",
+      "args": [],
+      "desc": "Frames since boot (VBLANK counter, ~60 Hz)."
+    },
+    {
+      "num": 8,
+      "name": "wait_vblank",
+      "ret": "void",
+      "args": [],
+      "desc": "Block until the next vertical blanking interval."
+    },
+    {
+      "num": 9,
+      "name": "video_info",
+      "ret": "int",
+      "args": [
+        [
+          "struct video_info *",
+          "info"
+        ]
+      ],
+      "desc": "Fill in framebuffer geometry, page addresses and current page."
+    },
+    {
+      "num": 10,
+      "name": "video_set_page",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "page"
+        ]
+      ],
+      "desc": "Select displayed framebuffer page (0 or 1); takes effect at next frame."
+    },
+    {
+      "num": 11,
+      "name": "open",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "flags"
+        ],
+        [
+          "const char *",
+          "path"
+        ]
+      ],
+      "desc": "Open a file on the SD card. Returns fd >= 0 or negative error."
+    },
+    {
+      "num": 12,
+      "name": "close",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "fd"
+        ]
+      ],
+      "desc": "Close a file."
+    },
+    {
+      "num": 13,
+      "name": "read",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "fd"
+        ],
+        [
+          "unsigned",
+          "len"
+        ],
+        [
+          "void *",
+          "buf"
+        ]
+      ],
+      "desc": "Read up to len bytes. Returns count or negative error."
+    },
+    {
+      "num": 14,
+      "name": "write",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "fd"
+        ],
+        [
+          "unsigned",
+          "len"
+        ],
+        [
+          "const void *",
+          "buf"
+        ]
+      ],
+      "desc": "Write len bytes. Returns count or negative error."
+    },
+    {
+      "num": 15,
+      "name": "lseek",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "fd"
+        ],
+        [
+          "int",
+          "offset"
+        ],
+        [
+          "int",
+          "whence"
+        ]
+      ],
+      "desc": "Reposition; returns new offset or negative error."
+    },
+    {
+      "num": 16,
+      "name": "opendir",
+      "ret": "int",
+      "args": [
+        [
+          "const char *",
+          "path"
+        ]
+      ],
+      "desc": "Open a directory; returns handle or negative error."
+    },
+    {
+      "num": 17,
+      "name": "readdir",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "handle"
+        ],
+        [
+          "struct dirent *",
+          "ent"
+        ]
+      ],
+      "desc": "Next entry; 1 if filled, 0 at end, negative error."
+    },
+    {
+      "num": 18,
+      "name": "closedir",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "handle"
+        ]
+      ],
+      "desc": "Close a directory handle."
+    },
+    {
+      "num": 19,
+      "name": "sd_read_block",
+      "ret": "int",
+      "args": [
+        [
+          "uint32_t",
+          "lba"
+        ],
+        [
+          "void *",
+          "buf"
+        ]
+      ],
+      "desc": "Raw 512-byte block read."
+    },
+    {
+      "num": 20,
+      "name": "sd_write_block",
+      "ret": "int",
+      "args": [
+        [
+          "uint32_t",
+          "lba"
+        ],
+        [
+          "const void *",
+          "buf"
+        ]
+      ],
+      "desc": "Raw 512-byte block write."
+    },
+    {
+      "num": 21,
+      "name": "set_irq_handler",
+      "ret": "void *",
+      "args": [
+        [
+          "int",
+          "level"
+        ],
+        [
+          "void *",
+          "handler"
+        ]
+      ],
+      "desc": "Install a user interrupt handler (called from the BIOS ISR with interrupts masked); returns the previous one. NULL restores default."
+    },
+    {
+      "num": 22,
+      "name": "mem_info",
+      "ret": "int",
+      "args": [
+        [
+          "struct mem_info *",
+          "info"
+        ]
+      ],
+      "desc": "Report the user RAM region available to the program."
+    },
+    {
+      "num": 23,
+      "name": "con_set_cursor",
+      "ret": "int",
+      "args": [
+        [
+          "int",
+          "x"
+        ],
+        [
+          "int",
+          "y"
+        ]
+      ],
+      "desc": "Move the console text cursor."
+    },
+    {
+      "num": 24,
+      "name": "con_clear",
+      "ret": "int",
+      "args": [],
+      "desc": "Clear the console."
+    },
+    {
+      "num": 25,
+      "name": "con_info",
+      "ret": "int",
+      "args": [
+        [
+          "struct con_info *",
+          "info"
+        ]
+      ],
+      "desc": "Console columns, rows, cursor position."
+    },
+    {
+      "num": 26,
+      "name": "exec",
+      "ret": "int",
+      "args": [
+        [
+          "const char *",
+          "path"
+        ],
+        [
+          "const char *",
+          "args"
+        ]
+      ],
+      "desc": "Load and run another ELF executable from the SD card (does not return on success)."
+    },
+    {
+      "num": 27,
+      "name": "key_event",
+      "ret": "int",
+      "args": [],
+      "desc": "Next raw keyboard event: bit 8 = release, bits 7..0 = PS/2 set-2 scan code (E0-prefixed codes have bit 9 set); -1 if none."
+    },
+    {
+      "num": 28,
+      "name": "sleep_ms",
+      "ret": "void",
+      "args": [
+        [
+          "uint32_t",
+          "ms"
+        ]
+      ],
+      "desc": "Delay for approximately ms milliseconds."
+    },
+    {
+      "num": 29,
+      "name": "set_audio_cb",
+      "ret": "int",
+      "args": [
+        [
+          "void *",
+          "cb"
+        ]
+      ],
+      "desc": "Install a function called at 15.7 kHz from the HSYNC interrupt to drive GPIO.AUDIO; NULL disables."
+    }
+  ],
+  "abi": {
+    "structs": {
+      "video_info": [
+        [
+          "uint32_t",
+          "width"
+        ],
+        [
+          "uint32_t",
+          "height"
+        ],
+        [
+          "uint32_t",
+          "bpp"
+        ],
+        [
+          "uint32_t",
+          "bytes_per_line"
+        ],
+        [
+          "uint32_t",
+          "page_addr[2]"
+        ],
+        [
+          "uint32_t",
+          "current_page"
+        ],
+        [
+          "uint32_t",
+          "standard"
+        ]
+      ],
+      "mem_info": [
+        [
+          "uint32_t",
+          "user_start"
+        ],
+        [
+          "uint32_t",
+          "user_end"
+        ],
+        [
+          "uint32_t",
+          "user_end_without_fb1"
+        ]
+      ],
+      "con_info": [
+        [
+          "uint32_t",
+          "cols"
+        ],
+        [
+          "uint32_t",
+          "rows"
+        ],
+        [
+          "uint32_t",
+          "cursor_x"
+        ],
+        [
+          "uint32_t",
+          "cursor_y"
+        ]
+      ],
+      "dirent": [
+        [
+          "char",
+          "name[64]"
+        ],
+        [
+          "uint32_t",
+          "size"
+        ],
+        [
+          "uint32_t",
+          "attr"
+        ]
+      ]
+    },
+    "constants": {
+      "O_RDONLY": 0,
+      "O_WRONLY": 1,
+      "O_RDWR": 2,
+      "O_CREAT": 256,
+      "O_TRUNC": 512,
+      "O_APPEND": 1024,
+      "SEEK_SET": 0,
+      "SEEK_CUR": 1,
+      "SEEK_END": 2,
+      "ATTR_DIR": 1,
+      "ATTR_READONLY": 2,
+      "ATTR_HIDDEN": 4,
+      "VIDEO_STD_NTSC": 0,
+      "VIDEO_STD_PAL": 1,
+      "E_NOENT": -2,
+      "E_IO": -5,
+      "E_NOEXEC": -8,
+      "E_BADF": -9,
+      "E_NOMEM": -12,
+      "E_EXIST": -17,
+      "E_NOTDIR": -20,
+      "E_ISDIR": -21,
+      "E_INVAL": -22,
+      "E_NFILE": -23,
+      "E_NOSPC": -28,
+      "E_NOSYS": -38,
+      "KEY_RELEASE": 256,
+      "KEY_EXTENDED": 512
+    },
+    "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host."
+  },
+  "glue": {
+    "cpld1": {
+      "part": "ATF1508AS-7JX84",
+      "role": "MMU: CPU clock divider, address decode, ROM overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches",
+      "signals": {
+        "inputs": [
+          "CLK24",
+          "SYSRESET",
+          "A1..A23",
+          "AS",
+          "UDS",
+          "LDS",
+          "RW"
+        ],
+        "outputs": [
+          "CPUCLK",
+          "MA0..MA16",
+          "DTACK",
+          "BERR",
+          "VPA",
+          "RAMOE",
+          "WEU",
+          "WEL",
+          "ROMCE",
+          "IOCS",
+          "BUFEN",
+          "LATCH",
+          "DE",
+          "HSYNC",
+          "VSYNC"
+        ]
+      }
+    },
+    "cpld2": {
+      "part": "ATF1508AS-7JX84",
+      "role": "I/O and shifter: video word latch and RGB332 pixel output, interrupt controller, PS/2 receiver, serial receiver, SD/GPIO bits, registers",
+      "signals": {
+        "inputs": [
+          "CLK24",
+          "SYSRESET",
+          "A1..A4",
+          "IOCS",
+          "RW",
+          "LATCH",
+          "DE",
+          "HSYNC",
+          "VSYNC",
+          "SD_MISO",
+          "SER_RX",
+          "PALJMP",
+          "NMIBTN"
+        ],
+        "bidir": [
+          "D0..D15 (SRAM-side bus)",
+          "PS2_CLK",
+          "PS2_DAT",
+          "UIO0..UIO3"
+        ],
+        "outputs": [
+          "IPL0",
+          "IPL1",
+          "IPL2",
+          "R2",
+          "R1",
+          "R0",
+          "G2",
+          "G1",
+          "G0",
+          "B1",
+          "B0",
+          "SD_CS",
+          "SD_CLK",
+          "SD_MOSI",
+          "SER_TX",
+          "AUDIO",
+          "LED0",
+          "LED1"
+        ]
+      }
+    },
+    "bus_buffers": "2x 74AHCT245 between the CPU data bus (CPU, EPROMs) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W."
+  }
+}
