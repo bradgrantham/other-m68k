@@ -1,8 +1,7 @@
 # other-m68k firmware (BIOS/monitor ROM) build.
 # Outputs: build/rom.elf, build/rom.bin (128 KB, 0xFF padded, checksum in last word),
 #          build/rom.lst, build/rom_even.bin (D15..D8), build/rom_odd.bin (D7..D0).
-# Status: sources not yet written -- see STATUS.md. `make` fails with a clear message
-# until crt0.S exists; `make clean` and `make test` work (test has nothing to run yet).
+# `make` builds everything; `make test` runs the host unit tests of the pure-C modules.
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
 CROSS   = $(XTOOLS)/m68k-unknown-elf-
@@ -25,8 +24,8 @@ ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections -Wl,-Map=$(B)/rom.map
 
 # Planned source list (see STATUS.md); only files that exist are built.
-ASRCS = crt0.S post.S serial.S memops.S
-CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c \
+ASRCS = crt0.S post.S sertx.S memops.S
+CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c queue.c \
         hexdump.c printf.c syscall.c string.c
 OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS))
 

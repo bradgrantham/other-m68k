@@ -1,5 +1,5 @@
 # other-m68k SDK: libsys.a (syscall stubs + newlib shim), crt0, and example programs.
-# Status: crt0.S, newlib_shim.c and examples not yet written -- see ../fw/STATUS.md.
+# See README.md. Add a program: put foo.c in examples/ and add it to EXAMPLES.
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
 CROSS   = $(XTOOLS)/m68k-unknown-elf-
@@ -14,8 +14,8 @@ CFLAGS  = -m68000 -Os -Wall -Wextra -ffunction-sections -fdata-sections -I$(GEN)
 ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 # newlib in this toolchain expects the libgloss names (write/read/sbrk/_exit/...), which
 # newlib_shim.c provides; libsys comes after libc so libc's references resolve into it.
-LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -L$(B)
-LDLIBS  = -lc -lsys -lgcc
+LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments -L$(B)
+LDLIBS  = -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 
 EXAMPLES = hello plasma
 

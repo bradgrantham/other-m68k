@@ -1,128 +1,81 @@
-# fw/ + sdk/ status (stage 1) -- written at a forced session stop
+# fw/ + sdk/ status (stage 1)
 
-**State: design complete, build scaffolding in place, no firmware/SDK source code written yet.**
-The session was stopped right after the mandatory reading/toolchain investigation and before
-source files were created. Nothing here has run on the emulator (which does not exist yet).
+**State: stage 1 implemented and running in the emulator.** `make -C fw` builds a 131072-byte
+`rom.bin` (about 19 KB used) with no warnings; `make -C fw test` passes 97 host checks;
+`make -C sdk` builds `libsys.a`, `hello.elf/.srec` and `plasma.elf/.srec`. In `emu/build/m68k-emu`
+the ROM passes POST, prints the banner, and the monitor, exceptions (bus error with fault
+address, illegal instruction in user mode), S-record upload (keyboard-typed and serial),
+`go` into user mode, `sys_exit`, PAL selection and hardware-TX detection all work.
+Nothing has run on real hardware yet. See README.md for usage.
 
-## What exists and is verified
+## What exists
 
-| File | Status |
+| file | status |
 |---|---|
-| `fw/Makefile` | Complete. `make -C fw` fails with "sources not written yet (crt0.S missing)" until `crt0.S` exists; `make -C fw clean` works; `make -C fw test` fails with a clear message until `test/test_main.c` exists. Targets: `build/rom.elf`, `rom.bin` (objcopy `--gap-fill=0xFF --pad-to=0xE20000`), `rom.lst`, `rom_even.bin`/`rom_odd.bin` (via mkrom.py), `rom.map`. Flags: `-m68000 -Os -Wall -Wextra -ffreestanding -nostdlib -fno-delete-null-pointer-checks`, `-I../generated`, links `-lgcc` (needed for 32-bit mul/div on 68000). |
-| `fw/rom.ld` | Complete and smoke-tested with a stub object: INCLUDEs `../generated/memory.ld`; `.vectors` (1 KB, KEEP) first in ROM; `.text/.rodata` in ROM; `.data` in SYSDATA `AT> ROM` with `_data_start/_data_end/_data_load`; `.bss` in SYSDATA with `_bss_start/_bss_end`; `.romtail` at `ORIGIN(ROM)+LENGTH(ROM)-2` defines `_rom_checksum` (0xE1FFFE). Verified: rom.bin = 131072 bytes, `_start` at 0xE00400. |
-| `fw/mkrom.py` | Complete and tested. Patches the last ROM word so the 16-bit sum of all 65536 big-endian words is 0; writes even (D15..D8) / odd (D7..D0) 64 KB images. |
-| `sdk/user.ld` | Complete and smoke-tested: INCLUDEs `../generated/user.ld`, entry 0x4000, one PT_LOAD at USER_BASE, `__bss_start/__bss_end/_end/__heap_start`. ld warns "LOAD segment with RWX permissions" (harmless; silence with `-Wl,--no-warn-rwx-segments` or split text/data into two PT_LOADs). |
-| `sdk/Makefile` | Complete structure: builds `build/libsys.a` (generated/syscall_stubs.S + newlib_shim.c), `crt0.o`, `hello.elf`/`plasma.elf` + `.srec`; fails with a clear message until `crt0.S`/`newlib_shim.c` exist. Link line: `-nostartfiles -T user.ld crt0.o prog.o -lc -lsys -lgcc`. |
+| `crt0.S` | vectors (256 entries, `.rept`-generated 10-byte stubs, asserted size), `_start`, `post_return` (vector copy, .data/.bss), `exception_common` (group-0 decode), `trap15_handler`, `run_user`, `user_exit_stub`, `monitor_restart`, `cpu_reset`, `irq_disable/restore` |
+| `post.S` | ROM word sum, RAM test (address, 55/AA/00/FF longs, byte lanes both ways), failure report + blink; registers only |
+| `sertx.S`, `serbit.inc` | SERBIT macro with per-instruction clock counts (104/bit), `post_putc/puts/puthex`, `serial_tx_byte`, `delay_loops` |
+| `memops.S`, `string.c` | memset/memcpy/memmove (long moves when alignment allows), str*/memcmp |
+| `main.c` | `bios_main`, banner, `putchar_both` (console + serial, `\n` -> CRLF) |
+| `console.c`, `font8x8_basic.h` | 40x30 console, nibble table renderer, scroll, cursor, shadow text; renders through `con_fb` (host-testable) |
+| `serial.c` | GPIO shadow + atomic set/clear, hw TX probe, TX path, `delay_us` |
+| `input.c`, `queue.c` | serial 512 B, keyboard 256 B, key events 64 x 16-bit rings; merged `input_pollchar` |
+| `ps2.c` | set-2 decoder: F0/E0/E1, shift/ctrl/caps, arrows/Home/End/Ins/Del/PgUp/PgDn/F1-F12 escape sequences, raw events |
+| `irq.c` | ISRs (`interrupt_handler` attribute, verified `rte` in rom.lst), user hooks, INTEN management |
+| `exception.c` | names, register dump, `exception_entry` |
+| `syscall.c` | `syscall_dispatch` with the generated `.inc`, all 30 `bios_*` (fs/SD/exec -> E_NOSYS), `user_cleanup` |
+| `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | monitor, S-record parser, dump line, kprintf/ksnprintf |
+| `test/test_main.c` | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump |
+| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma}.c`, `sdk/README.md` | as planned; link uses `--start-group -lc -lsys --end-group -lgcc` |
 
-## Toolchain facts discovered (important for the next person)
+## Design as built (differences from the original plan)
 
-* `~/x-tools/m68k-unknown-elf` GCC 15.2, single multilib (`-m68000` is the default and only lib).
-* **newlib here expects the libgloss names without underscore**: `libc.a` has undefined
-  `write read sbrk open close lseek fstat isatty kill getpid _exit` (and `gettimeofday times
-  link unlink stat environ` for rarely-used functions). `_write` etc. are NOT what it calls.
-  `newlib_shim.c` must define `write/read/...`; add `_write/...` as aliases only for documentation.
-* `__libc_init_array` exists in libc but references `_init` (from crti, absent with
-  `-nostartfiles`); either skip constructors in crt0 or define an empty `_init`/`_fini`.
-* GCC m68k `__attribute__((interrupt_handler))` works (emits register save + `rte`), verified.
-* Host gcc 13.3 available for `fw/test`.
+* The byte-lane RAM pass writes 8 bytes per loop iteration (the first cut filled only half
+  of RAM: caught by the emulator run).
+* Fills/verifies use plain `move.l`/`cmp.l` unrolled x4 instead of `movem`: on this bus every
+  word is one slot-aligned bus cycle either way, so `movem` buys almost nothing. POST takes
+  about 1.7 s at 12 MHz. The same applies to the console scroll (~35 ms).
+* `md` dumps are only key-abortable when longer than 256 bytes; a short `md` must not consume
+  the first character of the next typed line (the emulator types ahead).
+* Keyboard ASCII ring is 256 B (64 B overflowed when the emulator typed through a long,
+  scrolling exception dump).
+* Hex dump line has no `|` bars so it fits 40 columns: `004000 aa 55 .. .U..`.
+* `bios_read(0)`/`bios_write(1,2)` work on the console so the newlib shim does one trap per
+  `write()`; other fds return `E_NOSYS` (stage 2).
+* `delay_loops` is an 18-clock `subq/bhi` loop; `delay_us(us)` = `us*2/3` loops.
+* Asm `.S` files cannot use `|` for OR (it is the m68k gas comment character); `+` is used.
+  `hw.inc` has no `IO_GPIO_RESET` value, so the idle GPIO value is built from the bit masks.
 
-## Design decisions already made (implement exactly this)
+## Verified in the emulator (serial logs in the final report)
 
-### Vectors / entry (`fw/crt0.S`)
-* 256-entry table in `.vectors`: [0]=SYS_STACK_TOP (0x4000), [1]=`_start`; vectors 25,26,27,28
-  (VBLANK/PS2/SERRX/HSYNC ISRs) and 47 (TRAP #15) point straight at their handlers; every other
-  vector -> `vec_stub_N: move.w #N,-(%sp); jmp exception_common` (10 bytes each, generated with
-  an assembler `.irp`/macro loop). NMI (31) deliberately goes through the stub so a break prints
-  registers and enters the monitor.
-* `exception_common`: `ori.w #0x0700,%sr`; `movem.l %d0-%d7/%a0-%a6,exc_regs`; pop vector word;
-  if vector 2 or 3 pop the group-0 extension (FC word, fault address long, IR word); pop SR, PC;
-  record SSP (after frame) and USP (`move.l %usp,%a0`); `lea _sys_stack_top,%sp`;
-  `jsr exception_entry` (C prints and enters monitor; never returns). 68000 group-0 frame:
-  +0 FC (bit4=R/W,1=read; bit3=I/N; bits2..0 FC), +2 access address, +6 IR, +8 SR, +10 PC.
-* After RAM passes: copy 1 KB from ROM_BASE to 0, copy `.data` (`_data_load`->`_data_start`),
-  zero `.bss`, store POST results from registers into globals, `lea _sys_stack_top,%sp`, `jsr bios_main`.
+* POST: `ROM sum 0000 OK`, `RAM ....... OK`; banner; `help`, `info`, `ticks`, `md`, `mb/mw/ml`,
+  `fill`, `led`, `page`, `dir` (stage 2 message), unknown command.
+* `ml 400000 0` -> `Exception 2: Bus error ... fault 00400000 write FC=5`, monitor continues;
+  `regs` repeats it.
+* `go 4000` on `nop nop illegal` -> `Exception 4` with SR=0000 (user mode), USP=0001a7fc.
+* `go 4000` on `trap #15` (exit) -> `[exit 0]`.
+* Typed S-records (auto-detect, no echo) and `srec` command; hello.srec (2198 records) over
+  the serial port with no bad lines, `go` runs newlib `printf`.
+* `--pal` -> banner `PAL`, 50 ticks/s; `--hw-serial-tx` -> `serial TX hw`.
 
-### POST (`fw/post.S`, registers only, no RAM)
-* d7 = GPIO shadow (start 0x0007|LED0=0x0017). Serial subroutines return via registers:
-  `post_putc` (d0.b in, returns `jmp (%a6)`), `post_puts` (a5 string, returns `jmp (%a4)`),
-  `post_puthex32` (d3, returns `jmp (%a4)`).
-* ROM checksum: `move.w #0xFFFF,%d2; 1: add.w (%a0)+,%d0; dbf %d2,1b` over 64K words, expect 0.
-  Report "ROM sum xxxx OK/BAD" but do not stop on BAD (stored word also kept for the banner).
-* RAM test 0x000000-0x03FFFF (overlay is already clear since we execute from 0xE0xxxx):
-  (1) address-in-address longs (`move.l %a0,(%a0)+`, verify), (2) long fills 0x55555555,
-  0xAAAAAAAA, 0x00000000, 0xFFFFFFFF with `movem.l` of 12 registers (48 bytes/iteration) and
-  unrolled `cmp.l (%a0)+,%dN` verification, (3) byte-lane pass: `move.b` 0x55 to even and 0xAA to
-  odd bytes, verify longs 0x55AA55AA, then inverse. Estimated ~2 s total at 12 MHz.
-  On failure print `RAM FAIL @aaaaaaaa exp xxxxxxxx got yyyyyyyy` and blink forever.
-* LED codes (document in README): LED0 on = POST started/ROM checksum; LED0+LED1 = RAM test;
-  LED1 only = C init; both off = monitor idle; LED0/LED1 alternating ~2 Hz forever = RAM failure.
+## Known limitations / stage 2
 
-### Serial TX cycle counting (`fw/serial.S`)
-Unrolled 10 bits (macro), frame in d0 with the current bit at bit position 2 (= GPIO.SERTX):
-`d0 = (data << 3) | 0x800` (start 0, 8 data, stop 1). d7 = shadow with SERTX cleared, a0 = GPIO.
-```
-move.w %d0,%d2      4       and.w #4,%d2   8       or.w %d7,%d2  4
-move.w %d2,(%a0)    8 (4-clock I/O write; +2 if slot-misaligned)   <- bit edge
-lsr.w  #1,%d0       8       moveq #5,%d1   4
-1: dbf %d1,1b       5x10 + 14 = 64         nop 4           total = 104 clocks
-```
-104 is a multiple of the 4-clock slot, so the slot-alignment penalty (+2) can hit at most one
-bit per byte (phase self-corrects); the average lands between 104.0 and 104.2 vs the ideal
-104.17. Interrupts masked for the byte (`move.w %sr,-(%sp); ori.w #0x0700,%sr ... move.w (%sp)+,%sr`).
-Same macro used by the POST routine. Hardware TX detection: write SERDATA (0x0D), read
-INTSTAT.SERTXBUSY; if set, use `while(SERTXBUSY); SERDATA=c` from then on.
-Keep a `gpio_shadow` word in .bss; every GPIO write writes the whole word.
-
-### Console / input / interrupts
-* 40x30 text, 8x8 font (vendor `font8x8_basic.h` from github.com/dhepper/font8x8 -- was about
-  to WebFetch it; not yet in the tree). Glyph rendering via a 16-entry nibble->4-pixel-long
-  table rebuilt when fg/bg change (2 long writes per glyph row). Scroll = asm `memmove`
-  (movem) of 232 lines + clear last 8 lines (~30 ms). Console code renders into a `con_fb`
-  pointer so host tests can render into a malloc'd buffer. '\b' is non-destructive; the line
-  editor emits "\b \b". '\n' on serial becomes "\r\n".
-* Input: two SPSC rings (serial RX 512 B, keyboard ASCII 64 B) + raw key event ring (uint16);
-  `pollchar` checks keyboard then serial; `serial_getc` reads only the serial ring.
-* PS/2 set 2 decoder (pure C `ps2.c`, `ps2_feed(byte)`): F0 release, E0 extended, E1 ignored;
-  shift/ctrl/caps; arrows -> ESC[A/B/C/D, Home ESC[H, End ESC[F, Ins/Del/PgUp/PgDn ESC[2~/3~/5~/6~,
-  F1-F4 ESC O P/Q/R/S, F5-F12 ESC[15~ 17~ 18~ 19~ 20~ 21~ 23~ 24~; raw events bit8 release, bit9 E0.
-* ISRs as `__attribute__((interrupt_handler))` C functions: VBLANK (W1C bit0, ticks++, user hook),
-  PS2 (read PS2DATA; if INTSTAT.PS2ERR, W1C and drop), SERRX (if SERRXOVR W1C+count; read SERDATA),
-  HSYNC (W1C; audio cb) enabled only while an audio cb / level-4 hook is installed.
-  INTEN default = VBLANK|PS2|SERRX. `set_irq_handler` accepts levels 1-4.
-* Serial TX masks IRQs ~87 us per byte: do NOT echo while receiving S-records (RX holding
-  register is 1 byte deep). Line editor holds the echo of a leading 'S' until the next char;
-  'S'+hex digit enters srec mode (no echo) until S7/S8/S9 or a non-S line.
-
-### Syscalls / user programs
-* `trap15_handler: movem.l %d0-%d3/%a0-%a1,-(%sp); pea (%sp); jsr syscall_dispatch; addq.l #4,%sp;
-  movem.l (%sp)+,...; rte`. `struct trap_frame { uint32_t d0,d1,d2,d3,a0,a1; }` (movem order),
-  dispatcher includes `generated/syscall_dispatch.inc` and stores `ret` into `f->d0`.
-* **User programs run in user mode**: `go addr` sets USP = USER_STACK_TOP, pushes the address of
-  a ROM stub (`moveq #0,%d1; moveq #0,%d0; trap #15`) so a stray `rts` exits cleanly, then
-  `rte`s into user mode. Consequence: syscalls/ISRs run on the supervisor stack at
-  _sys_stack_top; user code cannot touch SR (use sys_set_irq_handler). `bios_exit` prints the
-  code, resets INTEN/hooks/page 0 and `lea _sys_stack_top,%sp; jmp monitor_main`.
-* `bios_mem_info`: USER_BASE, USER_END, FB0_BASE. Stage-2 calls return E_NOSYS.
-* SDK heap: `_end` .. `mem_info.user_end - 16 KB` stack reserve. `read(0)` is a tiny line editor.
-
-### Monitor command list (planned)
-`help, md [addr] [len] (8 bytes/line, fits 40 cols), mb/mw/ml addr val..., fill addr len val,
-go addr, regs, reset, led n, page n, ticks, ramtest (0x4000-0x3FFFF, destructive), beep, cls, info,
-srec, dir/run/cat/sd -> "not implemented (stage 2)"`. All numbers hex.
-
-## Exact next steps, in order
-1. `fw/crt0.S` (vectors, `_start`, `exception_common`, `trap15_handler`, `monitor_restart`, go stub).
-2. `fw/serial.S` (macro + `post_putc` + C-callable `serial_tx_byte`), `fw/post.S`.
-3. Pure-C modules with host tests first: `printf.c`, `srec.c`, `hexdump.c`, `queue.c`, `ps2.c`,
-   `console.c` + `font8x8_basic.h`; `fw/test/test_main.c`; get `make -C fw test` green.
-4. `string.c`/`memops.S`, `serial.c`, `input.c`, `irq.c`, `exception.c`, `syscall.c`, `monitor.c`,
-   `main.c`; build, inspect `rom.lst` for the serial loop and the reset vector; check rom.bin size.
-5. `sdk/crt0.S`, `sdk/newlib_shim.c` (libgloss names!), `examples/hello.c`, `examples/plasma.c`
-   (4x4 blocks, double-buffered); `fw/README.md`, `sdk/README.md`.
+* No SD/FAT32/ELF loader (`dir run cat sd`, `sys_open..sys_closedir`, `sys_sd_*`, `sys_exec`).
+* No PS/2 host-to-device commands (LEDs, typematic); the keyboard's power-on defaults are used.
+* Bit-banged TX masks interrupts for ~87 us per byte: a host that sends while the BIOS prints
+  can lose a byte (counted in `info` as rx overruns). Audio callbacks jitter during printing.
+* ESC sequences from the keyboard are swallowed by the line editor (no history/cursor editing).
+* NMI path is exercised only through the generic stub mechanism (the emulator needs a window
+  for F12); the same path handled bus error / illegal instruction.
 
 ## Spec / architecture notes to raise
-* architecture.md alignment table says S0-at-E6 cycles take 4 clocks, but with DTACK asserted
-  at E4 and sampled at the S4->S5 falling edge (E3, then E5) that cycle would be 5 clocks; this
-  also conflicts with "the cycle ends at E0 regardless of where S0 was". Only affects jitter
-  bookkeeping for the bit-banged serial (bounded either way).
-* The spec's SDK text names `_write` etc.; this newlib build calls `write` etc. (libgloss style).
+
+* architecture.md alignment table: an S0-at-E6 cycle with DTACK asserted at E4 and sampled at
+  E5 is 5 clocks, conflicting with "the cycle ends at E0 regardless of where S0 was" (which
+  implies 6). Only affects jitter bookkeeping; the serial loop is insensitive to it.
+* The spec's SDK text names `_write` etc.; this newlib calls `write` etc. (libgloss style).
+* `gen.py` could emit register reset values (`IO_GPIO_RESET`...) into `hw.inc` as it does in
+  `hw.h`; the BIOS currently composes the idle GPIO value from the bit masks.
+* `spec/board.json` `video.line_origin` says the VBLANK flag sets at "line v_active + v_bottom"
+  while the INTSTAT text says "leading edge of vertical sync"; they agree numerically but the
+  emulator STATUS flagged the wording.
