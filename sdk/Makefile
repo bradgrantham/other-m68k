@@ -17,9 +17,9 @@ ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments -L$(B)
 LDLIBS  = -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 
-EXAMPLES = hello plasma ls cat fstest
+EXAMPLES = hello plasma ls cat fstest bmpview
 
-.PHONY: all clean check-sources
+.PHONY: all clean check-sources host-bmpview
 
 all: check-sources $(B)/libsys.a $(B)/crt0.o $(EXAMPLES:%=$(B)/%.elf) $(EXAMPLES:%=$(B)/%.srec)
 
@@ -45,12 +45,21 @@ $(B)/%.o: %.c | $(B)
 $(B)/%.o: examples/%.c | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(B)/bmpview.o: CFLAGS += -O2        # pixel loops: speed over size
+
 $(B)/%.elf: $(B)/%.o $(B)/crt0.o $(B)/libsys.a user.ld $(GEN)/user.ld
 	$(CC) $(LDFLAGS) -o $@ $(B)/crt0.o $< $(LDLIBS)
 	$(SIZE) $@
 
 $(B)/%.srec: $(B)/%.elf
 	$(OBJCOPY) -O srec $< $@
+
+# host build of the BMP viewer's scaler/dither pipeline (writes a PPM); see examples/bmpview.c
+host-bmpview: $(B)/host/bmpview
+
+$(B)/host/bmpview: examples/bmpview.c
+	mkdir -p $(B)/host
+	gcc -std=gnu11 -O2 -Wall -Wextra -DHOST -o $@ $<
 
 clean:
 	rm -rf $(B)

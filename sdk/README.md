@@ -26,6 +26,7 @@ The `.srec` files are for the serial upload path.
 | `examples/ls.c` | `sys_opendir`/`sys_readdir`/`sys_closedir`, prints `argv`; `run ls.elf [path]` |
 | `examples/cat.c` | stdio `fopen`/`fread` on SD files (-> `sys_open`/`sys_read`); `run cat.elf FILE...` |
 | `examples/fstest.c` | writes `TEST.TXT` with stdio (`O_CREAT`, `O_APPEND`), reads it back with the raw calls, reports OK/FAIL; `run fstest.elf exec ls.elf` then chains with `sys_exec` |
+| `examples/bmpview.c` | BMP viewer: streaming separable box scaler + Floyd-Steinberg dither to RGB332 on page 1; also shows raw 320x240 RGB332 blobs; `make host-bmpview` builds it for the host (see below) |
 
 Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
 --start-group -lc -lsys --end-group -lgcc`. Add a program by dropping `foo.c` into
@@ -63,6 +64,38 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   returns to the monitor. Page 0 is the console; a program that draws on it should
   `sys_con_clear()` before exiting.
 * Static constructors are not run (no crti/crtn); C only.
+
+## bmpview: pictures from the card
+
+`run bmpview.elf PHOTO.BMP` fits the picture into the screen (aspect kept, letterboxed;
+`-s` stretches) and shows it on the framebuffer page the console is not using; any key
+returns. Uncompressed BMP with 1/4/8-bit palette, 16-bit (555 or bit fields), 24-bit and
+32-bit (xRGB or bit fields) pixels, bottom-up or top-down, up to 4096x4096. The file is
+read one row at a time; each row is box-filtered horizontally, then rows are box-filtered
+vertically, with 8.8 fixed-point weight plans computed once per image (exact box filter
+up to rounding, any ratio up or down), and every finished screen row is Floyd-Steinberg
+dithered (serpentine, 7/16 3/16 5/16 1/16) to 3-3-2. It prints a time breakdown when done.
+
+Speed on the board (12 MHz 68000, bit-banged SD at roughly 24 KB/s through FatFs):
+
+| input | time |
+|---|---|
+| raw RGB332 screen, 76800 bytes | 3 s |
+| 320x240 24-bit BMP (230 KB) | 25 s (read 10, scale 7, dither 8) |
+| 100x75 8-bit BMP, upscaled | 13 s |
+| 800x600 24-bit BMP (1.4 MB) | 95 s, 60 of them reading |
+
+So anything larger than the screen is better converted on the host first. The host build
+runs the identical pipeline and writes either a viewable PPM or the raw screen blob:
+
+```
+make -C sdk host-bmpview
+sdk/build/host/bmpview photo.bmp photo.ppm            # look at it (320x240 PPM, dithered)
+sdk/build/host/bmpview photo.bmp PHOTO.332 320 240    # 76800-byte blob for the card
+```
+
+`run bmpview.elf PHOTO.332` recognises the blob by its size (exactly width*height bytes,
+row-major, top-down) and just copies it in. Any name works; 8.3 names only on the card.
 
 ## Running
 
