@@ -16,14 +16,15 @@ this file explains the mechanism. If the two disagree, fix the spec and regenera
    |  SRAM addr mux + video counter     | DE,HS, |  interrupt ctrl -> IPL0..2  |
    |  H/V timing -> HSYNC,VSYNC         |  VS    |  PS/2 rx, DUART IRQ -> IPL  |
    |  soft switches (page, PAL)         |        |  SD / GPIO / LED / audio    |
-   |  DUARTCS                           |        |                             |
-   +---+---------------+----------------+        +------+----------------------+
-       |A1..A23,AS,     |MA0..16, RAMOE, WEU/WEL         | D0..D15 (SRAM-side bus)
-       |UDS,LDS,RW      |                                |
+   |  DUARTCS                           |        |  MA17..18 <- A18..19 / FB   |
+   +---+---------------+----------------+        +------+------------+---------+
+       |A1..A23,AS,     |MA0..16, RAMOE, WEU/WEL         | D0..D15    | MA17..18
+       |UDS,LDS,RW      |                                | (SRAM-side bus)
    +---+------+     +---v----------------+    +----------+-----+
-   |  68000   |     | 2x KM681000 SRAM   |====| 2x 74AHCT245   |==== CPU data bus ==== 2x SST39SF040 flash
-   | 12 MHz   |==== | (SRAM-side bus)    |    | (BUFEN, dir=RW)|                  \== 68681 DUART (D0..D7) -> serial
-   +----------+     +--------------------+    +----------------+
+   |  68000   |     | 2x AS6C4008 SRAM   |====| 2x 74AHCT245   |==== CPU data bus ==== 2x SST39SF040 flash
+   | 12 MHz   |==== | 1 MB (SRAM-side    |    | (BUFEN, dir=RW)|                  \== 68681 DUART (D0..D7) -> serial
+   +----------+     |  bus)              |    +----------------+
+                    +--------------------+
 ```
 
 Two data buses:
@@ -33,7 +34,17 @@ Two data buses:
 
 The transceivers are enabled only during the CPU half of a slot for RAM and I/O cycles, so
 the video fetch (SRAM -> CPLD2) never shares wires with the CPU driving write data or the
-flash chips driving read data. This is what makes 12 MHz with 70 ns parts close cleanly.
+flash chips driving read data. This is what makes 12 MHz with 55-70 ns parts close cleanly.
+
+**SRAM address (spec rev 4, 1 MB = 2x 512Kx8).** The 19-bit word address is split between
+the CPLDs because CPLD1 ran out of pins: CPLD1 drives MA16..MA0 (A17..A1 or the video
+counter), CPLD2 drives MA18..MA17. Both run from the same 24 MHz clock and load on the same
+edges: at E4 CPLD2 loads the CPU's A19..A18 while CPLD1 loads A17..A1; at E1 CPLD2 loads
+`FB_PAGE_HI` (the fixed address bits 19..18 of both framebuffer pages) while CPLD1 loads the
+17-bit video counter. The two framebuffer pages therefore sit in the same 256 KB quarter,
+the top one (0xDA800 and 0xED400), which leaves 0x004000-0xDA7FF (858 KB) contiguous for
+user programs. Nothing in the timing analysis below changes: the extra bits have the same
+clock-to-output as CPLD1's and the SRAM sees one address change per edge.
 
 ## 2. Clocks and the slot
 
@@ -65,10 +76,10 @@ lags the CPLD's internal edge by that much too.
 | edge | CPLD1 action |
 |---|---|
 | E0 | WEU/WEL off, BUFEN off, IOCS off, DTACK(RAM/IO) off, RAMOE off (it was on for a CPU read). "Serviced" latch set if a cycle was serviced. |
-| E1 | MA <- video address (VA). |
+| E1 | MA16..0 <- video address (VA); CPLD2: MA18..17 <- FB_PAGE_HI. |
 | E2 | RAMOE on (video read) in fetch slots (DE); blanking slots skip the read. |
 | E3 | LATCH <- 1 (tells CPLD2 to capture at E4). |
-| E4 | LATCH <- 0. MA <- CPU address A1..A17. VA <- VA+1 if fetching. RAMOE stays on only if this slot services a CPU **read** of RAM, else off. **Decision point**: if AS is low, the address decodes to RAM or I/O, and this cycle has not been serviced, service it this slot: DTACK on. |
+| E4 | LATCH <- 0. MA16..0 <- CPU address A1..A17; CPLD2: MA18..17 <- A18..A19. VA <- VA+1 if fetching. RAMOE stays on only if this slot services a CPU **read** of RAM, else off. **Decision point**: if AS is low, the address decodes to RAM or I/O, and this cycle has not been serviced, service it this slot: DTACK on. |
 | E5 | If servicing: BUFEN on (direction from R/W), IOCS on (if I/O). |
 | E6 | If servicing a write to RAM: WEU on if UDS low, WEL on if LDS low (gated combinationally by UDS/LDS, bounded by phase F6|F7). |
 | E7 | nothing. |
@@ -77,6 +88,9 @@ CPLD2 on the same grid (its phase counter is synchronised by LATCH, which is hig
 during F3): at E4 capture D and DE; at E0 capture D into a register if IOCS and write.
 
 ### Why this works (margins at 12 MHz, 70 ns SRAM, 74AHCT245)
+
+(Worked for the original 70 ns KM681000; the AS6C4008-55 now fitted is faster on every
+parameter: tAA 55, tOE 25, tWP 45, tDW 25, so each margin below grows by 10-15 ns.)
 
 * Video read: MA valid at E1+7.5 = 49 ns; OE at E2+7.5 = 91. Data valid at
   max(49+70, 91+35) = 126 ns. CPLD2 captures at E4 = 166.7. **Margin 40 ns.**
@@ -133,7 +147,7 @@ sits in S4 with the address and (for writes) data stable, which is what the sche
 
 | region | condition | DTACK | notes |
 |---|---|---|---|
-| RAM 0x000000-0x03FFFF | A23..A18 = 0 | slot-aligned | overlaid by ROM at reset |
+| RAM 0x000000-0x0FFFFF | A23..A20 = 0 | slot-aligned | 1 MB, overlaid by ROM at reset |
 | ROM 0xE00000-0xEFFFFF | A23..A20 = 1110 | immediate | reads: ROMOE; writes: ROMWE pulse to both flash chips (JEDEC command protocol, see below) |
 | IO 0xF00000-0xF0FFFF | A23..A16 = 0xF0 | slot-aligned | CPLD2 registers, A1..A3 select |
 | SWITCHES 0xF10000-0xF1FFFF | A23..A16 = 0xF1 | immediate | write performs action; A1..A2 select |
@@ -179,6 +193,8 @@ rewrites them in place.
 * V counter counts lines, advancing at the slot where HSYNC begins. Lines 0..239 active.
   VSYNC high for the spec'd lines. VA reloads with the selected page base (as a word
   address, A1..A17) at the start of line 0 (the first active line; blanking lines never fetch).
+  Address bits A19..A18 of every fetch are `FB_PAGE_HI`, driven by CPLD2 (section 1), so both
+  pages must lie in the same 256 KB quarter; `tools/gen.py` checks this.
 * DE is presented to CPLD2 **in the slot of the fetch** (so that CPLD2 captures data and DE
   together at E4). CPLD2: at E4 with LATCH high: `pix <= DE ? D[15:8] : 0; lo <= D[7:0];
   active <= DE;` and at E0: `pix <= active ? lo : 0`. Each pixel is therefore 4 fast clocks =
@@ -231,8 +247,9 @@ Measured with the Atmel fitter (hdl/README.md has the full ladder):
 
 * CPLD1: 27 inputs (A1..A23, AS, UDS, LDS, RW) + 32 outputs (incl. DUARTCS) = 59 regular
   I/O of 60, plus CLK24 on GCLK1 and SYSRESET on GCLR. 98 of 128 macrocells before DUARTCS.
-* CPLD2: 13 inputs, 22 bidirectional, 17 outputs = 52 regular I/O. About 104 of 128
-  macrocells with the PS/2 receiver and no serial engine.
+* CPLD2: 15 inputs (incl. A18, A19), 22 bidirectional, 19 outputs (incl. MA17, MA18) = 56
+  regular I/O. 107 of 128 macrocells with the PS/2 receiver, no serial engine and the two
+  upper SRAM address bits (spec rev 4).
 
 History: the original plan (serial RX and PS/2 RX both in CPLD2, hardware serial TX
 optional) does not fit. The fitter refuses the transmitter outright and lands at 127/128

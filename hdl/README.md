@@ -9,10 +9,10 @@ from `generated/board_params.vh` (generated from `spec/board.json`), which both 
 | file | contents |
 |---|---|
 | `cpld1_mmu.v` | CPLD1 "MMU": CPU clock, slot sequencer, decode, overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video counters, soft switches |
-| `cpld2_io.v` | CPLD2 "I/O + shifter": pixel path, registers, interrupt controller, PS/2 receiver, serial receiver (+ optional transmitter) |
+| `cpld2_io.v` | CPLD2 "I/O + shifter": pixel path, registers, interrupt controller, PS/2 receiver, DUART IRQ routing, upper SRAM address bits MA18..MA17 |
 | `tb/tb_m68k_bus.v` | behavioural 68000 bus master with datasheet delays |
-| `tb/tb_sram.v` | 70 ns SRAM model with read timing and write-timing checks |
-| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, 2 flash, bus master, frame monitor, contention checker, 13 tests |
+| `tb/tb_sram.v` | 512Kx8 55 ns SRAM model (AS6C4008-55 class) with read timing and write-timing checks |
+| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, 2 flash, bus master, frame monitor, contention checker, MA18..17 edge checker, 14 tests |
 | `Makefile` | `sim`, `wave`, `lint`, `synth`, `fit`, `clean` |
 | `fit.sh` | yosys -> EDIF -> Atmel fitter (wine); see "Synthesis and fitting" |
 | `pins.py` | harvest the fitter's pin choices into the sources' pin blocks / check them |
@@ -85,7 +85,7 @@ ROM, SWITCHES and overlay accesses take 4 clocks at any alignment (immediate DTA
 
 The testbench adds 7.5 ns to every CPLD1 output (including CPUCLK), 10 ns to the
 transceivers, and models the SRAM and flash access times. Observed: SRAM write pulse 83 ns
-(>= 50), data valid to WE high 115 ns (>= 30), SRAM address stable across the whole WE pulse,
+(>= 45), data valid to WE high 115 ns (>= 25), SRAM address stable across the whole WE pulse,
 no overlap of drivers on either bus at any time during 127 ms of simulation (including the
 SRAM -> transceiver hand-off at E4/E5 and the transceiver -> SRAM hand-off at E0/E2).
 
@@ -99,7 +99,7 @@ SRAM -> transceiver hand-off at E4/E5 and the transceiver -> SRAM hand-off at E0
 | `dtack_n` | out | registered slot-aligned part OR combinational immediate part |
 | `berr_n` | out | combinational: AS & unmapped & !IACK |
 | `vpa_n` | out | combinational: AS & IACK (A23..A4 all ones) |
-| `ma[16:0]` | out | SRAM word address, VA during F1..F3, CPU A17..A1 during F4..F0 |
+| `ma[16:0]` | out | SRAM word address bits 16..0: VA during F1..F3, CPU A17..A1 during F4..F0 (bits 18..17 come from CPLD2, same edges) |
 | `ramoe_n`, `weu_n`, `wel_n` | out | SRAM strobes |
 | `romoe_n` | out | combinational: AS & (ROM or overlaid RAM) & R/W; the flash chips' CE is tied low |
 | `romwe_n` | out | combinational: AS & real ROM region & !R/W & (UDS or LDS): flash write strobe, both chips |
@@ -136,7 +136,8 @@ Reset state: `ph=0`, `h=0`, `v=0`, `de=1`, `va=FB_PAGE0_WORD`, `overlay=1`, `pag
 | `rgb[7:0]` | out | R2 R1 R0 G2 G1 G0 B1 B0, registered pixel |
 | `sd_cs`, `sd_clk`, `sd_mosi` / `sd_miso` | out / in | SDIO register bits |
 | `ps2_clk`, `ps2_dat` | inout | open drain, driven low when the GPIO bit is 0 |
-| `ser_tx` / `ser_rx` | out / in | `ser_tx = shifter_out & GPIO.SERTX` |
+| `a18`, `a19` | in | 68000 A18, A19 (spec rev 4) |
+| `ma17`, `ma18` | out | SRAM word address bits 17..18: `{a19,a18}` loaded at E4 (LATCH high), `FB_PAGE_HI` loaded at E1 (`ph2 == 0`); the same edges at which CPLD1 loads `ma[16:0]` |
 | `audio`, `led[1:0]` | out | GPIO bits |
 | `paljmp`, `nmibtn` | in | read in INTSTAT; `nmibtn` high forces IPL 7 |
 | `uio[3:0]` | inout | open drain; USERIO bits 3..0 drive, pin levels read in bits 11..8 |
@@ -168,7 +169,9 @@ as in the spec. Address bits A4..A15 are not decoded (the register block is mirr
 
 `tb_system` instantiates the two CPLDs, the bus master, two SST39SF040 flash lanes (512Kx8,
 tACC 70, tOE 35, float 20 ns after OE; JEDEC program/erase/ID with datasheet busy times
-and write-timing checks), two 128Kx8 SRAMs, and two 74AHCT245 (10 ns). CPLD1 outputs pass through
+and write-timing checks), two 512Kx8 SRAMs (AS6C4008-55: tAA 55, tOE 25, tHZOE 20, tWP 45, tDW 25),
+and two 74AHCT245 (10 ns). The 19-bit SRAM address is `{ma18, ma17}` from CPLD2 and `ma[16:0]`
+from CPLD1, both through the same pin delay. CPLD1 outputs pass through
 7.5 ns delays before reaching anything (including CPUCLK, so the CPU/CPLD skew matches the
 analysis in the architecture doc). The bus master samples DTACK/BERR/VPA through a 20 ns
 "setup" delay and read data through a 10 ns one, i.e. a signal has to be valid that long
@@ -180,28 +183,36 @@ Monitors running throughout:
   and the SRAM-side bus (SRAM, transceiver B side, CPLD2) using each model's drive flag; any
   overlap lasting >= 1 ns is an error. The byte halves are also required to agree.
 * **Phase lock**: `u1.ph == u2.ph2` on every clock after the first slot.
+* **MA18..17**: CPLD2's two address bits may only change at the E1 and E4 edges (the edges
+  at which CPLD1 loads `ma[16:0]`), must equal `FB_PAGE_HI` after E1 and the CPU's A19..A18
+  after E4; also counts the changes (non-vacuity).
 * **Frame monitor**: slots per line, fetches per line, lines and VSYNC lines per frame,
   every fetch address against `page base + v*160 + h`, and (when enabled) every pixel on
   the RGB pins against the SRAM models' contents.
 * **SRAM model**: tWP, tDW, data X/Z at WE rise, address movement during WE low; tracks
   the minima seen.
 
-Tests (all pass; the suite runs ~127 ms of board time in ~20 s):
+Tests (all pass; the suite runs ~143 ms of board time in ~30 s):
 
 1. reset vector fetch through the overlay (4 clocks), write under overlay ignored (no ROMWE),
    overlay clears on the first E0xxxx access, RAM visible afterwards
 2. RAM word/byte write/read at S0 = E0/E2/E4/E6 with write-data release 0 and 60 ns; cycle
    lengths 4/7/6/5; back-to-back 4-clock cycles
+   (2b, spec rev 4) RAM above 256 KB: a word in each 256 KB quarter lands at the right
+   19-bit SRAM word (no aliasing through MA18..17), top word 0xFFFFE and bytes 0xFFFFF /
+   0x80000 at two alignments, an untouched word keeps its pattern, a write to framebuffer
+   page 0 (0xED400) lands at `{FB_PAGE_HI, FB_PAGE0_WORD}`
 3. ROM word/byte reads 4 clocks at every alignment; a stray write to ROM gets DTACK in 4
    clocks, one ROMWE pulse per lane (>= 40 ns), ROMOE high throughout, array unchanged
    (3b) flash: software ID on both lanes, program a word (busy status seen, reads back,
    neighbour untouched), sector erase (both lanes busy, 4 KB per chip erased, neighbours
    and the vector sector untouched), program after erase; no flash timing violations
-4. BERR above RAM, below ROM, above SWITCHES, at 0x800000; VPA for IACK; edges of regions
-   (top of the 1 MB ROM window mapped)
+4. BERR above RAM (0x100000), below ROM, above SWITCHES, at 0x800000; VPA for IACK; edges of
+   regions (top of the 1 MB RAM and of the 1 MB ROM window mapped)
 5. INTEN/GPIO/SDIO/USERIO/ID read/write and reset values, pins follow registers, INTSTAT
    live pins, IO mirror, IO cycle alignment, NMI button -> IPL 7
-6. PAGE1 soft switch: first fetch of the next frame from FB_PAGE1_WORD, back to PAGE0
+6. PAGE1 soft switch: first fetch of the next frame from `{FB_PAGE_HI, FB_PAGE1_WORD}` (all
+   19 address bits checked), back to PAGE0
 7. one full NTSC frame: 262 lines, 240 active lines of 160 fetches, 3 VSYNC lines, 191
    slots per line, every fetch address and every pixel correct (part of line 5 written over
    the bus first); VBLANK/HSYNC flags, W1C, IPL levels 1 and 4
@@ -211,7 +222,8 @@ Tests (all pass; the suite runs ~127 ms of board time in ~20 s):
 9. DUART cycles (stub 68681 with open-drain DTACK 2.5 X1 clocks after CS): DUARTCS, byte
    read/write data and RS, CPLD1 releases DTACK, A5..A15 mirror, no IOCS/BUFEN/ROMOE/ROMWE
 10. DUART IRQ pin -> INTSTAT.DUARTIRQ, IPL 3 gated by INTEN.DUART
-11. no contention events, no SRAM or flash timing violations, phase lock, every driver exercised
+11. no contention events, no SRAM or flash timing violations, phase lock, MA18..17 edge/value
+    checker clean and exercised, every driver exercised
 
 ## Synthesis and fitting
 
@@ -233,13 +245,19 @@ what costs what on this part.
 
 ### Results
 
-Current design (spec rev 3: DUART board, flash ROM), `-preassign keep` with the pin blocks
-in the sources, JTAG on, power_reset on, TDI/TMS pull-ups on (CPLD1 also xor_synthesis):
+Current design (spec rev 4: DUART board, flash ROM, 1 MB SRAM), `-preassign keep` with the
+pin blocks in the sources, JTAG on, power_reset on, TDI/TMS pull-ups on (CPLD1 also
+xor_synthesis):
 
 | chip | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in | I/O pins |
 |---|---|---|---|---|---|---|---|---|
 | `cpld1_mmu` | 2 | **111 / 128** | 70 | 13 | 124 | 400 | 37 / 40 | 64 / 64 (incl. 4 JTAG) |
-| `cpld2_io` | 1 | **104 / 128** | 71 | 8 | 105 | 309 | 27 / 40 | 56 / 64 (incl. 4 JTAG) |
+| `cpld2_io` | 1 | **107 / 128** | 73 | 9 | 107 | 322 | 28 / 40 | 60 / 64 (incl. 4 JTAG) |
+
+Spec rev 4 (2x AS6C4008 = 1 MB) needed two more SRAM address lines; CPLD1 had no pin left,
+so CPLD2 drives MA18..MA17 from A19..A18 (inputs on pins 54/55, outputs on 56/57, fixed
+before fitting because the board netlist uses them): +3 macrocells, +4 I/O, still pass 1.
+CPLD1's RAM decode shrank from A23..A18 to A23..A20 but the kept-pin fit stays at 111 cells.
 
 Spec rev 3 added ROMWE (flash write strobe) to CPLD1 on its last free I/O (pin 50) and
 widened the ROM window to 1 MB. The fitter now needs pass 2 (cascade logic) with the pin

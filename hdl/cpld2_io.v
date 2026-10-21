@@ -13,6 +13,10 @@
 // GPIO and USERIO.OUT are therefore WRITE-ONLY (they read as 0); the BIOS keeps shadows.
 // Serial lives in a 68681 DUART on the CPU bus (spec revision 2); CPLD2 only routes the
 // DUART's IRQ pin into the interrupt encoder (level 3) and INTSTAT.DUARTIRQ.
+// Spec revision 4 (1 MB SRAM, 2x 512Kx8): CPLD1 ran out of pins, so the two upper SRAM
+// address lines MA18..MA17 come from here: loaded with the CPU's A19..A18 at E4 (the same
+// edge at which CPLD1 loads MA16..MA0 with A17..A1) and with FB_PAGE_HI, the fixed bits
+// 19..18 of both framebuffer pages, at E1 for the video fetch.
 `timescale 1ns/1ps
 
 module cpld2_io #(
@@ -50,7 +54,13 @@ module cpld2_io #(
     output wire [1:0]  led,
     input  wire        paljmp,
     input  wire        nmibtn,        // 1 = pressed
-    inout  wire [3:0]  uio            // open drain with pull-ups
+    inout  wire [3:0]  uio,           // open drain with pull-ups
+    // upper SRAM address bits (spec rev 4): CPU A19..A18 in the CPU half of a slot,
+    // FB_PAGE_HI during the video fetch
+    input  wire        a18,
+    input  wire        a19,
+    output reg         ma17,
+    output reg         ma18
 );
 
 `ifdef BOARD_PARAMS_VH
@@ -181,9 +191,16 @@ always @(posedge clk24 or negedge sysreset_n) begin
         ipl_n    <= 3'b111;
         ps2c_s1  <= 1'b1; ps2c_s2 <= 1'b1; ps2c_q <= 1'b1;
         ps2_busy <= 1'b0; ps2_sh <= 10'd0; ps2_par <= 1'b0; ps2_wd <= 2'd0;
+        {ma18, ma17} <= FB_PAGE_HI;
     end else begin
         // -------- phase counter, synchronised by LATCH
         if (latch) ph2 <= 3'd4; else ph2 <= ph2 + 3'd1;
+
+        // -------- upper SRAM address: E4 (LATCH high) loads the CPU's A19..A18 for the
+        // CPU half, E1 loads the framebuffer page bits for the video fetch (same edges as
+        // CPLD1's MA16..MA0, both CPLDs on clk24)
+        if (latch)                {ma18, ma17} <= {a19, a18};
+        else if (ph2 == 3'd0)     {ma18, ma17} <= FB_PAGE_HI;
 
         // -------- pixel path: E4 captures the word (zero outside DE), E0 emits the low pixel
         if (latch) begin

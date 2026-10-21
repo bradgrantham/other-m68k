@@ -4,13 +4,22 @@
 
 * `cpld1_mmu.v`, `cpld2_io.v`: complete implementations of architecture.md sections 2-5,
   Verilog-2001, one clock, async reset, no inferred memories. Lint clean (`iverilog -Wall`).
-* `tb/`: 68000 bus master, 70 ns SRAM model with timing checks, SST39SF040 flash model
-  (JEDEC program/erase/ID, busy status, write-timing checks) and 74AHCT245 models,
-  whole-board testbench with 13 tests, a frame/pixel monitor and a bus-contention checker.
-  `make -C hdl sim` ends in `RESULT: PASS` (13 tests, 0 errors; ~30 s).
+* `tb/`: 68000 bus master, 512Kx8 55 ns SRAM model (AS6C4008-55 timings) with timing
+  checks, SST39SF040 flash model (JEDEC program/erase/ID, busy status, write-timing checks)
+  and 74AHCT245 models, whole-board testbench with 14 tests, a frame/pixel monitor, a
+  bus-contention checker and an MA18..17 edge checker.
+  `make -C hdl sim` ends in `RESULT: PASS` (14 tests, 0 errors; ~30 s).
 * **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 111/128
-  (pass 2, fan-in 37/40, no I/O left) and CPLD2 104/128 (pass 1) with the harvested pin
+  (pass 2, fan-in 37/40, no I/O left) and CPLD2 107/128 (pass 1, 60/64 I/O) with the pin
   blocks kept. JEDs in `build/fit/`.
+* **Spec rev 4 (2026-10-20)**: the SRAMs became two AS6C4008-55 (512Kx8), 1 MB in all. The
+  two new address lines MA18..MA17 come from CPLD2 (CPLD1 has no pin left): CPU A19..A18 are
+  inputs on pins 54/55, MA17/MA18 outputs on pins 56/57, loaded at the same E4/E1 edges as
+  CPLD1's MA16..0 (both CPLDs run on clk24, so the SRAM sees one address change per edge).
+  During the video fetch they carry `FB_PAGE_HI`, the fixed bits 19..18 of both framebuffer
+  pages, which therefore live in the top 256 KB (0xDA800 and 0xED400); `tools/gen.py`
+  asserts that both pages share those bits. The timing analysis does not change: the extra
+  bits have the same clock-to-output as CPLD1's.
 * **Spec rev 3 (2026-10-20)**: the EPROMs became two SST39SF040 flash chips (CE tied low).
   CPLD1's ROMCE is now ROMOE (same logic) and a new combinational ROMWE (real ROM region,
   write, UDS|LDS) on pin 50 lets the firmware program the flash in place; the ROM window is

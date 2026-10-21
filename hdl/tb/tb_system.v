@@ -185,7 +185,8 @@ reg sysreset_n = 1'b0;
 wire        cpuclk, berr_n, vpa_n, ramoe_n, weu_n, wel_n, romoe_n, romwe_n, iocs_n, bufen_n, duartcs_n;
 tri1        dtack_n;                     // open-drain bus: CPLD1 and the DUART, 4.7k pull-up
 wire        latch, de, hsync, vsync;
-wire [16:0] ma;
+wire [16:0] ma;                          // CPLD1: MA16..MA0
+wire        ma17, ma18;                  // CPLD2: MA18..MA17 (spec rev 4)
 wire [23:1] a;
 wire        as_n, uds_n, lds_n, rw;
 
@@ -215,7 +216,7 @@ wire        #(T_PIN) latch_p  = latch;
 wire        #(T_PIN) de_p     = de;
 wire        #(T_PIN) hsync_p  = hsync;
 wire        #(T_PIN) vsync_p  = vsync;
-wire [16:0] #(T_PIN) ma_p     = ma;
+wire [18:0] #(T_PIN) ma_p     = {ma18, ma17, ma};   // full 19-bit SRAM address at the chips
 
 // ---- buses ---------------------------------------------------------------------
 wire [15:0] cpu_d;          // CPU bus: 68000, flash, DUART, A side of the transceivers
@@ -270,8 +271,32 @@ cpld2_io u2 (
     .sd_cs(sd_cs), .sd_clk(sd_clk), .sd_mosi(sd_mosi), .sd_miso(sd_miso),
     .ps2_clk(ps2_clk), .ps2_dat(ps2_dat),
     .duart_irq_n(duart_irq_n),
-    .audio(audio), .led(led), .paljmp(paljmp), .nmibtn(nmibtn), .uio(uio)
+    .audio(audio), .led(led), .paljmp(paljmp), .nmibtn(nmibtn), .uio(uio),
+    .a18(a[18]), .a19(a[19]), .ma17(ma17), .ma18(ma18)
 );
+
+// ---- MA18..MA17 edge checker ------------------------------------------------------
+// CPLD2's two address bits must only change at the E1 and E4 clock edges, the edges at
+// which CPLD1 loads MA16..MA0 (ph has already advanced when the change is seen: 1 or 4),
+// and must carry FB_PAGE_HI after E1 and the CPU's A19..A18 after E4.
+time    t_clk24 = 0;
+integer mahi_err = 0, mahi_changes = 0;
+always @(posedge clk24) t_clk24 = $time;
+always @(ma17 or ma18) if (sysreset_n) begin
+    mahi_changes = mahi_changes + 1;
+    if ($time != t_clk24 || !(u1.ph == 3'd1 || u1.ph == 3'd4)) begin
+        mahi_err = mahi_err + 1;
+        if (mahi_err < 5) $display("%0t MAHI: MA18..17 changed off the E1/E4 edge (ph=%0d)", $time, u1.ph);
+    end
+    if (u1.ph == 3'd1 && {ma18, ma17} !== FB_PAGE_HI) begin
+        mahi_err = mahi_err + 1;
+        if (mahi_err < 5) $display("%0t MAHI: MA18..17 = %b after E1, expected FB_PAGE_HI", $time, {ma18, ma17});
+    end
+    if (u1.ph == 3'd4 && {ma18, ma17} !== a[19:18]) begin
+        mahi_err = mahi_err + 1;
+        if (mahi_err < 5) $display("%0t MAHI: MA18..17 = %b after E4, CPU A19..18 = %b", $time, {ma18, ma17}, a[19:18]);
+    end
+end
 
 // ---- bus contention checker ------------------------------------------------------
 // Driver counts on both buses; an overlap must persist >= 1 ns to count (filters the
@@ -320,9 +345,12 @@ integer frames = 0;
 reg        mon_line_valid = 0;     // the current line started after a frame start
 reg        pix_check = 0;
 reg        fetched_now = 0;
-reg [16:0] fetch_addr = 0;
-reg [16:0] mon_base = FB_PAGE0_WORD;
-reg [16:0] first_fetch_ma = 17'h1FFFF;
+reg [18:0] fetch_addr = 0;
+reg [18:0] mon_base = {FB_PAGE_HI, FB_PAGE0_WORD};
+reg [18:0] first_fetch_ma = 19'h7FFFF;
+localparam [18:0] FB0_WORD19 = {FB_PAGE_HI, FB_PAGE0_WORD};    // 19-bit SRAM word addresses
+localparam [18:0] FB1_WORD19 = {FB_PAGE_HI, FB_PAGE1_WORD};
+localparam [23:0] FB0_ADDR   = {4'b0000, FB0_WORD19, 1'b0};    // CPU byte addresses
 integer    exp_h_total;
 reg [7:0]  exp_pix;
 event      frame_start;
@@ -356,7 +384,7 @@ always @(posedge clk24) if (sysreset_n) begin
                 mon_lines = 0; mon_active = 0; mon_vsync_lines = 0;
                 mon_fetch_err = 0; mon_slot_err = 0; mon_addr_err = 0; mon_pix_err = 0;
                 frames = frames + 1;
-                mon_base = u1.page ? FB_PAGE1_WORD : FB_PAGE0_WORD;
+                mon_base = u1.page ? FB1_WORD19 : FB0_WORD19;
                 -> frame_start;
             end
         end
@@ -492,7 +520,7 @@ initial begin
     for (i = 0; i < 524288; i = i + 1) begin w = (i * 16'h1F3) ^ 16'hA5C3; flash_hi.mem[i] = w[15:8]; flash_lo.mem[i] = w[7:0]; end
     set_rom(0, 16'h0000); set_rom(1, 16'h4000);            // SSP 0x00004000
     set_rom(2, 16'h00E0); set_rom(3, 16'h0100);            // PC  0xE00100
-    for (i = 0; i < 131072; i = i + 1) begin
+    for (i = 0; i < 524288; i = i + 1) begin
         sram_hi.mem[i] = (i * 7 + 3) & 8'hFF;
         sram_lo.mem[i] = (i * 13 + 5) & 8'hFF;
     end
@@ -579,6 +607,51 @@ initial begin
     end
     end_test;
 
+    // ------------------------------------------------------------------ 2b (spec rev 4)
+    begin_test("RAM above 256 KB: 1 MB decode, MA18..17 from CPLD2, no aliasing");
+    cpu.t_rel = 0.0;
+    // one word in each 256 KB quarter: the CPLD1 bits alone would alias them
+    cpu.write_word(24'h000100, 16'h0A0A);
+    cpu.write_word(24'h040100, 16'h1B1B);
+    cpu.write_word(24'h080100, 16'h2C2C);
+    cpu.write_word(24'h0C0100, 16'h3D3D);
+    check(cpu.last_status == 0 && cpu.last_clocks <= 7, "write at 0xC0100 serviced");
+    #30;                                                   // let WE rise and the SRAM model write
+    check(sram_hi.mem[19'h00080] == 8'h0A && sram_lo.mem[19'h00080] == 8'h0A, "0x00100 landed at SRAM word 0x00080");
+    check(sram_hi.mem[19'h20080] == 8'h1B && sram_lo.mem[19'h20080] == 8'h1B, "0x40100 landed at SRAM word 0x20080");
+    check(sram_hi.mem[19'h40080] == 8'h2C && sram_lo.mem[19'h40080] == 8'h2C, "0x80100 landed at SRAM word 0x40080");
+    check(sram_hi.mem[19'h60080] == 8'h3D && sram_lo.mem[19'h60080] == 8'h3D, "0xC0100 landed at SRAM word 0x60080");
+    cpu.read_word(24'h000100); check_eq(cpu.last_data, 16'h0A0A, "read back 0x00100");
+    cpu.read_word(24'h040100); check_eq(cpu.last_data, 16'h1B1B, "read back 0x40100 (differs from 0x00100: no aliasing)");
+    cpu.read_word(24'h080100); check_eq(cpu.last_data, 16'h2C2C, "read back 0x80100");
+    cpu.read_word(24'h0C0100); check_eq(cpu.last_data, 16'h3D3D, "read back 0xC0100");
+    // top of the array, word and bytes, at two alignments
+    for (k = 0; k < 2; k = k + 1) begin
+        cpu.idle(k);
+        cpu.write_word(24'h0FFFFE, 16'hBEEF ^ k);
+        check(cpu.last_status == 0, "write at the top word of RAM serviced");
+        #30;
+        check(sram_hi.mem[19'h7FFFF] == 8'hBE && sram_lo.mem[19'h7FFFF] == (8'hEF ^ k), "top word in SRAM");
+        cpu.read_word(24'h0FFFFE);  check_eq(cpu.last_data, 16'hBEEF ^ k, "top word read back");
+        cpu.write_byte(24'h0FFFFF, 8'h77 ^ k);                 // odd: lower byte
+        #30;
+        check(sram_lo.mem[19'h7FFFF] == (8'h77 ^ k) && sram_hi.mem[19'h7FFFF] == 8'hBE, "odd byte at top written, even untouched");
+        cpu.write_byte(24'h080000, 8'h99 ^ k);                 // even: upper byte, first word of the upper half
+        #30;
+        check(sram_hi.mem[19'h40000] == (8'h99 ^ k), "even byte at 0x80000 written");
+        cpu.read_byte(24'h0FFFFF); check_eq(cpu.last_data, 8'h77 ^ k, "odd byte at top read back");
+        cpu.read_byte(24'h080000); check_eq(cpu.last_data, 8'h99 ^ k, "even byte at 0x80000 read back");
+        exp = {sram_hi.mem[19'h5FFFF], sram_lo.mem[19'h5FFFF]};
+        check(exp == ((((19'h5FFFF * 7 + 3) & 8'hFF) << 8) | ((19'h5FFFF * 13 + 5) & 8'hFF)), "SRAM word 0x5FFFF still holds its init pattern");
+        cpu.read_word(24'h0BFFFE); check_eq(cpu.last_data, exp, "untouched word at 0xBFFFE reads its init pattern");
+    end
+    // the framebuffer pages live in the top quarter: a CPU write there is what the fetch sees
+    cpu.write_word(FB0_ADDR, 16'h5AA5);
+    #30;
+    check(sram_hi.mem[FB0_WORD19] == 8'h5A && sram_lo.mem[FB0_WORD19] == 8'hA5, "page 0 word 0 written at SRAM word {FB_PAGE_HI,FB_PAGE0_WORD}");
+    check_eq(mahi_err, 0, "MA18..17 edge/value checks clean so far");
+    end_test;
+
     // ------------------------------------------------------------------ 3
     begin_test("ROM reads take 4 clocks at any alignment");
     for (k = 0; k < 4; k = k + 1) begin
@@ -655,13 +728,13 @@ initial begin
     // ------------------------------------------------------------------ 4
     begin_test("BERR on unmapped, VPA on IACK");
     cpu.read_word(24'h800000);  check(cpu.last_status == 1, "BERR on read of 0x800000");
-    cpu.write_word(24'h040000, 16'h0000); check(cpu.last_status == 1, "BERR on write just above RAM");
+    cpu.write_word(24'h100000, 16'h0000); check(cpu.last_status == 1, "BERR on write just above RAM (1 MB)");
     cpu.read_word(24'hDFFFFE);  check(cpu.last_status == 1, "BERR just below ROM");
     cpu.read_word(24'hEFFFFE);  check(cpu.last_status == 0, "top of the 1 MB ROM window is mapped");
     cpu.read_word(24'hF30000);  check(cpu.last_status == 1, "BERR just above DUART");
     cpu.read_word(24'hFFFFF3);  check(cpu.last_status == 2, "VPA on IACK level 1");
     cpu.read_word(24'hFFFFFF);  check(cpu.last_status == 2, "VPA on IACK level 7");
-    cpu.read_word(24'h03FFFE);  check(cpu.last_status == 0, "top of RAM is mapped");
+    cpu.read_word(24'h0FFFFE);  check(cpu.last_status == 0, "top of RAM (1 MB) is mapped");
     cpu.read_word(24'hF1FFFE);  check(cpu.last_status == 0, "SWITCHES read gets DTACK");
     end_test;
 
@@ -724,21 +797,21 @@ initial begin
     check(u1.page === 1'b1, "PAGE flop set");
     @(frame_start);
     @(line_start);                                         // line 0 fetched
-    check_eq(first_fetch_ma, FB_PAGE1_WORD, "first fetch of the frame from page 1");
+    check_eq(first_fetch_ma, FB1_WORD19, "first fetch of the frame from page 1 (incl. MA18..17)");
     check_eq(fr_addr_err, 0, "fetch addresses before the switch (page 0) were right");
     cpu.write_word(sw_addr(SW_PAGE0_OFF), 16'h0000);
     #100;
     check(u1.page === 1'b0, "PAGE flop cleared");
     @(frame_start);
     @(line_start);
-    check_eq(first_fetch_ma, FB_PAGE0_WORD, "first fetch of the frame from page 0 again");
+    check_eq(first_fetch_ma, FB0_WORD19, "first fetch of the frame from page 0 again");
     check_eq(fr_addr_err, 0, "fetch addresses during the page-1 frame were right");
     end_test;
 
     // ------------------------------------------------------------------ 7
     begin_test("one full NTSC frame: fetches, lines, syncs, pixel stream");
     // put a recognisable pattern into line 5 of page 0 through the bus
-    for (k = 0; k < 16; k = k + 1) cpu.write_word({FB_PAGE0_WORD, 1'b0} + 5*320 + 2*k, {8'hE0 + k, 8'h03 + k});
+    for (k = 0; k < 16; k = k + 1) cpu.write_word(FB0_ADDR + 5*320 + 2*k, {8'hE0 + k, 8'h03 + k});
     cpu.read_word(io_addr(IO_INTSTAT_OFF));
     cpu.write_word(io_addr(IO_INTSTAT_OFF), 16'hFFFF);     // clear VBLANK/HSYNC flags
     @(frame_start);
@@ -857,12 +930,14 @@ initial begin
     check_eq(sram_lo.errors, 0, "SRAM-lo timing violations");
     check_eq(flash_hi.errors + flash_lo.errors, 0, "flash timing violations");
     check_eq(phase_err, 0, "CPLD2 phase counter locked to CPLD1");
+    check_eq(mahi_err, 0, "MA18..17 only change at E1/E4 with the right values");
+    check(mahi_changes > 100, "MA18..17 toggled (CPU half vs video fetch)");
     check(ev_cpu > 0 && ev_rom > 0 && ev_xa > 0 && ev_xb > 0 && ev_sram > 0 && ev_cpld2 > 0, "every bus driver was exercised");
     $display("     (%0d SRAM-hi writes, %0d SRAM-lo writes, %0d SRAM-hi read enables, %0d bus cycles, %0d frames)",
              sram_hi.writes, sram_lo.writes, sram_hi.reads, cpu.cycles, frames);
     $display("     drive events: cpu %0d rom %0d xcvr->cpu %0d xcvr->sram %0d sram %0d cpld2 %0d",
              ev_cpu, ev_rom, ev_xa, ev_xb, ev_sram, ev_cpld2);
-    $display("     SRAM write timing minima: tWP %0t ps (>= 50 ns), tDW %0t ps (>= 30 ns)", sram_hi.min_twp, sram_hi.min_tdw);
+    $display("     SRAM write timing minima: tWP %0t ps (>= 45 ns), tDW %0t ps (>= 25 ns)", sram_hi.min_twp, sram_hi.min_tdw);
     $display("     flash: %0d WE pulses, min tWP %0t ps (>= 40 ns), %0d programs, %0d erases, %0d busy polls", flash_hi.writes, flash_hi.min_twp, flash_hi.programs, flash_hi.erases, flash_hi.busy_reads);
     end_test;
 

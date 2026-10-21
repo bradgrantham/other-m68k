@@ -1,25 +1,27 @@
-// tb_sram.v -- behavioural 128Kx8 70 ns SRAM (KM681000-7 class) with timing checks.
+// tb_sram.v -- behavioural 512Kx8 55 ns SRAM (AS6C4008-55 class) with timing checks.
 //
-// Read timing  : tAA 70 (address to data), tOE 35 (OE low to data), tOHZ 25 (OE high
-//                to Hi-Z).  Outputs are driven (as X) as soon as OE is low and WE high,
-//                become valid when both tAA and tOE have elapsed, and float tOHZ after OE
-//                rises.  Address changes while outputs are enabled make the data X again
-//                for tAA.
-// Write timing : checked on every WE rising edge: tWP >= 50, tDW >= 30, data not X/Z,
-//                address stable throughout the WE low pulse (tAS/tWR >= 0); data must not
-//                change before WE rises (tDH >= 0 is implied).
+// Datasheet names (AS6C4008-55 column): tAA 55 (address to data), tOE 25 (OE low to
+// data), tHZOE 20 (OE high to Hi-Z), tWP 45 (write pulse), tDW 25 (data valid to WE high),
+// tAS/tWR 0, tDH 0.  The old 128Kx8 KM681000-7 model had 70/35/25/50/30; the new part is
+// faster everywhere, so the limits below are the ones the board has to meet.
+// Read timing  : outputs are driven (as X) as soon as OE is low and WE high, become valid
+//                when both tAA and tOE have elapsed, and float tHZOE after OE rises.
+//                Address changes while outputs are enabled make the data X again for tAA.
+// Write timing : checked on every WE rising edge: tWP, tDW, data not X/Z, address stable
+//                throughout the WE low pulse (tAS/tWR >= 0); data must not change before
+//                WE rises (tDH >= 0 is implied).
 // Violations are reported with $display and counted in `errors`.
 `timescale 1ns/1ps
 
 module tb_sram #(
     parameter NAME = "sram",
-    parameter real tAA  = 70.0,
-    parameter real tOE  = 35.0,
-    parameter real tOHZ = 25.0,
-    parameter real tWP  = 50.0,
-    parameter real tDW  = 30.0
+    parameter real tAA  = 55.0,
+    parameter real tOE  = 25.0,
+    parameter real tOHZ = 20.0,    // tHZOE
+    parameter real tWP  = 45.0,
+    parameter real tDW  = 25.0
 ) (
-    input  wire [16:0] a,
+    input  wire [18:0] a,
     inout  wire [7:0]  d,
     input  wire        ce_n,
     input  wire        oe_n,
@@ -27,7 +29,7 @@ module tb_sram #(
     output wire        driving
 );
 
-reg [7:0] mem [0:131071];
+reg [7:0] mem [0:524287];
 integer   errors = 0;
 integer   writes = 0;
 integer   reads  = 0;
@@ -66,7 +68,7 @@ assign driving = drive;
 time t_we_fall = 0;
 time t_d_change = 0;
 time t_a_change = 0;
-reg  [16:0] a_at_fall;
+reg  [18:0] a_at_fall;
 reg         we_low = 0;        // a real WE falling edge has been seen (ignores power-up X->1)
 
 always @(d) t_d_change = $time;
