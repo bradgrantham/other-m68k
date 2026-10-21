@@ -45,7 +45,7 @@ pictures. Page 1 is the root with the seven sheet symbols; the power-net anchors
 | 2 | cpu | U1 MC68000P12, DTACK/BR/BGACK/RESET/HALT pull-ups, the two reset diodes, decoupling |
 | 3 | memory | U2/U3 SRAM (hi/lo byte), U4/U5 SST39SF040 flash (even/odd), U8/U9 74AHCT245 (hi/lo) |
 | 4 | cpld1 | U6 ATF1508AS "MMU" with every pin labelled from `hdl/pins_cpld1_mmu.json`, X1 24 MHz oscillator, J7 JTAG, JTAG pull-ups, 8+1 decoupling capacitors |
-| 5 | cpld2 | U7 ATF1508AS "I/O", J3 PS/2, J4 microSD with level dividers and pull-ups, SW2 NMI, D3/D4 LEDs, J6 audio and its filter, decoupling |
+| 5 | cpld2 | U7 ATF1508AS "I/O", J3 PS/2, J4 microSD with its six 10 k pull-ups (native 4-bit SD bus, CPLD2 open-drain), SW2 NMI, D3/D4 LEDs, J6 audio and its filter, decoupling |
 | 6 | video | U11 AD724 (AD725 symbol), the three resistor DACs and terminations, Y2 subcarrier crystal, STND pull-up (NTSC)JMP jumpers, FB1, J5 RCA, 220 uF/75 ohm output |
 | 7 | io | U10 MC68681 DUART, Y1 3.6864 MHz, J2 FTDI, J8 expansion, U13 MCP130 + SW1 reset, DUART pull-ups |
 | 8 | power | J1 USB-C, F1 polyfuse, CC pull-downs, bulk capacitors, D5 power LED, U12 AP2112K-3.3, H1..H4 |
@@ -53,7 +53,7 @@ pictures. Page 1 is the root with the seven sheet symbols; the power-net anchors
 Net names follow the spec (`A1..A23`, `D0..D15` CPU data bus, `MD0..MD15` SRAM-side bus,
 `MA0..MA16` SRAM address, `AS`, `UDS`, `LDS`, `RW`, `DTACK`, `BERR`, `VPA`, `ROMOE`, `ROMWE`,
 `RAMOE`, `WEU`, `WEL`, `BUFEN`, `IOCS`, `LATCH`, `DE`, `HSYNC`, `VSYNC`, `DUARTCS`,
-`SYSRESET`, `CLK24`, `CPUCLK`, `IPL0..2`, `PS2_CLK/DAT`, `SD_*`, `UIO0..3`, `LED0/1`,
+`SYSRESET`, `CLK24`, `CPUCLK`, `IPL0..2`, `PS2_CLK/DAT`, `SD_CLK SD_CMD SD_DAT0..3`, `LED0/1`,
 `AUDIO`, `R0..R2 G0..G2 B0..B1`, `PALJMP`, `NMIBTN`, `DUART_IRQ`). Active-low signals keep
 their plain spec names; the polarity is in `spec/board.json`. Rails: `VCC` (+5 V), `GND`,
 `+3V3` (SD card only), `VBUS` (USB side of the polyfuse), `+5VA` (AD724 analog supply
@@ -92,8 +92,14 @@ behind FB1).
 * **JTAG header** J7 (ByteBlaster pinout): 1 TCK, 2 GND, 3 TDO, 4 VCC, 5 TMS, 6 GND,
   7 n/c, 8 GND, 9 TDI, 10 GND. Chain: header TDI -> U6 (TDI 14, TDO 71) -> U7 TDI -> U7
   TDO -> header. 10 k pull-ups on TMS and on both TDIs.
-* **Expansion header** J8 (2x8): odd row 1 +5V, 3 +3V3, 5 UIO0, 7 UIO1, 9 UIO2, 11 UIO3,
-  13 DUART TXDB, 15 DUART RXDB; every even pin GND.
+* **Expansion header** J8 (2x8): odd row 1 +5V, 3 +3V3, 5/7/9/11 no connect (UIO0..3 until
+  spec rev 7, removed to make room in CPLD2 for the 4-bit SD bus), 13 DUART TXDB, 15 DUART
+  RXDB; every even pin GND.
+* **SD card** (rev C1, spec rev 7): native 4-bit SD bus. CLK, CMD and DAT0..3 run straight
+  from CPLD2 to J4, each with a 10 k pull-up to +3V3; CPLD2 drives them open-drain (low or
+  released) and reads them back, so the 3.3 V pull-ups set the high level and no 5 V -> 3.3 V
+  dividers are needed (rev B had 1.8k/3.3k dividers on CS/CLK/MOSI for SPI mode, which would
+  fight the card when it drives CMD and DAT0..3).
 * **FTDI header** J2: 1 GND, 2 CTS (n/c), 3 VCC (n/c: the board is USB-C powered; do not
   bridge it to the cable's 5 V), 4 TXD -> DUART RXDA, 5 RXD <- DUART TXDA, 6 RTS (n/c).
 * **USB-C**: 6-pin power-only receptacle (GCT USB4125 footprint), 5.1 k on CC1 and CC2,

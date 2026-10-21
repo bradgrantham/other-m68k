@@ -33,8 +33,9 @@ Decisions taken here that the documents leave open (also listed in kicad/README.
     Crystal: 15 pF on X1 to GND, 0-5 pF on X2 marked DNP (data sheet section 2.2/2.3).
   * ATF1508 dedicated inputs OE1 (84) and OE2/GCLK2 (2) are unused: tied to GND.
   * JTAG header: 1 TCK, 2 GND, 3 TDO, 4 VCC, 5 TMS, 6 GND, 7 n/c, 8 GND, 9 TDI, 10 GND.
-  * Expansion header (2x8, odd row = signals): 1 +5V, 3 +3V3, 5 UIO0, 7 UIO1, 9 UIO2,
-    11 UIO3, 13 TXDB, 15 RXDB; every even pin is GND.
+  * Expansion header (2x8, odd row = signals): 1 +5V, 3 +3V3, 5/7/9/11 no connect (the
+    UIO bits went in spec rev 7 to make room in CPLD2 for the 4-bit SD bus), 13 TXDB,
+    15 RXDB; every even pin is GND.
   * FTDI header: VCC pin left open (board is USB-C powered); CTS/RTS open.
 """
 import json
@@ -69,7 +70,7 @@ class Counter:
 
 def build():
     b = Board("other-m68k", title="other-m68k: 68000 SBC with 68681 DUART, framebuffer, PS/2, SD, audio",
-              rev="A")
+              rev="C1")
     for name, title in (("cpu", "68000 CPU"), ("memory", "SRAM, EPROM, bus transceivers"),
                         ("cpld1", "CPLD1 MMU, clock, JTAG"), ("cpld2", "CPLD2 I/O, PS/2, SD, audio, LEDs"),
                         ("video", "AD724 composite encoder"), ("io", "DUART, serial, headers, reset"),
@@ -276,26 +277,20 @@ def build():
         b.net(name, u7.pin(p2[name]), r.pin(1))
         b.net(f"{name}_A", r.pin(2), d.pin("A"))
         b.power("GND", d.pin("K"))
-    # user I/O to the expansion header with pull-ups
-    for i in range(4):
-        r = R("4.7k", "io", near="J8")
-        b.net(f"UIO{i}", u7.pin(p2[f"UIO{i}"]), j8.pin(5 + 2 * i), r.pin(2))
-        b.power("VCC", r.pin(1))
+    # expansion header pins 5/7/9/11 were UIO0..3 until spec rev 7; now unused
+    j8.nc(5, 7, 9, 11)
     # DUART interrupt (open drain) into CPLD2
     r = R("4.7k", "io", near="U10")
     b.net("DUART_IRQ", u10.pin("IRQ"), u7.pin(p2["DUART_IRQ"]), r.pin(2))
     b.power("VCC", r.pin(1))
-    # microSD: 5 V -> 3.3 V dividers on CS/CLK/MOSI, MISO straight in, 10k pull-ups on DAT0..2
-    for name, sdpin in (("SD_CS", "DAT3/CD"), ("SD_CLK", "CLK"), ("SD_MOSI", "CMD")):
-        r_top = R("1.8k", "cpld2", near="J4")
-        r_bot = R("3.3k", "cpld2", near="J4")
-        b.net(name, u7.pin(p2[name]), r_top.pin(1))
-        b.net(f"{name}_3V3", r_top.pin(2), r_bot.pin(1), j4.pin(sdpin))
-        b.power("GND", r_bot.pin(2))
-    b.net("SD_MISO", u7.pin(p2["SD_MISO"]), j4.pin("DAT0"))
-    for sdpin, net in (("DAT0", "SD_MISO"), ("DAT1", "SD_DAT1"), ("DAT2", "SD_DAT2")):
+    # microSD, native 4-bit SD bus (spec rev 7): CLK, CMD and DAT0..3 go straight from CPLD2
+    # to the card. CPLD2 drives each line open-drain (low or released) and reads it back, so
+    # the 10 k pull-ups to +3V3 set the high level; no 5 V -> 3.3 V dividers (the card
+    # answers on CMD and drives DAT0..3 during reads, which a divider would fight).
+    for name, sdpin in (("SD_DAT3", "DAT3/CD"), ("SD_CLK", "CLK"), ("SD_CMD", "CMD"),
+                        ("SD_DAT0", "DAT0"), ("SD_DAT1", "DAT1"), ("SD_DAT2", "DAT2")):
         r = R("10k", "cpld2", near="J4")
-        b.net(net, j4.pin(sdpin), r.pin(2))
+        b.net(name, u7.pin(p2[name]), j4.pin(sdpin), r.pin(2))
         b.power("+3V3", r.pin(1))
     b.power("+3V3", j4.pin("VDD"))
     b.power("GND", j4.pin("VSS"), j4.pin("SHIELD"))
@@ -389,7 +384,7 @@ def build():
     b.power("VCC", u10.pin("VCC"))
     b.power("GND", u10.pin("GND"))
     decouple(u10, ["40"], "io")
-    # expansion header: odd row signals (UIO/TXDB/RXDB above), 1 = +5V, 3 = +3V3, even row GND
+    # expansion header: odd row signals (TXDB/RXDB above, 5..11 n/c), 1 = +5V, 3 = +3V3, even row GND
     b.power("VCC", j8.pin(1))
     b.power("+3V3", j8.pin(3))
     b.power("GND", *[j8.pin(i) for i in range(2, 17, 2)])

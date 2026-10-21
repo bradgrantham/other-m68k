@@ -21,31 +21,29 @@ Item,Designator,Qty,Manufacturer,Mfg Part #,Description,Package,Type,Supplied By
 20,J7,1,Sullins,PRPC005DAAN-RC,pin header 2x5 2.54 mm,PinHeader_2x05_P2.54mm_Vertical,THT,PCBWay
 21,J8,1,Sullins,PRPC008DAAN-RC,pin header 2x8 2.54 mm,PinHeader_2x08_P2.54mm_Vertical,THT,PCBWay
 22,J9,1,Sullins,PRPC015DAAN-RC,pin header 2x15 2.54 mm (logic analyzer channels),PinHeader_2x15_P2.54mm_Vertical,THT,PCBWay
-23,"R1,R2,R3,R4,R5,R9,R10,R14,R15,R16,R17,R18,R46",13,Yageo,RC0603FR-074K7L,4.7 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
-24,"R6,R7,R8,R11,R25,R26,R27,R29,R42,R43,R44,R47,R48,R49,R50,R51,R52,R53",18,Yageo,RC0603FR-0710KL,10 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
-25,"R12,R13,R28,R56",4,Yageo,RC0603FR-071KL,1 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
-26,"R19,R21,R23",3,Yageo,RC0603FR-071K8L,1.8 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
-27,"R20,R22,R24",3,Yageo,RC0603FR-073K3L,3.3 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
-28,R30,1,Yageo,RC0603FR-072K2L,2.2 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
-29,"R31,R35",2,Yageo,RC0603FR-07787RL,787 ohm 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
-30,"R32,R36",2,Yageo,RC0603FR-071K58L,1.58 k 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
-31,"R33,R37",2,Yageo,RC0603FR-073K16L,3.16 k 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
-32,"R34,R38,R41,R45",4,Yageo,RC0603FR-0775RL,75 ohm 1% 0603,R_0603_1608Metric,SMD,PCBWay
-33,R39,1,Yageo,RC0603FR-07681RL,681 ohm 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
-34,R40,1,Yageo,RC0603FR-071K37L,1.37 k 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
-35,"R54,R55",2,Yageo,RC0603FR-075K1L,5.1 k 1% 0603 (USB-C CC pull-downs),R_0603_1608Metric,SMD,PCBWay
-36,"RN1,RN2,RN3,RN4,RN5,RN6",6,Yageo,YC164-JR-07100RL,"4 x 100 ohm resistor array, 4x0603 convex (1206 size); alt Panasonic EXB-38V101JV",R_Array_Convex_4x0603,SMD,PCBWay
-37,"SW1,SW2",2,Omron,B3F-1000,tactile switch 6 mm THT,SW_PUSH_6mm,THT,PCBWay
-38,U1,1,Mill-Max,110-43-964-41-001000,"DIP-64 socket, 22.86 mm (0.9 in) rows, gold contacts, RoHS",DIP-64_W22.86mm_Socket,THT,PCBWay
-39,"U2,U3,U4,U5",4,Assmann WSW,A 32-LC-TT,"DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)",DIP-32_W15.24mm_Socket,THT,PCBWay
-40,"U6,U7",2,Preci-dip,540-88-084-24-008,"PLCC-84 through-hole socket, 1.27 mm pitch (RS 7019411)",PLCC-84_THT-Socket,THT,PCBWay
-41,"U8,U9",2,Texas Instruments,SN74AHCT245DW,octal bus transceiver SOIC-20 wide,SOIC-20W_7.5x12.8mm_P1.27mm,SMD,PCBWay
-42,U10,1,Mill-Max,110-43-640-41-001000,"DIP-40 socket, 15.24 mm rows, gold contacts, RoHS",DIP-40_W15.24mm_Socket,THT,PCBWay
-43,U11,1,Analog Devices,AD724JRZ,"RGB to NTSC/PAL encoder, SOIC-16W. LAST TIME BUY (DigiKey LTB 2027-07-29): buy now, consign if the assembler cannot source",SOIC-16W_7.5x10.3mm_P1.27mm,SMD,PCBWay
-44,U12,1,Diodes Inc,AP2112K-3.3TRG1,3.3 V 600 mA LDO SOT-23-5,SOT-23-5,SMD,PCBWay
-45,U13,1,Microchip,MCP130T-450I/TT,"4.50 V reset supervisor, open drain, SOT-23",SOT-23,SMD,PCBWay
-46,X1,1,ECS,ECS-2100A-240,"24 MHz 5 V HCMOS oscillator, half-size DIP-8 (DigiKey: 18 week lead time 2026-10; any 5 V half-size DIP-8 oscillator fits)",Oscillator_DIP-8,THT,PCBWay
-47,Y1,1,ECS,ECS-36-20-4XDN,"3.6864 MHz crystal HC-49/US, 20 pF (-40..85 C grade; ECS-36-20-4DN is NRND)",Crystal_HC49-U_Vertical,THT,PCBWay
-48,Y2,1,ECS,ECS-35-17-4X,3.579545 MHz crystal HC-49/US (NTSC subcarrier),Crystal_HC49-U_Vertical,THT,PCBWay
-49,"U2,U3",2,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8) (insert into the socket after assembly)",DIP-32_W15.24mm_Socket,THT,PCBWay
-50,"U4,U5",2,Microchip,SST39SF040-70-4C-PHE,"512K x 8 flash DIP-32 (even byte, D15..D8) (insert into the socket after assembly)",DIP-32_W15.24mm_Socket,THT,PCBWay
+23,"R1,R2,R3,R4,R5,R9,R10,R14,R39",9,Yageo,RC0603FR-074K7L,4.7 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
+24,"R6,R7,R8,R11,R15,R16,R17,R18,R19,R20,R22,R35,R36,R37,R40,R41,R42,R43,R44,R45,R46",21,Yageo,RC0603FR-0710KL,10 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
+25,"R12,R13,R21,R49",4,Yageo,RC0603FR-071KL,1 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
+26,R23,1,Yageo,RC0603FR-072K2L,2.2 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
+27,"R24,R28",2,Yageo,RC0603FR-07787RL,787 ohm 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
+28,"R25,R29",2,Yageo,RC0603FR-071K58L,1.58 k 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
+29,"R26,R30",2,Yageo,RC0603FR-073K16L,3.16 k 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
+30,"R27,R31,R34,R38",4,Yageo,RC0603FR-0775RL,75 ohm 1% 0603,R_0603_1608Metric,SMD,PCBWay
+31,R32,1,Yageo,RC0603FR-07681RL,681 ohm 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
+32,R33,1,Yageo,RC0603FR-071K37L,1.37 k 1% 0603 (DAC),R_0603_1608Metric,SMD,PCBWay
+33,"R47,R48",2,Yageo,RC0603FR-075K1L,5.1 k 1% 0603 (USB-C CC pull-downs),R_0603_1608Metric,SMD,PCBWay
+34,"RN1,RN2,RN3,RN4,RN5,RN6",6,Yageo,YC164-JR-07100RL,"4 x 100 ohm resistor array, 4x0603 convex (1206 size); alt Panasonic EXB-38V101JV",R_Array_Convex_4x0603,SMD,PCBWay
+35,"SW1,SW2",2,Omron,B3F-1000,tactile switch 6 mm THT,SW_PUSH_6mm,THT,PCBWay
+36,U1,1,Mill-Max,110-43-964-41-001000,"DIP-64 socket, 22.86 mm (0.9 in) rows, gold contacts, RoHS",DIP-64_W22.86mm_Socket,THT,PCBWay
+37,"U2,U3,U4,U5",4,Assmann WSW,A 32-LC-TT,"DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)",DIP-32_W15.24mm_Socket,THT,PCBWay
+38,"U6,U7",2,Preci-dip,540-88-084-24-008,"PLCC-84 through-hole socket, 1.27 mm pitch (RS 7019411)",PLCC-84_THT-Socket,THT,PCBWay
+39,"U8,U9",2,Texas Instruments,SN74AHCT245DW,octal bus transceiver SOIC-20 wide,SOIC-20W_7.5x12.8mm_P1.27mm,SMD,PCBWay
+40,U10,1,Mill-Max,110-43-640-41-001000,"DIP-40 socket, 15.24 mm rows, gold contacts, RoHS",DIP-40_W15.24mm_Socket,THT,PCBWay
+41,U11,1,Analog Devices,AD724JRZ,"RGB to NTSC/PAL encoder, SOIC-16W. LAST TIME BUY (DigiKey LTB 2027-07-29): buy now, consign if the assembler cannot source",SOIC-16W_7.5x10.3mm_P1.27mm,SMD,PCBWay
+42,U12,1,Diodes Inc,AP2112K-3.3TRG1,3.3 V 600 mA LDO SOT-23-5,SOT-23-5,SMD,PCBWay
+43,U13,1,Microchip,MCP130T-450I/TT,"4.50 V reset supervisor, open drain, SOT-23",SOT-23,SMD,PCBWay
+44,X1,1,ECS,ECS-2100A-240,"24 MHz 5 V HCMOS oscillator, half-size DIP-8 (DigiKey: 18 week lead time 2026-10; any 5 V half-size DIP-8 oscillator fits)",Oscillator_DIP-8,THT,PCBWay
+45,Y1,1,ECS,ECS-36-20-4XDN,"3.6864 MHz crystal HC-49/US, 20 pF (-40..85 C grade; ECS-36-20-4DN is NRND)",Crystal_HC49-U_Vertical,THT,PCBWay
+46,Y2,1,ECS,ECS-35-17-4X,3.579545 MHz crystal HC-49/US (NTSC subcarrier),Crystal_HC49-U_Vertical,THT,PCBWay
+47,"U2,U3",2,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8) (insert into the socket after assembly)",DIP-32_W15.24mm_Socket,THT,PCBWay
+48,"U4,U5",2,Microchip,SST39SF040-70-4C-PHE,"512K x 8 flash DIP-32 (even byte, D15..D8) (insert into the socket after assembly)",DIP-32_W15.24mm_Socket,THT,PCBWay

@@ -96,19 +96,6 @@
    "desc": "1 k 1% 0603",
    "assembly": "pcba"
   },
-  "1.8k|Resistor_SMD:R_0603_1608Metric": {
-   "mfr": "Yageo",
-   "mpn": "RC0603FR-071K8L",
-   "desc": "1.8 k 1% 0603",
-   "assembly": "pcba"
-  },
-  "3.3k|Resistor_SMD:R_0603_1608Metric": {
-   "mfr": "Yageo",
-   "mpn": "RC0603FR-073K3L",
-   "lcsc": "C22978",
-   "desc": "3.3 k 1% 0603",
-   "assembly": "pcba"
-  },
   "2.2k|Resistor_SMD:R_0603_1608Metric": {
    "mfr": "Yageo",
    "mpn": "RC0603FR-072K2L",
