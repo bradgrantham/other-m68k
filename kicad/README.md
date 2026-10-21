@@ -347,3 +347,11 @@ and then in `kicad/lib/`.
   constants); `PCB_TEXT` on an undefined layer makes the saved board unloadable;
   `ZONE_FILLER` needs a board loaded from disk.
 * **kicad-cli pcb has no netlist import**; `pcbnew` does it.
+
+## release/
+
+`make release` copies the finished design into `kicad/release/`, which is tracked in git: the
+KiCad project with the routed board, the schematic PDF, placement/routing SVGs and the fab
+package (`release/fab/`). The autorouted board is not reproducible from the sources (it is a
+freerouting run), so this directory is what another machine should `git pull` to review the
+design or upload to PCBWay. Regenerate it after every `make route` / `make fab`.
