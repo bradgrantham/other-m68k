@@ -1,14 +1,19 @@
 # other-m68k Programmer's Guide
 
-This guide describes **board rev B4 with the spec revision 5 CPLD2 image, spec revision 6**
-(`"revision": 6` in `spec/board.json`, `BOARD_REVISION` in `generated/hw.h`) and the
-BIOS/monitor in `fw/` as it stands in this repository. Revision 5 changed only the audio
-hardware (an 8-bit PDM shifter behind a new `AUDIO` register instead of a GPIO bit, a JED-only
-change for B4 boards). Revision 6 changed only the audio system calls: the rev 5 sample queue
-(`audio_write`) and its 64 KB ROM encoder table are gone, the BIOS now streams buffers of
-pattern bytes that the program fills (`audio_start`, `audio_next`, `audio_last`), and the
-encoding of samples into patterns moved into the SDK (`pdm_init`, `pdm_encode`); the hardware
-and the CPLD images are those of revision 5. Every address, bit and syscall
+This guide describes **board rev C1, spec revision 7** (`"revision": 7` in `spec/board.json`,
+`BOARD_REVISION` in `generated/hw.h`) and the BIOS/monitor in `fw/` as it stands in this
+repository. Revision 5 changed only the audio hardware (an 8-bit PDM shifter behind a new
+`AUDIO` register instead of a GPIO bit, a JED-only change for B4 boards). Revision 6 changed
+only the audio system calls: the rev 5 sample queue (`audio_write`) and its 64 KB ROM encoder
+table are gone, the BIOS now streams buffers of pattern bytes that the program fills
+(`audio_start`, `audio_next`, `audio_last`), and the encoding of samples into patterns moved
+into the SDK (`pdm_init`, `pdm_encode`). Revision 7 moved the SD card from SPI mode to its
+native 4-bit bus: six open-drain lines bit-banged through `SDIO`, which now reads back the
+line levels ([2.10](#210-sd-card)); `INTSTAT_SDMISO`, the `USERIO` register and the four user
+pins on the expansion header are gone, their CPLD2 macrocells went to the extra SD lines. That
+is a wiring change, board rev C1. The rev B4 boards that were ordered are wired for SPI: they
+run the CPLD images and firmware at git tag `rev-b` (spec revision 6), or can be modified by
+hand to the C1 wiring as `kicad/ORDER.md` describes. Every address, bit and syscall
 name below comes from `spec/board.json` or from the headers generated from it
 (`generated/hw.h`, `generated/syscalls.h`, `generated/hw.inc`). Where the spec, the firmware and
 the other documents disagree, the text says so; the list is collected in
@@ -23,9 +28,9 @@ the other documents disagree, the text says so; the list is collected in
 | CPU | MC68000 at 12 MHz (24 MHz oscillator divided by 2 in CPLD1) |
 | RAM | 1 MB SRAM at 0x000000 (2x AS6C4008, word wide), shared with the video fetch |
 | ROM | 1 MB flash window at 0xE00000 (2x SST39SF040); the BIOS image is the first 128 KB, the rest is erased and free |
-| Video | 320x240, one byte per pixel (RGB332), two pages in RAM, composite out through an AD724 (NTSC on rev B4) |
+| Video | 320x240, one byte per pixel (RGB332), two pages in RAM, composite out through an AD724 (NTSC only on rev B4 and C1) |
 | Glue | two ATF1508AS CPLDs: CPLD1 = decode, DTACK, SRAM address mux, video timing, soft switches; CPLD2 = I/O registers, pixel shifter, interrupt encoder, PS/2 receiver, PDM audio shifter, SD/GPIO pins |
-| I/O | 68681 DUART (channel A = console, 38400 8N1; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (SPI mode, FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, four open-drain user pins, NMI button |
+| I/O | 68681 DUART (channel A = console, 38400 8N1; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; the expansion header carries power and DUART channel B only |
 | Interrupts | autovectored, vector = 24 + level: VBLANK 1, PS/2 2, DUART 3, HSYNC 4, NMI button 7 |
 
 Programs are ELF files on the SD card. The monitor loads one into the user region of RAM
@@ -510,8 +515,10 @@ int main(void)
 }
 ```
 
-Speed: the card is bit-banged, so expect about 25-30 KB/s (*measured* 16 KB read through
-`sys_read` in 36 frames; a 76,800-byte screen loads in about 3 s). Read into a buffer in big
+Speed: the card is bit-banged, so expect about 100 KB/s for raw block reads and 80-90 KB/s
+through the filesystem (*measured*: 5.05 ms per block with `sys_sd_read_block`; a
+76,800-byte screen read with `fread` one 320-byte line at a time loads in 0.9 s). Writes are
+slower, about 13 ms per block plus the card's own programming time. Read into a buffer in big
 chunks rather than byte by byte through `fgetc`. Buffers passed to system calls must lie in
 user RAM (0x004000-0x0FFFFF, both framebuffer pages included, so you can read a picture
 straight into a page); otherwise the call fails with `E_FAULT`.
@@ -796,7 +803,7 @@ Any other number returns `E_NOSYS`. The constants and structures (`O_*`, `SEEK_*
 | code | value | meaning here |
 |---|---|---|
 | `E_NOENT` | -2 | no such file or directory |
-| `E_IO` | -5 | card error (the next call re-initialises the card) |
+| `E_IO` | -5 | card error (after a failed file call, the next call re-initialises the card) |
 | `E_NOEXEC` | -8 | not a loadable ELF |
 | `E_BADF` | -9 | bad descriptor or wrong direction |
 | `E_NOMEM` | -12 | ELF does not fit the user region |
@@ -866,18 +873,17 @@ zero; `--param=min-pagesize=0` in `CFLAGS` silences it.
 
 ### Write-only registers and the BIOS's shadows
 
-INTEN, SDIO, GPIO, AUDIO and the output half of USERIO cannot be read back (they read as 0:
-the CPLD had no room for the read path). The BIOS keeps private copies (`inten_shadow`,
-`gpio_shadow`, `sdio_shadow` in `fw/`; they are not part of the ABI) and rewrites the
-registers from them:
+INTEN, GPIO and AUDIO cannot be read back (they read as 0: the CPLD had no room for the read
+path). SDIO can: a read returns the levels of the six SD lines, so it needs no shadow. The
+BIOS keeps private copies of INTEN and GPIO (`inten_shadow`, `gpio_shadow` in `fw/`; they are
+not part of the ABI) and rewrites the registers from them:
 
 | register | when the BIOS writes it while your program runs | value |
 |---|---|---|
 | INTEN | `sys_set_irq_handler`, `sys_set_audio_cb`, `sys_audio_start`, `sys_audio_next`/`sys_audio_last` (when they queue a buffer while none is playing), `sys_exit`, `sys_exec`; and the level-4 handler itself when the stream runs out of buffers | `INTEN_VBLANK \| INTEN_PS2 \| INTEN_DUART` (0x000D), plus `INTEN_HSYNC` while an audio callback or level-4 hook is installed or an audio buffer is playing or queued; the level-4 handler writes `inten_shadow` without `INTEN_HSYNC` |
 | GPIO | `sys_exit`/`sys_exec` (and the monitor's `led`) | its shadow with LED0, LED1 cleared: normally `GPIO_PS2CLK \| GPIO_PS2DAT` (0x0003) |
 | AUDIO | the level-4 handler once per line while a stream buffer is playing; `sys_audio_start`, `sys_audio_last` (with nothing queued), `sys_exit`/`sys_exec` (and the monitor's `beep`) | the next byte of the playing buffer; the idle pattern 0xAA at `sys_audio_start`, at the end of the stream and at exit (after an underrun the last pattern stays). No shadow is kept |
-| SDIO | every card access (file, directory, raw block and exec calls) | its shadow: CS high (deselected), CLK low between transfers |
-| USERIO | never | reset value 0x000F |
+| SDIO | every card access (file, directory, raw block and exec calls) | 0x3F between transfers (every line released, CLK high); no shadow, the driver writes precomputed words |
 
 So: keep your own copy of anything you write, always write the whole register, assume the
 BIOS's next write replaces yours, and restore INTEN through the BIOS when you are done (any
@@ -906,7 +912,8 @@ queued buffers) and writes the idle pattern 0xAA to AUDIO, removes hooks and the
 callback, points vector 28 back at its own level-4 handler and rewrites INTEN, clears the
 LEDs, and selects display page 0. It does **not**
 restore: the other exception vectors you replaced, DUART registers (IMR, ACR, the counter/timer, channel
-B), the NTSC/PAL soft switch, USERIO, or the flash. A replaced vector that points into your
+B), the NTSC/PAL soft switch, SDIO (or the card's state, if you talked to it yourself), or
+the flash. A replaced vector that points into your
 program becomes a pointer into whatever is loaded next; a DUART interrupt source you enabled
 without the BIOS knowing how to clear it will hang the machine at level 3. Put everything back
 before exiting, and remember that a crash (exception report) or the NMI button goes straight to
@@ -1193,8 +1200,8 @@ line L, the first pixel of line L appears 56 + 52 = 108 clocks later and the lin
 `SW_NTSC` (0xF10004) and `SW_PAL` (0xF10006) select CPLD1's timing table; the change takes
 effect at the start of the next frame. Reset selects NTSC. The AD724's standard is fixed by
 resistors and a subcarrier crystal, and `INTSTAT_PALJMP` reports the board's strapping: rev B4
-ties it low (NTSC only, there is no PAL jumper on the board). The BIOS selects PAL at boot only
-when PALJMP reads 1. Do not select the PAL table on an NTSC board: the encoder will not lock to
+and rev C1 tie it low (NTSC only, there is no PAL jumper on the board). The BIOS selects PAL
+at boot only when PALJMP reads 1. Do not select the PAL table on an NTSC board: the encoder will not lock to
 312 lines.
 
 ## 2.6 The I/O registers
@@ -1208,11 +1215,11 @@ Eight 16-bit registers selected by A1..A3; A4..A15 are not decoded, so the block
 |---|---|---|---|---|---|
 | 0x0 | 0xF00000 | `IO_INTSTAT` | read; write 1 to clear flags | flags 0 | interrupt flags and live pin levels |
 | 0x2 | 0xF00002 | `IO_INTEN` | write only (reads 0) | 0x0000 | interrupt enables |
-| 0x4 | 0xF00004 | `IO_SDIO` | write only (reads 0) | 0x0001 | SD card pins |
+| 0x4 | 0xF00004 | `IO_SDIO` | read/write (reads the line levels) | 0x003F | SD card lines (spec rev 7) |
 | 0x6 | 0xF00006 | `IO_GPIO` | write only (reads 0) | 0x0003 | PS/2 drive, LEDs |
 | 0x8 | 0xF00008 | `IO_PS2DATA` | read | 0x0000 | last PS/2 byte |
 | 0xA | 0xF0000A | `IO_AUDIO` | write only (reads 0) | 0x0000 | PDM audio shifter (spec rev 5) |
-| 0xC | 0xF0000C | `IO_USERIO` | bits 3..0 write only, 11..8 read | 0x000F | user pins |
+| 0xC | 0xF0000C | none | reads 0, writes ignored | | `USERIO` until spec rev 6; removed in rev 7 |
 | 0xE | 0xF0000E | `IO_ID` | read | 0x6802 | identification |
 
 **INTSTAT** (0xF00000). Bits not listed read 0.
@@ -1225,16 +1232,17 @@ Eight 16-bit registers selected by A1..A3; A4..A15 are not decoded, so the block
 | 3 | `INTSTAT_DUARTIRQ` | live | the 68681's IRQ output, inverted (1 = requesting); level 3 when enabled; cleared only by removing the cause in the DUART |
 | 5 | `INTSTAT_PS2ERR` | flag, W1C | framing or parity error in the last PS/2 frame (rewritten at the end of every frame) |
 | 7 | `INTSTAT_NMIBTN` | live | 1 while the NMI button is pressed |
-| 8 | `INTSTAT_SDMISO` | live | SD card MISO |
 | 9 | `INTSTAT_PS2CLK` | live | PS/2 clock line |
 | 10 | `INTSTAT_PS2DAT` | live | PS/2 data line |
-| 12 | `INTSTAT_PALJMP` | live | 1 = board strapped for PAL; 0 on rev B4 |
+| 12 | `INTSTAT_PALJMP` | live | 1 = board strapped for PAL; 0 on rev B4 and C1 |
 | 13 | `INTSTAT_VSYNCPIN` | live | 1 during the vertical sync lines |
 | 14 | `INTSTAT_DEPIN` | live | 1 during visible fetch slots |
 | 15 | `INTSTAT_HSYNCPIN` | live | 1 during horizontal sync |
 
-Writing INTSTAT clears exactly the W1C flags written as 1 (VBLANK, HSYNC, PS2ERR); other bits
-are ignored. If an event sets a flag in the same clock as a write clears it, the set wins.
+Bit 8 was `INTSTAT_SDMISO` (the SPI card's data out) until spec revision 6; it reads 0 now
+that the card answers on `SDIO`. Writing INTSTAT clears exactly the W1C flags written as 1
+(VBLANK, HSYNC, PS2ERR); other bits are ignored. If an event sets a flag in the same clock as
+a write clears it, the set wins.
 
 **INTEN** (0xF00002), write only, reset 0x0000. A flag whose enable is set drives the 68000's
 IPL lines at the flag's level; the CPLD encodes the highest such level.
@@ -1246,14 +1254,24 @@ IPL lines at the flag's level; the CPLD encodes the highest such level.
 | 2 | `INTEN_PS2` | 2 |
 | 3 | `INTEN_DUART` | 3 |
 
-**SDIO** (0xF00004), write only, reset 0x0001 (card deselected, CLK low, MOSI low: SPI mode 0
-idle). The bits are the pin levels.
+**SDIO** (0xF00004), read/write, reset 0x003F (every line released, so the bus idles with CLK
+high). Six open-drain drivers for the native SD bus: writing 0 to a bit drives that line low,
+writing 1 releases it to its 10 k pull-up to 3.3 V. Reading returns the **level** of each line
+in the same bit position, which is the AND of what the CPU and the card drive: the card's
+responses on CMD and its data on DAT0..3 are read here. Bits 15..6 read 0 and are ignored on
+write. Protocol and timing in [2.10](#210-sd-card).
 
-| bit | name | |
+| bit | name | line |
 |---|---|---|
-| 0 | `SDIO_CS` | chip select, 0 = card selected |
-| 1 | `SDIO_CLK` | SPI clock |
-| 2 | `SDIO_MOSI` | data to the card (MISO is `INTSTAT_SDMISO`) |
+| 0 | `SDIO_DAT3` | DAT3 (the pin that was CS in SPI mode), data bit 3 of each nibble |
+| 1 | `SDIO_CLK` | card clock, host driven; idle high |
+| 2 | `SDIO_CMD` | command line: host commands out, card responses back |
+| 3 | `SDIO_DAT0` | DAT0, data bit 0; the only data line in 1-bit mode; busy after a write |
+| 4 | `SDIO_DAT1` | DAT1, data bit 1 |
+| 5 | `SDIO_DAT2` | DAT2, data bit 2 |
+
+Until spec revision 6 (rev B4 boards) this register was write only with `SDIO_CS`, `SDIO_CLK`
+and `SDIO_MOSI` in bits 0..2 and MISO in `INTSTAT`; code for that wiring does not work on C1.
 
 **GPIO** (0xF00006), write only, reset 0x0003.
 
@@ -1276,9 +1294,10 @@ rotation in the same clock; a line without a write repeats the previous byte (ro
 shifted, so nothing is lost). The fraction of 1 bits sets the output level. Details, timing and
 use in [2.8](#28-audio).
 
-**USERIO** (0xF0000C), reset 0x000F: four open-drain pins with pull-ups on the expansion
-header. Bits 3..0 (`USERIO_OUT_MASK`, write only): 1 releases the pin, 0 pulls it low. Bits
-11..8 (`USERIO_IN_MASK`, read only): the pin levels.
+Offset 0xC (0xF0000C) was **USERIO**, four open-drain user pins on the expansion header,
+until spec revision 6. Revision 7 removed it to make room for the extra SD lines (CPLD2 is now at
+123 of 128 macrocells): the offset
+reads 0, writes do nothing, and `hw.h` no longer defines `IO_USERIO`.
 
 **ID** (0xF0000E), read: `ID_MAGIC` 0x68 in bits 15..8, `ID_REV` (CPLD2 logic revision) in
 bits 7..0; 0x6802 on the DUART board.
@@ -1788,60 +1807,331 @@ rate and delay; `FF` to reset (the keyboard answers `FA`, then `AA`).
 
 ## 2.10 SD card
 
-### Pins
+### Wiring
 
-The card is in SPI mode on `IO_SDIO`: bit 0 `SDIO_CS` (0 selects the card), bit 1 `SDIO_CLK`,
-bit 2 `SDIO_MOSI`; MISO is read in `INTSTAT_SDMISO` (bit 8). The card runs from its own 3.3 V
-regulator; CS, CLK and MOSI go through resistor dividers, MISO directly into a TTL-threshold
-CPLD input. There is no card-detect or write-protect switch: "no card" shows up as no answer to
-CMD0.
+Since spec revision 7 (board rev C1) the card is on its **native SD bus, 4 bits wide**, not in
+SPI mode. All six lines, CLK, CMD and DAT0..3, run straight from CPLD2 to the microSD socket,
+each with a 10 k pull-up to the card's own 3.3 V regulator. CPLD2 drives them open drain: a 0
+in `SDIO` pulls the line low, a 1 releases it and the pull-up (or the card) sets the level, so
+the 5 V CPLD never drives the 3.3 V card high and no level dividers are needed. Reading `SDIO`
+returns all six levels in the same bit positions ([2.6](#26-the-io-registers)). There is no
+card-detect or write-protect switch: "no card" shows up as no answer to CMD55 during
+initialisation. Rev B4 boards are wired for SPI mode (dividers on CS/CLK/MOSI, MISO in
+`INTSTAT`); none of this section applies to them.
 
 ### Bit banging
 
-SPI mode 0: put the bit on MOSI with CLK low, raise CLK (the card samples), read MISO, lower
-CLK (the card presents its next bit). That is three I/O cycles per bit at the very least (two
-writes and a read, 12-18 clocks), plus the work of assembling the byte:
+The card samples CMD and DAT on the rising edge of CLK and changes its own outputs after the
+falling edge. One clock is therefore three register accesses: write the drive word with CLK
+low (CMD/DAT bits as you want them, 1 for every line you are not driving), read `SDIO` (the
+card's bits are now valid), write the same word with CLK high.
 
 ```c
-/* one byte both ways; cs_bits = 0 to talk to the card, SDIO_CS to idle it */
-static uint8_t spi_xfer(uint8_t out, uint16_t cs_bits)
+#define LO (IO_SDIO_RESET & ~SDIO_CLK)          /* 0x3D: every line released, CLK low */
+
+static unsigned clk(unsigned drive)             /* one clock; returns the levels seen with CLK low */
 {
-    uint8_t in = 0;
-    for (int i = 0; i < 8; i++, out <<= 1) {
-        uint16_t v = cs_bits | ((out & 0x80) ? SDIO_MOSI : 0);
-        IO_SDIO = v;                            /* data with CLK low */
-        IO_SDIO = v | SDIO_CLK;                 /* rising edge: card samples */
-        in = (uint8_t)((in << 1) | ((IO_INTSTAT >> INTSTAT_SDMISO_BIT) & 1));
-    }
-    IO_SDIO = cs_bits;                          /* CLK low: card shifts out its next bit */
-    return in;
+    IO_SDIO = drive;                            /* falling edge: the card changes CMD/DAT */
+    unsigned v = IO_SDIO;                       /* sample */
+    IO_SDIO = drive | SDIO_CLK;                 /* rising edge: the card samples CMD/DAT */
+    return v;
 }
 ```
 
-The BIOS's C version of this loop (fully unrolled, in `fw/sd.c`) takes about 50 clocks per bit;
-its receive-only path (`sdhw_read` in `fw/sdspi.S`: MOSI held high, two writes, a read, `btst`,
-`sne`, `add`, `sub`) is 46 or 48 clocks per bit plus 18 per byte by the 68000 timing tables,
-about 17 ms per 512-byte block plus command overhead. *Measured* in the emulator: 32 raw
-blocks with `sys_sd_read_block` in 34 frames (about 29 KB/s), and 27 KB/s reading a file through
-FatFs. The board adds the I/O alignment penalty.
+Everything released is 0x3F, the reset value; the bus idles with CLK high. To send, clear the
+bits of the lines that carry a 0 (`LO & ~SDIO_CMD` puts a 0 on CMD); to receive, write `LO` so
+every data line is released and read the card's bits. Because the register reads back levels,
+the drive words can be precomputed and the read value used directly as a table index: bits
+15..6 read 0, so `IO_SDIO` is an index 0..63.
 
-### The BIOS's card protocol (`fw/sd.c`)
+The card does not care how slowly or unevenly it is clocked (the SD bus is static: the host
+may stop the clock at any point), so interrupts can stay enabled and a transfer can be
+paused for as long as you like. It does care about the maximum: 400 kHz until the card has an
+address (identification), 25 MHz after that. The second is out of the 68000's reach; the
+first is not quite: the BIOS's tightest loop, the 4-bit read, clocks the card at about
+280 kHz and plain C as above at about 80 kHz, but an unrolled idle-clock loop of two `move.w`
+per clock (16 CPU clocks) would run at 750 kHz, so do not use one before CMD3.
 
-Initialisation: slow clock (about 400 kHz or less, delay loops around each edge); 80 clocks
-with CS high; CMD0 (GO_IDLE, up to 8 tries, expecting R1 = 0x01); CMD8 with 0x1AA (a v2 card
-echoes the pattern in R7, a v1 card rejects it as an illegal command); CMD55 + ACMD41 (HCS
-set for v2 cards) repeated until the idle bit clears, about 1 s at most, falling back to CMD1
-for cards that reject ACMD41; CMD58 to read the OCR (CCS bit 30 set = SDHC/SDXC, block
-addressed); CMD16 512 for byte-addressed cards; then full speed, CMD9 (CSD: capacity) and CMD10
-(CID). Every command carries a correct CRC7; data CRC16 is not checked (CMD59 is never sent).
-One idle byte precedes each command, R1 is awaited for up to 8 bytes, and after each command
-CS goes high followed by 8 clocks to release MISO.
+On the board a released line rises through its 10 k pull-up instead of being driven, CLK
+included. With a few tens of pF on a line (an estimate, not a measurement) that is a few
+hundred nanoseconds, less than the 8 clocks (667 ns) that separate two `move.w` accesses to
+`SDIO`, which is what makes the open-drain scheme workable at this speed. The emulator does
+not model edge rates.
 
-Blocks: CMD17 for a read (wait up to about 160 ms for the `FE` start token; an error token is
-a byte with the top nibble 0), 512 data bytes, 2 CRC bytes; CMD24 for a write (one idle byte,
-`FE`, 512 bytes, 2 dummy CRC bytes, data response `xxx00101` = accepted, then MISO low while
-the card is busy, up to about 500 ms). Multi-block commands are not used. Byte-addressed cards
-take `lba * 512` as the address and are limited to 2 GB.
+### The protocol
+
+What follows is the subset of the SD Physical Layer Simplified Specification (chapter 4 and
+the timing diagrams in 4.12) that the BIOS uses. All of it is MSB first.
+
+**Commands** are 48-bit frames on CMD, driven by the host:
+
+| bits | content |
+|---|---|
+| 47 | start bit, 0 |
+| 46 | transmission bit, 1 = host to card |
+| 45..40 | command index |
+| 39..8 | argument |
+| 7..1 | CRC7 of bits 47..8: polynomial x^7 + x^3 + 1, initial value 0 |
+| 0 | end bit, 1 |
+
+In native mode the card always checks the CRC (SPI mode can switch it off, the native bus
+cannot); a frame with a bad CRC gets no response. Two frames to remember: CMD0 is
+`40 00 00 00 00 95`, CMD8 with argument 0x1AA is `48 00 00 01 AA 87`. A C version of the CRC,
+returning the last byte as sent:
+
+```c
+static uint8_t crc7(const uint8_t *p, int n)    /* x^7 + x^3 + 1, as sent: (crc << 1) | 1 */
+{
+    uint8_t c = 0;
+    while (n--) {
+        c ^= *p++;
+        for (int b = 0; b < 8; b++) c = (c & 0x80) ? (uint8_t)((c << 1) ^ 0x12) : (uint8_t)(c << 1);
+    }
+    return c | 1;
+}
+```
+
+**Responses** come back on CMD, driven by the card: start bit 0, transmission bit 0, then
+
+| type | length | after the two leading bits | used for |
+|---|---|---|---|
+| R1 | 48 | index (6), card status (32), CRC7, end bit | most commands |
+| R2 | 136 | `111111`, then the 128-bit CID or CSD, whose last byte is its own CRC7 and end bit | CMD2 (CID), CMD9 (CSD) |
+| R3 | 48 | `111111`, OCR (32), `1111111` instead of a CRC, end bit | ACMD41 |
+| R6 | 48 | index 3, new RCA (16), condensed status (16), CRC7, end bit | CMD3 |
+| R7 | 48 | index 8, reserved, voltage accepted (4) and the echoed check pattern (8) in the low 12 bits, CRC7, end bit | CMD8 |
+
+The response's start bit comes Ncr = 2 to 64 clocks after the command's end bit; between a
+response and the next command the host must give at least 8 clocks (Nrc), and as many between
+two commands when the first has no response (Ncc). CMD0 has no response at all.
+
+The **card status** in R1 has the error bits OUT_OF_RANGE (31), ADDRESS_ERROR (30),
+BLOCK_LEN_ERROR (29), COM_CRC_ERROR (23), ILLEGAL_COMMAND (22), CARD_ECC_FAILED (21), CC_ERROR
+(20) and ERROR (19), the CURRENT_STATE field in bits 12..9 (0 idle, 1 ready, 2 ident, 3 stby, 4
+tran, 5 data, 6 rcv, 7 prg, 8 dis), READY_FOR_DATA (8) and APP_CMD (5, set when the card has
+accepted CMD55 and takes the next command as an application command). A command with a bad CRC
+or one that is illegal in the current state is not answered; the error shows in the status of
+the next response.
+
+**Initialisation** walks the card from idle to transfer state:
+
+| step | command | response | what for |
+|---|---|---|---|
+| 1 | at least 74 clocks with everything released | | power-up |
+| 2 | CMD0, argument 0 | none | reset to idle state |
+| 3 | CMD8, argument 0x1AA | R7, echoes 0x1AA | 2.7-3.6 V accepted; only v2 cards (SDHC/SDXC and newer SDSC) answer |
+| 4 | CMD55 (RCA 0), then ACMD41 with 0x00FF8000, plus HCS (bit 30) for a v2 card | R1, then R3 | repeat until OCR bit 31 (power-up done) is set; allow 1 s. OCR bit 30 (CCS) = 1: SDHC/SDXC, block addressed |
+| 5 | CMD2 | R2: CID | identification |
+| 6 | CMD3 | R6: RCA | the card's relative address, used in the argument (bits 31..16) of CMD7, CMD9, CMD13 and CMD55 from now on; identification ends, full clock speed allowed |
+| 7 | CMD9 with RCA | R2: CSD | capacity (CSD version 2: (C_SIZE + 1) x 512 KB) |
+| 8 | CMD7 with RCA | R1 | select: stand-by to transfer state |
+| 9 | CMD55 with RCA, then ACMD6, argument 2 | R1, R1 | 4-bit data bus (argument 0 = back to 1 bit) |
+| 10 | CMD16, argument 512 (byte-addressed cards only) | R1 | block length |
+
+**Data blocks** run on DAT3..0. A read block (CMD17, address = block number on SDHC/SDXC, byte
+offset on SDSC) starts Nac clocks after the response with a start bit, all four lines low for
+one clock, then 1024 nibbles, byte 0's high nibble first, DAT3 carrying bit 3 of each nibble
+and DAT0 bit 0. Then come 16 clocks of CRC: each line carries its own CRC16-CCITT
+(polynomial x^16 + x^12 + x^5 + 1 = 0x1021, initial value 0) over the 1024 bits that line
+carried, MSB first, and finally an end bit (all lines high). Nac is a read access time: up to
+100 ms on an SDHC card. Before ACMD6 a block is 4096 bits on DAT0 alone with one CRC16.
+
+A write (CMD24) is the same block sent by the host, starting at least Nwr = 2 clocks after the
+response's end bit. The card then answers on DAT0 with a **CRC status token**: start bit 0, three
+bits (`010` accepted, `101` CRC error, `110` write error), end bit 1. After an accepted block it
+holds DAT0 low (busy) while it programs, which on SDHC may legitimately take up to 250 ms; keep
+clocking and wait for DAT0 to go high before the next command. A block with a wrong CRC is
+discarded; there is no way to switch the write CRC off.
+
+### The BIOS's driver (`fw/sd4.S`, `fw/sd.c`)
+
+`fw/sd4.S` does the bit banging: `sd4_cmd` (frame out, up to 128 clocks of Ncr wait, 48 or
+136 response bits in), `sd4_clocks`, `sd4_read512`, `sd4_write512` and `sd_crc16x4` (the four
+CRC16s of a block). `fw/sd.c` does the framing, the checks and the waits:
+
+* `sd_init`: the table above (80 clocks; CMD8 silence means a v1 card; up to about 1 s of
+  ACMD41; a card that never answers CMD55 is "no card"). Until CMD3 it inserts a delay loop
+  around every edge (`sd_slow`), which slows identification to about 25 kHz; data phases
+  always run at full speed. CMD9's CSD gives the capacity for both CSD versions.
+* Every command carries a correct CRC7, and the CRC7 and the index of every R1, R2, R6 and R7
+  are checked (`SD_ERR_CRC`); R1's error bits are checked too (out of range and address errors
+  are `SD_ERR_RANGE`, COM_CRC_ERROR `SD_ERR_CRC`, the rest `SD_ERR_CMD`).
+* Read: CMD17, wait up to about 200 ms for the start bit on DAT0, 1024 nibbles through two
+  64-byte tables (`SDIO` value to high nibble, to low nibble), CRC16s clocked past but not
+  checked, 8 idle clocks.
+* Write: CMD24, the four CRC16s computed first in assembler (6.9 ms), 2 clocks, start bit,
+  data, CRCs, end bit; the CRC status token (anything but `010` is `SD_ERR_TOKEN`) and the busy
+  wait (up to about 400 ms).
+* Single-block commands only; byte-addressed (SDSC) cards take `lba * 512` and are limited to
+  2 GB. Interrupts stay enabled throughout, and the driver also works with them masked (it
+  polls). The monitor's `sd` command re-initialises the card and prints the type, bus width,
+  RCA, capacity, CID and CSD.
+
+What it costs, by the 68000 timing tables and *measured* in the emulator:
+
+| operation | clocks | time |
+|---|---|---|
+| 4-bit read loop, per byte (3 accesses per nibble, two table lookups, a store) | 86.5 | 7.2 us |
+| 512-byte block, data phase only | 44,300 | 3.7 ms |
+| a command with a 48-bit response (frame, Ncr, response) | about 9,000 | 0.75 ms |
+| `sys_sd_read_block`, *measured* | about 60,600 | 5.05 ms (101 KB/s) |
+| write loop, per byte | 112 | 9.3 us |
+| CRC16s of a block (`sd_crc16x4`) | 83,000 | 6.9 ms |
+| `sys_sd_write_block`, *measured* (emulated card busy 16 clocks) | about 160,000 | 13.3 ms, plus the card's own programming time |
+
+The SPI driver of rev B4 needed about 17 ms per block read. At 5 ms a block the card keeps up
+with the audio stream at the full line rate: `sdk/examples/sdplay.c` streams 8-bit PCM from a
+file, encodes it on the fly and still spends 57 % of its time waiting in `sys_audio_next`.
+On the board the I/O alignment penalty ([2.3](#23-the-bus-and-video-time-slicing)) makes the
+loops somewhat slower.
+
+### Writing your own driver
+
+A program can talk to the card itself, from user mode, with or without the BIOS's driver
+having initialised it first. The C below is a complete minimal driver (it reuses `clk`, `LO`
+and `crc7` from above): 4-bit initialisation, block read and block write, with the error
+checks a real card needs and the CRC16s computed bit-serially. *Measured* in the emulator,
+built with the SDK's `-Os`: initialisation within one frame (the emulated card is ready on the
+second ACMD41), 32 block reads in 27 frames (14 ms a block, a third of the BIOS's speed),
+8 block writes in 48 frames (100 ms a block, most of it the bit-serial CRC), and the BIOS's
+`sys_sd_read_block` keeps working on the card afterwards; the same with `--sd-sdsc`.
+
+```c
+/* sdmin.c: a minimal native-bus SD driver in plain C: 4-bit init, block read, block write. */
+#include <stdint.h>
+#include "hw.h"
+/* LO, clk() and crc7() as above */
+
+/* 8 idle clocks (Ncc/Nrc), the 48-bit frame, then a response of nbits (48 or 136; 0 = none)
+ * into r, MSB first, start bit in bit 7 of r[0]. 0, or -1 if the card did not answer. */
+static int cmd(uint8_t idx, uint32_t arg, uint8_t *r, int nbits)
+{
+    uint8_t f[6] = { 0x40 | idx, arg >> 24, arg >> 16, arg >> 8, arg };
+    f[5] = crc7(f, 5);
+    for (int i = 0; i < 8; i++) clk(LO);
+    for (int i = 0; i < 48; i++)
+        clk((f[i >> 3] << (i & 7)) & 0x80 ? LO : LO & ~SDIO_CMD);
+    if (!nbits) return 0;
+    for (int n = 0; clk(LO) & SDIO_CMD; )      /* start bit: Ncr is 2..64 clocks */
+        if (++n == 128) return -1;
+    for (int i = 0; i < nbits / 8; i++) r[i] = 0;
+    for (int i = 1; i < nbits; i++)
+        r[i >> 3] = (uint8_t)(r[i >> 3] << 1 | (clk(LO) >> SDIO_CMD_BIT & 1));
+    return 0;
+}
+
+#define WORD(r) ((uint32_t)(r)[1] << 24 | (uint32_t)(r)[2] << 16 | (r)[3] << 8 | (r)[4])
+#define R1_ERRORS 0xFDF98008u                   /* card status error bits */
+
+static uint16_t rca;
+static int block_addr;                          /* 1: SDHC/SDXC, addresses are block numbers */
+
+int sdmin_init(void)
+{
+    uint8_t r[17];
+    for (int i = 0; i < 80; i++) clk(LO);      /* >= 74 clocks after power-up */
+    cmd(0, 0, r, 0);                            /* GO_IDLE_STATE */
+    int v2 = cmd(8, 0x1AA, r, 48) == 0;         /* R7 echoes 0x1AA; v1 cards stay silent */
+    for (int n = 0; ; n++) {                    /* ACMD41 until power-up is done (< 1 s) */
+        if (n == 10000 || cmd(55, 0, r, 48) || cmd(41, (v2 ? 0x40000000u : 0) | 0xFF8000, r, 48))
+            return -1;
+        if (r[1] & 0x80) break;                 /* OCR bit 31 */
+    }
+    block_addr = r[1] >> 6 & 1;                 /* OCR bit 30, CCS */
+    if (cmd(2, 0, r, 136) || cmd(3, 0, r, 48)) return -1;      /* CID, then R6: the RCA */
+    rca = (uint16_t)(r[1] << 8 | r[2]);
+    if (cmd(7, (uint32_t)rca << 16, r, 48) || (WORD(r) & R1_ERRORS)) return -1;   /* select */
+    if (cmd(55, (uint32_t)rca << 16, r, 48) || cmd(6, 2, r, 48) || (WORD(r) & R1_ERRORS))
+        return -1;                              /* ACMD6 2: 4-bit bus */
+    if (!block_addr && (cmd(16, 512, r, 48) || (WORD(r) & R1_ERRORS))) return -1;
+    return 0;
+}
+
+#define NIB(v) (((v) & SDIO_DAT3 ? 8 : 0) | ((v) & SDIO_DAT2 ? 4 : 0) | \
+                ((v) & SDIO_DAT1 ? 2 : 0) | ((v) & SDIO_DAT0 ? 1 : 0))
+
+int sdmin_read(uint32_t lba, uint8_t *buf)
+{
+    uint8_t r[6];
+    if (cmd(17, block_addr ? lba : lba * 512, r, 48) || (WORD(r) & R1_ERRORS)) return -1;
+    for (long n = 0; clk(LO) & SDIO_DAT0; )    /* start bit: all four lines low */
+        if (++n == 100000) return -1;
+    for (int i = 0; i < 512; i++) {
+        unsigned hi = clk(LO), lo = clk(LO);   /* high nibble first */
+        buf[i] = (uint8_t)(NIB(hi) << 4 | NIB(lo));
+    }
+    for (int i = 0; i < 17; i++) clk(LO);      /* 16 CRC16 clocks (not checked), end bit */
+    return 0;
+}
+
+static unsigned drive(unsigned nib)             /* CLK-low drive word putting nib on DAT3..0 */
+{
+    return LO & ~(nib & 8 ? 0 : SDIO_DAT3) & ~(nib & 4 ? 0 : SDIO_DAT2)
+              & ~(nib & 2 ? 0 : SDIO_DAT1) & ~(nib & 1 ? 0 : SDIO_DAT0);
+}
+
+int sdmin_write(uint32_t lba, const uint8_t *buf)
+{
+    uint8_t r[6];
+    uint16_t crc[4] = { 0, 0, 0, 0 };           /* CRC16-CCITT per line, polynomial 0x1021, init 0 */
+    if (cmd(24, block_addr ? lba : lba * 512, r, 48) || (WORD(r) & R1_ERRORS)) return -1;
+    clk(LO); clk(LO);                           /* Nwr >= 2 */
+    clk(drive(0));                              /* start bit on all four lines */
+    for (int i = 0; i < 1024; i++) {
+        unsigned nib = i & 1 ? buf[i >> 1] & 15 : buf[i >> 1] >> 4;
+        for (int l = 0; l < 4; l++)
+            crc[l] = (uint16_t)(crc[l] << 1) ^ (((crc[l] >> 15) ^ (nib >> l)) & 1 ? 0x1021 : 0);
+        clk(drive(nib));
+    }
+    for (int b = 15; b >= 0; b--)               /* the four CRCs side by side, MSB first */
+        clk(drive((crc[3] >> b & 1) << 3 | (crc[2] >> b & 1) << 2 | (crc[1] >> b & 1) << 1 | (crc[0] >> b & 1)));
+    clk(LO);                                    /* end bit: released = 1 */
+    for (int n = 0; clk(LO) & SDIO_DAT0; )     /* CRC status token on DAT0: start bit ... */
+        if (++n == 1000) return -1;
+    unsigned tok = 0;
+    for (int i = 0; i < 3; i++) tok = tok << 1 | (clk(LO) >> SDIO_DAT0_BIT & 1);
+    clk(LO);                                    /* ... 3 status bits, end bit */
+    if (tok != 2) return -1;                    /* 010 accepted, 101 CRC error, 110 write error */
+    for (long n = 0; !(clk(LO) & SDIO_DAT0); ) /* busy (DAT0 low) while the card programs */
+        if (++n == 200000) return -1;
+    return 0;
+}
+```
+
+To go faster, do what `sd4.S` does: keep `IO_SDIO_ADDR` and the two drive words (`LO`, 0x3F)
+in registers, unroll, turn the levels into nibbles with a 64-byte table indexed by the raw
+`SDIO` value (one for the high nibble, pre-shifted, one for the low), and compute the write
+CRCs a byte at a time with tables (`sd_crc16x4` spreads each data byte into four lanes, one
+per line, and runs a 256-entry CRC16 table on each). Multi-block transfers (CMD18 read,
+CMD25 write, both ended with CMD12) save a command and an access time per block; the BIOS does
+not use them, the emulator's card supports them.
+
+Real cards differ from the emulator's in ways a driver must allow for (the BIOS's limits in
+brackets): the response start can come anywhere from 2 to 64 clocks after a command (128), the
+read start bit up to 100 ms after the response (about 200 ms), the busy time after a write up
+to 250 ms (about 400 ms); ACMD41 may need many polls over up to 1 s; the RCA is the card's
+choice; v1 and byte-addressed cards exist. Identification must stay under 400 kHz. A driver
+tested only against the emulator, which answers everything after a fixed handful of clocks,
+is most likely to fail on a real card by not waiting long enough. (The BIOS's driver itself
+has so far run only in the emulator and against its card model in the host tests.)
+
+### The emulator's card
+
+`emu/sdcard.c` models a card on the native bus, clocked by the writes to `SDIO.CLK`: it samples
+CMD and DAT on the rising edge and changes its outputs after the falling edge, and every line
+reads as the AND of both sides. By default it is an SDHC card the size of the `--sd` image
+(block addressed, CSD version 2); `--sd-sdsc` makes it a byte-addressed SDSC card with a
+version 1 CSD. It checks the CRC7 of every command (a bad one gets no response and
+COM_CRC_ERROR in the next status; an unknown command, or one illegal in the current state,
+gets no response and ILLEGAL_COMMAND), keeps the card state machine and status bits, and
+supports CMD0, 2, 3, 7, 8, 9, 10, 12, 13, 16 (512 only), 17, 18, 24, 25, 55, ACMD6 (1 or 4
+bits), ACMD41 (an SDHC card insists on CMD8 first and HCS set) and ACMD51. Its timing is fixed:
+Ncr 8 clocks, Nac 8 clocks, the CRC status token 2 clocks after a written block's end bit,
+then 16 clocks of busy; ACMD41 reports ready on the second poll; the RCA is always 0x1234. It
+verifies the four CRC16s of every written block: only a block with all four right (token
+`010`) reaches the image, anything else gets `101`. `--sd-trace` logs every command, state
+change and block transfer to stderr, which is the quickest way to see why a driver of your own
+gets no answer.
 
 ### The filesystem
 
@@ -1854,10 +2144,17 @@ clusters (64 MB with `mkimage.sh`); FAT12/16 cards work too.
 
 ### Coexisting with the BIOS
 
-If you drive SDIO yourself, leave it as the BIOS expects between your transfers: CS high, CLK
-low. The BIOS rebuilds every SDIO write from its own shadow and keeps believing the card is
-initialised; if you reset or reinitialise the card, do it the same way (same addressing mode)
-or the BIOS's next access fails once with `E_IO` and it starts over. FatFs caches a sector (and
+The BIOS keeps no copy of `SDIO` (it writes whole precomputed words), but it does remember the
+card: that it is initialised, block or byte addressed, on the 4-bit bus, in transfer state,
+with 512-byte blocks. If you drive the card yourself, finish every transaction (data block,
+CRC token, busy) and leave `SDIO` at 0x3F, everything released. If you reinitialise the card,
+bring it back to the same state (CMD7, ACMD6 2, CMD16 512 on SDSC) and the BIOS carries on
+unaware, as the example above shows; the RCA may change, the BIOS uses it only during
+initialisation. If you leave the card in another state (idle after a CMD0, 1-bit bus), the
+BIOS's calls fail with `E_IO`: a failing file call drops the mount and marks the card
+uninitialised, so the call after it starts over, but a failing raw block call does not, and
+`sys_sd_read_block` keeps failing until a file call fails or the monitor's `sd` command runs.
+FatFs caches a sector (and
 the FAT's location) in memory: raw block writes into the FAT volume while files are open, or
 between file calls, can be overwritten by that cache or make it stale. Use raw blocks only for
 areas the filesystem does not own (a separate partition, or a card used without a filesystem).
@@ -2085,16 +2382,17 @@ reprogramming the chips in an external programmer.
 * `reboot` jumps through the reset vectors at `ROM_BASE` (SSP and PC) without resetting the
   glue: the way to start a ROM image that was just written.
 
-## 2.13 LEDs, user pins and the expansion header
+## 2.13 LEDs and the expansion header
 
 * `GPIO_LED0`, `GPIO_LED1`: the BIOS uses them as POST codes (LED0 = POST started, both = RAM
   test, LED1 = C initialisation, alternating = RAM failure) and leaves both off; `sys_exit`
   turns them off; the monitor's `led n` sets them.
-* `IO_USERIO`: four open-drain pins UIO0-UIO3 with pull-ups, nothing else attached; the BIOS
-  never writes the register. Write 0 in bit n to pull UIOn low, 1 to release it; read the levels
-  in bits 11..8.
-* Expansion header J8 (2x8): pin 1 +5 V, 3 +3.3 V, 5 UIO0, 7 UIO1, 9 UIO2, 11 UIO3, 13 TXDB,
-  15 RXDB; every even pin is ground.
+* There are no general-purpose user pins any more. Up to spec revision 6 (rev B4) the `USERIO`
+  register drove four open-drain pins UIO0-UIO3 on the expansion header; revision 7 removed
+  them to make room in CPLD2 for the 4-bit SD bus.
+* Expansion header J8 (2x8): pin 1 +5 V, 3 +3.3 V, 13 TXDB, 15 RXDB, every even pin ground;
+  pins 5, 7, 9 and 11 (UIO0-UIO3 on rev B4) are not connected on rev C1. DUART channel B
+  ([2.11](#channel-b)) is the only signal interface left on the header.
 
 ## 2.14 Running without the BIOS
 
@@ -2103,7 +2401,9 @@ reprogramming the chips in an external programmer.
 * Vectors at 0x000000-0x0003FF as described in 2.7 (vector 28 on the BIOS's fast level-4
   handler); BIOS data at 0x000400-0x00206F; supervisor stack below 0x004000.
 * INTEN = 0x000D (VBLANK, PS/2, DUART); GPIO = 0x0003; AUDIO = 0xAA (the idle pattern; no
-  audio stream open); SDIO = CS high, CLK low.
+  audio stream open); SDIO = 0x3F (every line released, CLK high); the SD card initialised
+  and in transfer state on the 4-bit bus (unless the program came over the serial port and
+  nothing has used the card since reset).
 * DUART channel A at 38400 8N1 with IMR = RXRDYA; channel B and the counter/timer idle.
 * NTSC timing, page 0 displayed with the console on it.
 * The CPU in user mode with SR = 0x0000, USP pointing at `{return address, argc, argv}` just
@@ -2120,7 +2420,7 @@ A program can take as much as it wants:
 3. Install your own vectors for the interrupts you use, and for the bus error, address error,
    illegal instruction and TRAP vectors if you want your own crash handling.
 4. Program INTEN, GPIO, SDIO, the soft switches and the DUART to your needs, keeping your own
-   shadows.
+   shadows of INTEN and GPIO (SDIO reads back).
 5. Lower the mask to the level you want.
 
 What depends on what, if you still want parts of the BIOS:
@@ -2201,7 +2501,9 @@ NTSC figures unless stated; PAL in parentheses. One CPU clock = 83.3 ns.
 | `memset` of a page, *measured* | about 420,000 (2.1 frames) |
 | `movem.l` fill of a page (2.4), *measured* | about 180,000 (0.9 frame) |
 | console character (serial-bound) | about 3,125 (260 us) |
-| SD block read, BIOS | about 17 ms |
+| SD 4-bit read loop (BIOS, `sd4_read512`), per byte | 86.5 |
+| SD block read, data phase / `sys_sd_read_block`, *measured* | 44,300 / about 60,600 (3.7 ms / 5.05 ms, 101 KB/s) |
+| SD block write, `sys_sd_write_block`, *measured* (emulated card busy 16 clocks) | about 160,000 (13.3 ms, of which 6.9 ms CRC16s), plus the card's programming time |
 | single-precision soft-float multiply-add, *measured* | about 3,400 |
 
 At 12,000,000 clocks per second: 15,707 lines and 59.95 frames per second (15,625 and 50.08
@@ -2217,3 +2519,11 @@ follows the code. (The eleven items listed for spec revision 4 have all been fix
    every 24th slot, so the seven timed rotations come at slots 24..168 of the 191-slot line and
    the eighth bit lasts 23 slots: one slot (4 clocks) short, as the emulator's model
    (`emu/README.md`) and [2.8](#the-shifter) say.
+2. Left over from the SPI wiring (spec revision 6 and earlier): `docs/architecture.md`
+   section 6 lists "SDIO CS high" among the reset states (SDIO resets to 0x3F, everything
+   released) and section 7 still gives CPLD2 as 107 of 128 macrocells (rev 7 fits at 123/128,
+   `hdl/README.md`); `sdk/README.md` quotes bmpview timings for SD "at roughly 24 KB/s" (a raw
+   76,800-byte screen in 3 s; *measured* now 0.9 s, [1.7](#17-files-and-directories)).
+3. The `AUDIO` register's description in `spec/board.json` still says the BIOS encodes samples
+   "with a first-order sigma-delta table (see audio_write)"; since revision 6 there is no
+   `audio_write`, and the encoder is the SDK's `pdm_encode` ([2.8](#the-sdks-encoder)).
