@@ -11,7 +11,7 @@ CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 |---|---|---|---|---|---|
 | RAM | 0x000000 | 0x0FFFFF | 1024 KB | ram | 1 MB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). CPLD1 drives MA0..MA16 (CPU A1..A17 or the video counter); CPLD2 drives MA17..MA18 (CPU A18..A19 in the CPU half of a slot, the framebuffer pages' fixed bits 19..18 during the video fetch). At reset the ROM is overlaid here until the first access to the ROM region. |
 | ROM | 0xE00000 | 0xEFFFFF | 1024 KB | rom | 1 MB flash window; the BIOS image occupies the first 128 KB (ROM_IMAGE_SIZE, checksum in its last word), the rest is free (erased 0xFF). Reads: zero wait states, not subject to slot alignment. Writes get DTACK and reach the chips (ROMWE), so the firmware can reprogram itself in place with the JEDEC command sequence (see "flash"). Vectors at offset 0 (overlaid at 0x000000 at reset). |
-| IO | 0xF00000 | 0xF0FFFF | 64 KB | io | CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). INTEN, SDIO, GPIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. |
+| IO | 0xF00000 | 0xF0FFFF | 64 KB | io | CPLD2 peripheral registers. 16-bit word access only; address bits A4..A15 are not decoded, so the 16-byte register block repeats through the region. INTEN, GPIO and AUDIO are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. SDIO reads back the six card lines. |
 | SWITCHES | 0xF10000 | 0xF1FFFF | 64 KB | io | CPLD1 soft switches. Write-only; writing any value to the address performs the action. Reads return garbage. |
 | DUART | 0xF20000 | 0xF2FFFF | 64 KB | io | 68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use odd-address byte accesses only: an even-byte or word cycle still selects the chip (undefined data; a read pops the FIFO into the wrong lane). DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned. |
 
@@ -64,7 +64,7 @@ Horizontal count 0 = first active pixel; vertical count 0 = first active line. T
 
 ## IO registers (base 0xF00000, 16-bit)
 
-CPLD2 peripheral registers. 16-bit word access only; address bits A4..A15 are not decoded, so the 16-byte register block repeats through the region. INTEN, SDIO, GPIO, AUDIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows.
+CPLD2 peripheral registers. 16-bit word access only; address bits A4..A15 are not decoded, so the 16-byte register block repeats through the region. INTEN, GPIO and AUDIO are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. SDIO reads back the six card lines.
 
 ### INTSTAT @ 0xF00000 (RW)
 
@@ -78,7 +78,6 @@ Interrupt and pin status. Reading returns flags and live pin levels; bits not li
 | 3 | DUARTIRQ | Live level of the DUART IRQ pin, inverted (1 = DUART requesting). Read the DUART ISR for the cause. |
 | 5 | PS2ERR | PS/2 framing/parity error on last byte. W1C. |
 | 7 | NMIBTN | Live level of the NMI/break pushbutton (1 = pressed). |
-| 8 | SDMISO | Live level of SD MISO. |
 | 9 | PS2CLK | Live level of PS/2 clock line. |
 | 10 | PS2DAT | Live level of PS/2 data line. |
 | 12 | PALJMP | 1 = board built for PAL (PALJMP pulled high); rev B pulls it low (NTSC). |
@@ -97,15 +96,18 @@ Interrupt enables (write-only, reads 0). A pending flag with its enable set driv
 | 2 | PS2 | Enable level-2 interrupt on PS2RDY. |
 | 3 | DUART | Enable level-3 interrupt while the DUART IRQ pin is asserted. |
 
-### SDIO @ 0xF00004 (W) reset 0x0001
+### SDIO @ 0xF00004 (RW) reset 0x003F
 
-SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; reset = CS high, CLK low, MOSI low (SPI mode 0 idle). MISO is read through INTSTAT.SDMISO.
+SD card lines, native 4-bit SD bus bit-banged by the CPU (revision 7). Each bit is an open-drain driver: writing 0 drives the line low, writing 1 releases it to the 10 k pull-up (3.3 V). Reading returns the LEVEL of each line in the same bit position (the card drives CMD during responses and DAT0..3 during reads), so no shadow is needed: read-modify-write works, but the usual loop writes a precomputed word per clock phase. The card samples CMD/DAT on the rising edge of CLK and drives them after the falling edge; the CPU drives CLK low (bit 1 = 0), sets CMD/DAT, then releases CLK (bit 1 = 1). Reset 0x003F: everything released, bus idle with CLK high. SPI mode is no longer wired: CMD has no divider and the card's responses come back on CMD.
 
 | Bit | Name | Description |
 |---|---|---|
-| 0 | CS | SD chip select pin (card selected when 0). |
-| 1 | CLK | SD clock pin. |
-| 2 | MOSI | SD MOSI pin. |
+| 0 | DAT3 | DAT3 (the SPI-mode CS pin). Data line in 4-bit mode; drive low = 0, release = 1. |
+| 1 | CLK | Card clock, host driven: 0 drives low, 1 releases high. Idle high. |
+| 2 | CMD | Command line, bidirectional: host commands (with CRC7), card responses. |
+| 3 | DAT0 | Data line 0 (the only data line in 1-bit mode; busy signal after a write). |
+| 4 | DAT1 | Data line 1. |
+| 5 | DAT2 | Data line 2. |
 
 ### GPIO @ 0xF00006 (W) reset 0x0003
 
@@ -133,15 +135,6 @@ PDM audio shifter (write-only, reads 0). The low byte is loaded into an 8-bit ro
 | Bit | Name | Description |
 |---|---|---|
 | 7..0 | PATTERN | PDM bit pattern, bit 7 is shifted out first. |
-
-### USERIO @ 0xF0000C (RW) reset 0x000F
-
-Four open-drain user GPIO pins on the expansion header. Write 1 to release, 0 to pull low (OUT is write-only, reads 0); read the pin levels in bits 11..8.
-
-| Bit | Name | Description |
-|---|---|---|
-| 3..0 | OUT | Drive bits (1 = release). (write only) |
-| 11..8 | IN | Pin levels (read only). (read only) |
 
 ### ID @ 0xF0000E (R) reset 0x6802
 
@@ -344,7 +337,7 @@ autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied in
 
 **ps2**: rx: hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY; tx: software bit-bang via GPIO.PS2CLK/PS2DAT open-drain bits; connector: 6-pin mini-DIN, 5V
 
-**sd**: mode: SPI bit-bang via SDIO register; connector: microSD push-push socket; power: 3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input; filesystem: FAT12/16/32 via FatFs (LFN off). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine).
+**sd**: mode: Native SD bus (not SPI), 4-bit data, bit-banged through SDIO. All six lines (CLK, CMD, DAT0..3) are open-drain from the 5 V CPLD2 with 10 k pull-ups to 3.3 V; the CPU drives a line low or releases it and reads every line back from SDIO. Commands carry CRC7 (48-bit frames on CMD, responses R1/R2/R3/R6/R7 read back on CMD). Data blocks are 512 bytes sent as 1024 nibbles on DAT3..0 (MSB nibble first), start bit (all four lines low), then 16 CRC16-CCITT bits per line, end bit; the BIOS ignores the CRC on reads and computes the four CRC16s on writes. Initialisation: 74+ clocks, CMD0, CMD8 (SDHC), ACMD41 until ready (HCS set), CMD2 (CID), CMD3 (RCA), CMD7 (select), ACMD6 (4-bit bus), CMD16 512 (SDSC); block I/O with CMD17 / CMD24 (single block), busy on DAT0 after a write. Speed: two clock pulses per byte of data (a nibble per pulse) instead of eight in SPI mode.; connector: microSD push-push socket; power: 3.3V LDO; CLK, CMD, DAT0..3 open-drain from CPLD2 (drive low / release) with 10 k pull-ups to 3.3 V; no level dividers.; filesystem: FAT12/16/32 via FatFs (LFN off). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine).
 
 **audio**: enabled: True; desc: AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> 1 k / 10 nF RC low-pass -> 10 k : 2.2 k divider -> 10 uF DC-blocking cap -> 3.5mm jack. Sampled audio: the program hands the BIOS buffers of PDM pattern bytes (audio_start / audio_next / audio_last, AUDIO_NBUF buffers of up to AUDIO_BUF_MAX bytes, producer/consumer, optionally blocking so the program is paced to the line rate); the BIOS HSYNC interrupt writes one byte per line (15.7 kHz NTSC, 15.6 kHz PAL) and does no other per-sample work. Encoding 8-bit unsigned samples (128 = silence) into patterns is the program's job, normally through the SDK's pdm_init/pdm_encode (first-order sigma-delta, 8-bit accumulator x 7-bit sample table built in RAM). The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click.
 
@@ -449,11 +442,11 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 * inputs: CLK24, SYSRESET, A1..A23, AS, UDS, LDS, RW
 * outputs: CPUCLK, MA0..MA16, DTACK, BERR, VPA, RAMOE, WEU, WEL, ROMOE, ROMWE, IOCS, BUFEN, LATCH, DE, HSYNC, VSYNC, DUARTCS
 
-**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, 8-bit PDM audio shifter, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)
+**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, 4-bit SD card lines (open drain, read back), GPIO bits, 8-bit PDM audio shifter, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)
 
-* inputs: CLK24, SYSRESET, A1..A3, A18, A19, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, PALJMP, NMIBTN, DUART_IRQ
-* bidir: D0..D15 (SRAM-side bus), PS2_CLK, PS2_DAT, UIO0..UIO3
-* outputs: IPL0, IPL1, IPL2, R2, R1, R0, G2, G1, G0, B1, B0, SD_CS, SD_CLK, SD_MOSI, AUDIO, LED0, LED1, MA17, MA18
+* inputs: CLK24, SYSRESET, A1..A3, A18, A19, IOCS, RW, LATCH, DE, HSYNC, VSYNC, PALJMP, NMIBTN, DUART_IRQ
+* bidir: D0..D15 (SRAM-side bus), PS2_CLK, PS2_DAT, SD_CLK, SD_CMD, SD_DAT0..SD_DAT3
+* outputs: IPL0, IPL1, IPL2, R2, R1, R0, G2, G1, G0, B1, B0, AUDIO, LED0, LED1, MA17, MA18
 
 2x 74AHCT245 between the CPU data bus (CPU, flash, DUART on D0..D7) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.
 

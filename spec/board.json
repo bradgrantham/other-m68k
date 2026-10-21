@@ -1,7 +1,7 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 6,
+    "revision": 7,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
@@ -34,7 +34,7 @@
       "size": "0x010000",
       "kind": "io",
       "registers": "io",
-      "desc": "CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). INTEN, SDIO, GPIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows."
+      "desc": "CPLD2 peripheral registers. 16-bit word access only; address bits A4..A15 are not decoded, so the 16-byte register block repeats through the region. INTEN, GPIO and AUDIO are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. SDIO reads back the six card lines."
     },
     {
       "name": "SWITCHES",
@@ -191,11 +191,6 @@
               "desc": "Live level of the NMI/break pushbutton (1 = pressed)."
             },
             {
-              "name": "SDMISO",
-              "bit": 8,
-              "desc": "Live level of SD MISO."
-            },
-            {
               "name": "PS2CLK",
               "bit": 9,
               "desc": "Live level of PS/2 clock line."
@@ -259,24 +254,39 @@
         {
           "name": "SDIO",
           "offset": 4,
-          "access": "w",
-          "reset": "0x0001",
-          "desc": "SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; reset = CS high, CLK low, MOSI low (SPI mode 0 idle). MISO is read through INTSTAT.SDMISO.",
+          "access": "rw",
+          "reset": "0x003F",
+          "desc": "SD card lines, native 4-bit SD bus bit-banged by the CPU (revision 7). Each bit is an open-drain driver: writing 0 drives the line low, writing 1 releases it to the 10 k pull-up (3.3 V). Reading returns the LEVEL of each line in the same bit position (the card drives CMD during responses and DAT0..3 during reads), so no shadow is needed: read-modify-write works, but the usual loop writes a precomputed word per clock phase. The card samples CMD/DAT on the rising edge of CLK and drives them after the falling edge; the CPU drives CLK low (bit 1 = 0), sets CMD/DAT, then releases CLK (bit 1 = 1). Reset 0x003F: everything released, bus idle with CLK high. SPI mode is no longer wired: CMD has no divider and the card's responses come back on CMD.",
           "fields": [
             {
-              "name": "CS",
+              "name": "DAT3",
               "bit": 0,
-              "desc": "SD chip select pin (card selected when 0)."
+              "desc": "DAT3 (the SPI-mode CS pin). Data line in 4-bit mode; drive low = 0, release = 1."
             },
             {
               "name": "CLK",
               "bit": 1,
-              "desc": "SD clock pin."
+              "desc": "Card clock, host driven: 0 drives low, 1 releases high. Idle high."
             },
             {
-              "name": "MOSI",
+              "name": "CMD",
               "bit": 2,
-              "desc": "SD MOSI pin."
+              "desc": "Command line, bidirectional: host commands (with CRC7), card responses."
+            },
+            {
+              "name": "DAT0",
+              "bit": 3,
+              "desc": "Data line 0 (the only data line in 1-bit mode; busy signal after a write)."
+            },
+            {
+              "name": "DAT1",
+              "bit": 4,
+              "desc": "Data line 1."
+            },
+            {
+              "name": "DAT2",
+              "bit": 5,
+              "desc": "Data line 2."
             }
           ]
         },
@@ -339,29 +349,6 @@
           ]
         },
         {
-          "name": "USERIO",
-          "offset": 12,
-          "access": "rw",
-          "reset": "0x000F",
-          "desc": "Four open-drain user GPIO pins on the expansion header. Write 1 to release, 0 to pull low (OUT is write-only, reads 0); read the pin levels in bits 11..8.",
-          "fields": [
-            {
-              "name": "OUT",
-              "bit": 0,
-              "width": 4,
-              "desc": "Drive bits (1 = release).",
-              "wo": true
-            },
-            {
-              "name": "IN",
-              "bit": 8,
-              "width": 4,
-              "desc": "Pin levels (read only).",
-              "ro": true
-            }
-          ]
-        },
-        {
           "name": "ID",
           "offset": 14,
           "access": "r",
@@ -383,7 +370,7 @@
           ]
         }
       ],
-      "desc": "CPLD2 peripheral registers. 16-bit word access only; address bits A4..A15 are not decoded, so the 16-byte register block repeats through the region. INTEN, SDIO, GPIO, AUDIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows."
+      "desc": "CPLD2 peripheral registers. 16-bit word access only; address bits A4..A15 are not decoded, so the 16-byte register block repeats through the region. INTEN, GPIO and AUDIO are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. SDIO reads back the six card lines."
     },
     "switches": {
       "base": "0xF10000",
@@ -813,9 +800,9 @@
     "connector": "6-pin mini-DIN, 5V"
   },
   "sd": {
-    "mode": "SPI bit-bang via SDIO register",
+    "mode": "Native SD bus (not SPI), 4-bit data, bit-banged through SDIO. All six lines (CLK, CMD, DAT0..3) are open-drain from the 5 V CPLD2 with 10 k pull-ups to 3.3 V; the CPU drives a line low or releases it and reads every line back from SDIO. Commands carry CRC7 (48-bit frames on CMD, responses R1/R2/R3/R6/R7 read back on CMD). Data blocks are 512 bytes sent as 1024 nibbles on DAT3..0 (MSB nibble first), start bit (all four lines low), then 16 CRC16-CCITT bits per line, end bit; the BIOS ignores the CRC on reads and computes the four CRC16s on writes. Initialisation: 74+ clocks, CMD0, CMD8 (SDHC), ACMD41 until ready (HCS set), CMD2 (CID), CMD3 (RCA), CMD7 (select), ACMD6 (4-bit bus), CMD16 512 (SDSC); block I/O with CMD17 / CMD24 (single block), busy on DAT0 after a write. Speed: two clock pulses per byte of data (a nibble per pulse) instead of eight in SPI mode.",
     "connector": "microSD push-push socket",
-    "power": "3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input",
+    "power": "3.3V LDO; CLK, CMD, DAT0..3 open-drain from CPLD2 (drive low / release) with 10 k pull-ups to 3.3 V; no level dividers.",
     "filesystem": "FAT12/16/32 via FatFs (LFN off). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine)."
   },
   "audio": {
@@ -1423,7 +1410,7 @@
     },
     "cpld2": {
       "part": "ATF1508AS-7JX84",
-      "role": "I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, 8-bit PDM audio shifter, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)",
+      "role": "I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, 4-bit SD card lines (open drain, read back), GPIO bits, 8-bit PDM audio shifter, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)",
       "signals": {
         "inputs": [
           "CLK24",
@@ -1437,7 +1424,6 @@
           "DE",
           "HSYNC",
           "VSYNC",
-          "SD_MISO",
           "PALJMP",
           "NMIBTN",
           "DUART_IRQ"
@@ -1446,7 +1432,9 @@
           "D0..D15 (SRAM-side bus)",
           "PS2_CLK",
           "PS2_DAT",
-          "UIO0..UIO3"
+          "SD_CLK",
+          "SD_CMD",
+          "SD_DAT0..SD_DAT3"
         ],
         "outputs": [
           "IPL0",
@@ -1460,9 +1448,6 @@
           "G0",
           "B1",
           "B0",
-          "SD_CS",
-          "SD_CLK",
-          "SD_MOSI",
           "AUDIO",
           "LED0",
           "LED1",

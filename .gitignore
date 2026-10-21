@@ -12,3 +12,4 @@ sdk/build/
 *.img
 !spec/*.json
 *.img.gz
+.~lock.*#

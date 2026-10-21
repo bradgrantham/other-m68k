@@ -22,7 +22,7 @@ static const char *const emu_io_reg_names[] = {
     "GPIO",
     "PS2DATA",
     "AUDIO",
-    "USERIO",
+    "?",
     "ID",
 };
 #define EMU_IO_REG_COUNT 8

@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define BOARD_NAME "other-m68k"
-#define BOARD_REVISION 6
+#define BOARD_REVISION 7
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL
 #define SLOT_CPU_CLOCKS 4
@@ -107,8 +107,6 @@
 #define INTSTAT_PS2ERR (1u << 5)
 #define INTSTAT_NMIBTN_BIT 7
 #define INTSTAT_NMIBTN (1u << 7)
-#define INTSTAT_SDMISO_BIT 8
-#define INTSTAT_SDMISO (1u << 8)
 #define INTSTAT_PS2CLK_BIT 9
 #define INTSTAT_PS2CLK (1u << 9)
 #define INTSTAT_PS2DAT_BIT 10
@@ -136,13 +134,19 @@
 #define IO_SDIO_OFFSET 4
 #define IO_SDIO_ADDR (IO_BASE + 4)
 #define IO_SDIO (*(volatile uint16_t *)IO_SDIO_ADDR)
-#define IO_SDIO_RESET 0x0001
-#define SDIO_CS_BIT 0
-#define SDIO_CS (1u << 0)
+#define IO_SDIO_RESET 0x003F
+#define SDIO_DAT3_BIT 0
+#define SDIO_DAT3 (1u << 0)
 #define SDIO_CLK_BIT 1
 #define SDIO_CLK (1u << 1)
-#define SDIO_MOSI_BIT 2
-#define SDIO_MOSI (1u << 2)
+#define SDIO_CMD_BIT 2
+#define SDIO_CMD (1u << 2)
+#define SDIO_DAT0_BIT 3
+#define SDIO_DAT0 (1u << 3)
+#define SDIO_DAT1_BIT 4
+#define SDIO_DAT1 (1u << 4)
+#define SDIO_DAT2_BIT 5
+#define SDIO_DAT2 (1u << 5)
 #define IO_GPIO_OFFSET 6
 #define IO_GPIO_ADDR (IO_BASE + 6)
 #define IO_GPIO (*(volatile uint16_t *)IO_GPIO_ADDR)
@@ -170,18 +174,6 @@
 #define AUDIO_PATTERN_SHIFT 0
 #define AUDIO_PATTERN_WIDTH 8
 #define AUDIO_PATTERN_MASK 0x00FF
-#define IO_USERIO_OFFSET 12
-#define IO_USERIO_ADDR (IO_BASE + 12)
-#define IO_USERIO (*(volatile uint16_t *)IO_USERIO_ADDR)
-#define IO_USERIO_RESET 0x000F
-#define USERIO_OUT_BIT 0
-#define USERIO_OUT_SHIFT 0
-#define USERIO_OUT_WIDTH 4
-#define USERIO_OUT_MASK 0x000F
-#define USERIO_IN_BIT 8
-#define USERIO_IN_SHIFT 8
-#define USERIO_IN_WIDTH 4
-#define USERIO_IN_MASK 0x0F00
 #define IO_ID_OFFSET 14
 #define IO_ID_ADDR (IO_BASE + 14)
 #define IO_ID (*(volatile uint16_t *)IO_ID_ADDR)
