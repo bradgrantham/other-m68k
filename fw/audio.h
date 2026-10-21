@@ -43,7 +43,8 @@ uint8_t *audio_next(const uint8_t *filled, int block);
 int      audio_last(const uint8_t *filled, int block);
 void     audio_stop(void);                /* drop everything, idle pattern (sys_exit, start) */
 int      audio_active(void);              /* a buffer is playing or queued: INTEN.HSYNC wanted */
-void     audio_update_mode(void);         /* pick the fast or the slow level-4 handler */
+void     audio_update_mode(void);         /* pick the fast or the slow level-4 handler (if vector 28 is the BIOS's) */
+void     audio_reset_vector(void);        /* force vector 28 back to a BIOS handler (program exit) */
 void     audio_isr_service(void);         /* one line of the player in C (the slow handler) */
 #endif
 #endif

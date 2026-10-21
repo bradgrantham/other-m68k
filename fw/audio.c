@@ -46,6 +46,7 @@ void host_audio_wait(void);
 #define AUDIO_OUT(p)   host_audio_out((uint8_t)(p))
 #define INTEN_UPDATE() host_inten_update()
 #define VECTOR_SET(s)  host_vector_set(s)
+#define VECTOR_IS_BIOS() 1
 #define WAIT()         host_audio_wait()
 #define IRQ_OFF()      0
 #define IRQ_ON(sr)     ((void)(sr))
@@ -54,6 +55,8 @@ extern void irq_hsync_fast(void), irq_hsync_slow(void);
 #define AUDIO_OUT(p)   (IO_AUDIO = (uint16_t)(p))
 #define INTEN_UPDATE() irq_update_inten()
 #define VECTOR_SET(s)  (*(volatile uint32_t *)IRQ_HSYNC_VECTOR_ADDR = (uint32_t)((s) ? irq_hsync_slow : irq_hsync_fast))
+#define VECTOR_IS_BIOS() (*(volatile uint32_t *)IRQ_HSYNC_VECTOR_ADDR == (uint32_t)irq_hsync_fast || \
+                          *(volatile uint32_t *)IRQ_HSYNC_VECTOR_ADDR == (uint32_t)irq_hsync_slow)
 #define WAIT()         ((void)0)
 #define IRQ_OFF()      irq_disable()
 #define IRQ_ON(sr)     irq_restore(sr)
@@ -91,8 +94,15 @@ int audio_active(void)
 }
 
 /* Called from irq_update_inten with interrupts masked. The slow handler is needed while a
- * callback or a level-4 hook is installed. */
+ * callback or a level-4 hook is installed. A vector 28 that points anywhere else belongs to
+ * the program (it replaced the level-4 vector itself) and is left alone; audio_reset_vector
+ * (program exit) puts the BIOS handler back unconditionally. */
 void audio_update_mode(void)
+{
+    if (VECTOR_IS_BIOS()) VECTOR_SET(audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL]);
+}
+
+void audio_reset_vector(void)
 {
     VECTOR_SET(audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL]);
 }

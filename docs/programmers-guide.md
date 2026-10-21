@@ -894,17 +894,17 @@ still believes it is on: the stream stalls on its last pattern, and a blocking
 Change INTEN through the BIOS, or only while no stream is open.
 
 Every time the BIOS recomputes INTEN (the calls in the INTEN row above, all but the
-handler's own write) it also **rewrites vector 28** at 0x000070, pointing it at whichever of
-its two level-4 handlers fits ([2.7](#what-the-bios-installs)). A level-4 handler of your own
-on that vector is therefore replaced by any of those calls; install it after the last of
-them, as in [2.7](#three-ways-to-use-an-interrupt).
+handler's own write) it also looks at **vector 28** at 0x000070: if it points at one of the
+BIOS's two level-4 handlers, it is pointed at whichever fits ([2.7](#what-the-bios-installs));
+if it points anywhere else, the BIOS assumes the program replaced it and leaves it alone.
+`sys_exit` puts a BIOS handler back unconditionally.
 
 ### What `sys_exit` restores, and what it does not
 
 `sys_exit` (and `sys_exec`, before loading) closes files, stops the audio stream (dropping
 queued buffers) and writes the idle pattern 0xAA to AUDIO, removes hooks and the audio
-callback, rewrites INTEN (and with it vector 28, which points at the BIOS's fast level-4
-handler again), clears the LEDs, and selects display page 0. It does **not**
+callback, points vector 28 back at its own level-4 handler and rewrites INTEN, clears the
+LEDs, and selects display page 0. It does **not**
 restore: the other exception vectors you replaced, DUART registers (IMR, ACR, the counter/timer, channel
 B), the NTSC/PAL soft switch, USERIO, or the flash. A replaced vector that points into your
 program becomes a pointer into whatever is loaded next; a DUART interrupt source you enabled
@@ -1330,7 +1330,9 @@ level-4 hook is installed or an audio buffer is playing or queued. The handlers:
 The BIOS points vector 28 at one handler or the other: whenever it recomputes INTEN
 (`audio_update_mode()`, called from `irq_update_inten()`), the RAM vector at 0x000070 gets
 `irq_hsync_slow` if an audio callback or a level-4 hook is installed and `irq_hsync_fast`
-otherwise, so the fast handler carries no test for either. The fast handler is the
+otherwise, so the fast handler carries no test for either. It only does this while the
+vector still points at one of those two handlers; a vector the program has replaced is left
+untouched until `sys_exit` (`audio_reset_vector()`). The fast handler is the
 stream player and is hand-counted in the source: 44 for the exception entry, 24 for
 `movem.l d0/a0,-(sp)`, 20 for the W1C, 20 + 8 for loading and testing the play pointer, 4 + 8
 for fetching the byte, 16 for the AUDIO write, 20 for storing the pointer, 22 + 8 for
@@ -1360,14 +1362,11 @@ I/O and waits.
 3. **Poll the flag** with the interrupt disabled, as in [2.5](#25-video-timing-and-finding-the-beam).
 
 For HSYNC, the tidy way to get the enable bit set and kept consistent with the BIOS is a
-dummy level-4 hook **first** and your vector **second**: installing the hook makes the BIOS
-set `INTEN_HSYNC` and also rewrite vector 28 (to its slow handler, see above), so a vector
-written before the hook would be lost. Once your vector is in, the BIOS never calls the hook,
-because your vector bypasses its handler. Removing the hook clears the enable again and
-points vector 28 back at the BIOS's fast handler (unless a BIOS stream is still playing; do
-not mix the two). While your vector is installed, make no call that recomputes INTEN
-(`sys_set_irq_handler` for any level, `sys_set_audio_cb`, the audio stream calls), or
-install the vector again after it.
+dummy level-4 hook plus your own vector, in either order: installing the hook makes the BIOS
+set `INTEN_HSYNC`, and once your vector is in, the BIOS never calls the hook, because your
+vector bypasses its handler, and it leaves your vector alone when it recomputes INTEN.
+Removing the hook clears the enable again. Put the BIOS vector back yourself before you
+exit (or let `sys_exit` do it), and do not mix this with a BIOS audio stream.
 
 The BIOS's fast handler is itself a lean stream player, so taking over the vector for audio
 saves little: about 16 clocks per line for the C handler below, 74 for the assembler one. It
@@ -1442,10 +1441,10 @@ int main(void)
     void (*bios_isr)(void) = *vec;
     snd_end = snd + NWORDS;
     snd_ptr = snd;
-    sys_set_irq_handler(4, ignore);             /* 1: the BIOS sets INTEN.HSYNC (and vector 28) */
-    *vec = hsync_isr;                           /* 2: then our handler on vector 28 */
+    sys_set_irq_handler(4, ignore);             /* the BIOS sets INTEN.HSYNC */
+    *vec = hsync_isr;                           /* our handler on vector 28 (the BIOS leaves it alone) */
     uint32_t busy = spin_one_second();
-    sys_set_irq_handler(4, NULL);               /* BIOS clears INTEN.HSYNC, rewrites vector 28 */
+    sys_set_irq_handler(4, NULL);               /* BIOS clears INTEN.HSYNC */
     *vec = bios_isr;                            /* put the BIOS handler back */
     IO_AUDIO = 0xAA;                            /* back to the idle level */
 
@@ -2218,8 +2217,3 @@ follows the code. (The eleven items listed for spec revision 4 have all been fix
    every 24th slot, so the seven timed rotations come at slots 24..168 of the 191-slot line and
    the eighth bit lasts 23 slots: one slot (4 clocks) short, as the emulator's model
    (`emu/README.md`) and [2.8](#the-shifter) say.
-2. The spec's description of `audio_last` (syscall 32) ends "Exiting the program does the
-   same without waiting", which reads as if buffers still queued at exit play out. The BIOS
-   (`user_cleanup` in `fw/syscall.c`, calling `audio_stop`) drops them and writes the idle
-   pattern at once, as [1.10](#110-exiting-and-chaining) says. The two agree that exit does
-   not wait.

@@ -1265,7 +1265,7 @@
           "block"
         ]
       ],
-      "desc": "Hand in the final buffer (filled may be NULL for none) and end the stream. block != 0 waits until everything queued has played; block == 0 returns at once and the queued buffers finish playing on their own. When the last byte has played the handler writes the idle pattern 0xAA and disables the HSYNC interrupt, so idle audio costs no CPU. Returns 0, or E_INVAL if the stream was not started. Exiting the program does the same without waiting."
+      "desc": "Hand in the final buffer (filled may be NULL for none) and end the stream. block != 0 waits until everything queued has played; block == 0 returns at once and the queued buffers finish playing on their own. When the last byte has played the handler writes the idle pattern 0xAA and disables the HSYNC interrupt, so idle audio costs no CPU. Returns 0, or E_INVAL if the stream was not started. Exiting the program stops the stream at once instead: queued buffers are dropped, the idle pattern is written and the interrupt is disabled."
     }
   ],
   "abi": {

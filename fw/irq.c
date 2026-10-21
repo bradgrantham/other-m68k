@@ -33,6 +33,7 @@ void irq_reset_user(void)
     uint16_t sr = irq_disable();
     for (int i = 0; i < 8; i++) irq_user_hook[i] = 0;
     audio_cb = 0;
+    audio_reset_vector();                   /* the program may have replaced vector 28 */
     irq_update_inten();
     irq_restore(sr);
 }
