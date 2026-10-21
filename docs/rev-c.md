@@ -110,6 +110,27 @@ them. 80-column text will be readable on S-video and in the monochrome mode, and
 as CGA-on-a-TV on colour composite. A font with 2-pixel strokes is worse on colour
 composite (3.58 MHz detail sits exactly on the subcarrier).
 
+## SD card: 4-bit data lines (checked 2026-10-21)
+
+The B4 board has 10 k pull-ups on DAT1/DAT2 but no trace from them to CPLD2, and the CMD
+line (MOSI) goes through the 1.8k/3.3k 5 V-to-3.3 V divider, which is wrong once the card
+answers on CMD (SD native mode): the divider pulls the idle level low and the CPLD cannot read
+the line back. So native 4-bit mode is a rev C item: route DAT1/DAT2 to two of CPLD2's free
+pins (16, 58, 60, 61 after rev 6), make CMD and DAT0..3 open-drain from the 5 V CPLD with the
+3.3 V pull-ups, and read all five back.
+
+Logic: the rev 6 CPLD2 is at 119/128 macrocells but 127/128 logic nodes. Adding just DAT1/DAT2
+as open-drain register bits with read-back does NOT fit (137/128 nodes). Dropping USERIO (the
+four expansion-header GPIO bits) makes it fit at 115/128 macrocells, 120/128 nodes. That is
+the trade: 4-bit SD costs the user I/O pins.
+
+Payoff: bit-banging 4 bits per clock pulse cuts the SD read loop from 8 to 2 pulses per byte,
+roughly 3x (about 100 KB/s, 5 ms per 512-byte block, SD at ~16 % of the CPU for 15.7 kB/s
+streaming instead of ~52 %), so full-rate PCM from the card would stream comfortably. The
+firmware would need the SD native protocol (CRC7 on commands, a different initialisation,
+ACMD6 for bus width, four CRC16s on writes; read CRCs can be ignored). A real SPI engine
+(~14 macrocells) does not fit even with USERIO gone.
+
 ## VGA (considered and dropped 2026-10-21)
 
 Drop the AD724, its crystal and trim capacitor, and the RCA jack. CPLD2's RGB bits drive
