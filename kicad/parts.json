@@ -344,27 +344,27 @@
    }
   },
   "U4": {
-   "mfr": "STMicroelectronics",
-   "mpn": "M27C512-70XFI",
-   "desc": "64K x 8 EPROM DIP-28 (even byte)",
+   "mfr": "Microchip",
+   "mpn": "SST39SF040-70-4C-PHE",
+   "desc": "512K x 8 flash DIP-32 (even byte, D15..D8)",
    "assembly": "socket",
-   "chip_supply": "customer",
+   "chip_supply": "pcba",
    "socket": {
-    "mfr": "3M",
-    "mpn": "228-1277-00-0602J",
-    "desc": "ZIF socket DIP-28, 15.24 mm rows, lever at pin 1"
+    "mfr": "Assmann WSW",
+    "mpn": "A 32-LC-TT",
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
    }
   },
   "U5": {
-   "mfr": "STMicroelectronics",
-   "mpn": "M27C512-70XFI",
-   "desc": "64K x 8 EPROM DIP-28 (odd byte)",
+   "mfr": "Microchip",
+   "mpn": "SST39SF040-70-4C-PHE",
+   "desc": "512K x 8 flash DIP-32 (odd byte, D7..D0)",
    "assembly": "socket",
-   "chip_supply": "customer",
+   "chip_supply": "pcba",
    "socket": {
-    "mfr": "3M",
-    "mpn": "228-1277-00-0602J",
-    "desc": "ZIF socket DIP-28, 15.24 mm rows, lever at pin 1"
+    "mfr": "Assmann WSW",
+    "mpn": "A 32-LC-TT",
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
    }
   },
   "U6": {

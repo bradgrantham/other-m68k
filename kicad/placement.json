@@ -5,17 +5,16 @@
   "a vertical DIP horizontal, counter-clockwise on screen); side = top|bottom.  Parts not",
   "listed are placed automatically next to the part named in their PcbNear schematic field",
   "(decoupling caps, pull-ups ...).",
-  "Every part here is placed with its SOCKET footprint; the two EPROMs sit in 3M Textool ZIF",
-  "sockets whose courtyard includes the lever (23.4 mm beyond the pin-1 end).  Hand-placed",
+  "Every part here is placed with its SOCKET footprint.  Hand-placed",
   "courtyards that collide are an error, not a warning (allow_overlap: true per part to accept",
-  "one).  checks.sockets demands a socket footprint for every DIP/PLCC part, checks.zif a",
+  "one).  checks.sockets demands a socket footprint for every DIP/PLCC part, checks.zif (optional) a",
   "ZIF footprint for the listed refs.  A part may carry keepout: [[x0, y0, x1, y1, why], ...]",
   "in footprint-local mm (unrotated, y down): each becomes a KiCad rule area that forbids",
   "other footprints (DRC reports intruders) and that the auto-placer avoids.",
   "Floorplan rev B: CPLD2 (I/O) left next to the connectors, DUART and AD724; CPLD1 (bus and",
   "memory) right next to the SRAM pair (top right) and the two 74AHCT245 bus buffers; CPU",
-  "horizontal below both CPLDs; the EPROM ZIF sockets along the bottom edge, U5 lever to",
-  "the left, U4 lever to the right, so both levers lift at a board edge.",
+  "horizontal below both CPLDs; the two flash chips (rev 3: SST39SF040 in plain DIP-32 sockets,",
+  "no ZIF) side by side along the bottom edge under the CPU.",
   "Edge connectors: J1 USB-C, J2 FTDI, J3 PS/2, J4 microSD on the left edge; J5 RCA and J6",
   "audio on the bottom edge (left); J7 JTAG, J8 expansion, SW1 reset, SW2 NMI on the top edge.",
   "J9 (logic analyzer, 2x15) on the top edge between the expansion header and the SRAMs; U8/U9 are SOIC-20 now, stacked between CPLD1 and the SRAMs; JP1 is gone (NTSC only)."
@@ -31,11 +30,7 @@
   }
  },
  "checks": {
-  "sockets": true,
-  "zif": [
-   "U4",
-   "U5"
-  ]
+  "sockets": true
  },
  "auto": {
   "margin": 0.8,
@@ -185,14 +180,14 @@
    "rot": 90
   },
   "U5": {
-   "x": 75,
-   "y": 112.2,
+   "x": 80,
+   "y": 113,
    "rot": 90
   },
   "U4": {
-   "x": 139,
-   "y": 112.2,
-   "rot": 270
+   "x": 126,
+   "y": 113,
+   "rot": 90
   },
   "J9": {
    "x": 105,

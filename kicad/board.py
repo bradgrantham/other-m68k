@@ -12,7 +12,7 @@ Sources of truth (read these before changing anything here):
                                                 MC68000UM (DIP-64), MC68681 Table 2-1,
                                                 AD724 Rev B, ATF1508AS pinout tables, SN74AHCT245
 
-Net naming: active-low signals keep the plain spec name (AS, DTACK, ROMCE, SYSRESET ...);
+Net naming: active-low signals keep the plain spec name (AS, DTACK, ROMOE, SYSRESET ...);
 the polarity is documented in the spec.  D0..D15 is the CPU data bus, MD0..MD15 the SRAM-side
 bus (SRAMs, CPLD2, transceiver A side), MA0..MA16 the SRAM word address from CPLD1.
 
@@ -21,7 +21,8 @@ Decisions taken here that the documents leave open (also listed in kicad/README.
     function table) a CPU read (R/W high) must move A->B = SRAM->CPU: A side = SRAM-side
     bus, B side = CPU bus.  docs/architecture.md says "direction from R/W"; the testbench
     models dir = ~rw with A = CPU, which is the same thing.
-  * EPROM OE tied to GND (CE = ROMCE does all the gating; fastest access).
+  * Flash CE tied to GND; CPLD1 drives OE (ROMOE, reads) and WE (ROMWE, writes: in-system
+    programming, spec rev 3).  Data 35 ns after OE instead of 70 ns after CE.
   * AD724 ENCD tied straight to +5 V (as in the data sheet's typical circuit; the doc says
     "through 10 k" but the KiCad AD725 stand-in types that pin power_in).
   * RGB 75 ohm terminations sit on the DAC side of the 0.1 uF coupling capacitors (they are
@@ -103,9 +104,8 @@ def build():
     u1 = b.part("U1", "CPU_NXP_68000", "MC68000P", "Package_DIP:DIP-64_W22.86mm_Socket", "MC68000P12", sheet="cpu")
     u2 = b.part("U2", "Memory_RAM", "AS6C1008-xxP", "Package_DIP:DIP-32_W15.24mm_Socket", "KM681000BLP-7", sheet="memory")
     u3 = b.part("U3", "Memory_RAM", "AS6C1008-xxP", "Package_DIP:DIP-32_W15.24mm_Socket", "KM681000BLP-7", sheet="memory")
-    ZIF28 = "Socket:DIP_Socket-28_W11.9mm_W12.7mm_W15.24mm_W17.78mm_W18.5mm_3M_228-1277-00-0602J"  # 3M Textool, lever at pin 1
-    u4 = b.part("U4", "Memory_EPROM", "27C512", ZIF28, "M27C512-70 (even, D15..D8)", sheet="memory")
-    u5 = b.part("U5", "Memory_EPROM", "27C512", ZIF28, "M27C512-70 (odd, D7..D0)", sheet="memory")
+    u4 = b.part("U4", "Memory_Flash", "SST39SF040", "Package_DIP:DIP-32_W15.24mm_Socket", "SST39SF040-70 (even, D15..D8)", sheet="memory")
+    u5 = b.part("U5", "Memory_Flash", "SST39SF040", "Package_DIP:DIP-32_W15.24mm_Socket", "SST39SF040-70 (odd, D7..D0)", sheet="memory")
     u6 = b.part("U6", "CPLD_Microchip", "ATF1508ASx-xxJx84", "Package_LCC:PLCC-84_THT-Socket", "ATF1508AS-7JX84 (MMU)", sheet="cpld1")
     u7 = b.part("U7", "CPLD_Microchip", "ATF1508ASx-xxJx84", "Package_LCC:PLCC-84_THT-Socket", "ATF1508AS-7JX84 (I/O)", sheet="cpld2")
     u8 = b.part("U8", "74xx", "74HC245", "Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm", "74AHCT245 (hi)", sheet="memory")
@@ -144,17 +144,17 @@ def build():
     p2 = cpld_pins("cpld2_io")
 
     # ------------------------------------------------------------------ CPU buses
-    # A1..A23: CPU -> CPLD1; A1..A3 also CPLD2; A1..A4 also DUART RS1..RS4; A1..A16 -> EPROM A0..A15
+    # A1..A23: CPU -> CPLD1; A1..A3 also CPLD2; A1..A4 also DUART RS1..RS4; A1..A19 -> flash A0..A18
     for i in range(1, 24):
         pins = [u1.pin(f"A{i}"), u6.pin(p1[f"A{i}"])]
         if i <= 3:
             pins.append(u7.pin(p2[f"A{i}"]))
         if i <= 4:
             pins.append(u10.pin(f"RS{i}"))
-        if i <= 16:
+        if i <= 19:
             pins += [u4.pin(f"A{i-1}"), u5.pin(f"A{i-1}")]
         b.net(f"A{i}", *pins)
-    # CPU data bus D0..D15: CPU, EPROMs (even = D15..8, odd = D7..0), DUART D0..7, '245 B side
+    # CPU data bus D0..D15: CPU, flash (even = D15..8, odd = D7..0), DUART D0..7, '245 B side
     for i in range(16):
         pins = [u1.pin(f"D{i}")]
         if i >= 8:
@@ -213,10 +213,11 @@ def build():
     b.net("WEU", u6.pin(p1["WEU"]), u2.pin("WE"))
     b.net("WEL", u6.pin(p1["WEL"]), u3.pin("WE"))
     for u in (u4, u5):
-        b.power("GND", u.pin("OE"))             # OE tied low, CE does the gating
+        b.power("GND", u.pin("CE"))             # CE tied low; OE/WE from CPLD1 do the gating
         b.power("VCC", u.pin("VCC"))
         b.power("GND", u.pin("GND"))
-    b.net("ROMCE", u6.pin(p1["ROMCE"]), u4.pin("CE"), u5.pin("CE"))
+    b.net("ROMOE", u6.pin(p1["ROMOE"]), u4.pin("OE"), u5.pin("OE"))
+    b.net("ROMWE", u6.pin(p1["ROMWE"]), u4.pin("PGM"), u5.pin("PGM"))   # pin 31 = /WE
     b.net("BUFEN", u6.pin(p1["BUFEN"]), u8.pin("CE"), u9.pin("CE"))   # pin 19 = OE on the '245
     for u in (u8, u9):
         b.power("VCC", u.pin("VCC"))
@@ -433,7 +434,7 @@ def build():
     # probe cannot short a bus line.  27-30 are left open: the analyzer's shifter keeps its own
     # 5 V reference and the trigger pins are its business.
     la = ["CPUCLK", "AS", "UDS", "LDS", "RW", "DTACK", "BERR", "VPA", "IPL0", "IPL1", "IPL2", "SYSRESET",
-          "ROMCE", "RAMOE", "WEL", "WEU", "DUARTCS", "BUFEN", "HSYNC", "VSYNC", "A1", "A2", "A3", "A4"]
+          "ROMOE", "RAMOE", "WEL", "WEU", "DUARTCS", "BUFEN", "HSYNC", "VSYNC", "A1", "A2", "A3", "A4"]
     rn = [b.part(f"RN{i + 1}", "Device", "R_Pack04", "Resistor_SMD:R_Array_Convex_4x0603", "4x100", sheet="cpu", PcbNear="J9")
           for i in range(6)]
     for k, net in enumerate(la):

@@ -43,7 +43,7 @@ pictures. Page 1 is the root with the seven sheet symbols; the power-net anchors
 | page | sheet | contents |
 |---|---|---|
 | 2 | cpu | U1 MC68000P12, DTACK/BR/BGACK/RESET/HALT pull-ups, the two reset diodes, decoupling |
-| 3 | memory | U2/U3 SRAM (hi/lo byte), U4/U5 EPROM (even/odd), U8/U9 74AHCT245 (hi/lo) |
+| 3 | memory | U2/U3 SRAM (hi/lo byte), U4/U5 SST39SF040 flash (even/odd), U8/U9 74AHCT245 (hi/lo) |
 | 4 | cpld1 | U6 ATF1508AS "MMU" with every pin labelled from `hdl/pins_cpld1_mmu.json`, X1 24 MHz oscillator, J7 JTAG, JTAG pull-ups, 8+1 decoupling capacitors |
 | 5 | cpld2 | U7 ATF1508AS "I/O", J3 PS/2, J4 microSD with level dividers and pull-ups, SW2 NMI, D3/D4 LEDs, J6 audio and its filter, decoupling |
 | 6 | video | U11 AD724 (AD725 symbol), the three resistor DACs and terminations, Y2 subcarrier crystal, STND pull-up (NTSC)JMP jumpers, FB1, J5 RCA, 220 uF/75 ohm output |
@@ -51,7 +51,7 @@ pictures. Page 1 is the root with the seven sheet symbols; the power-net anchors
 | 8 | power | J1 USB-C, F1 polyfuse, CC pull-downs, bulk capacitors, D5 power LED, U12 AP2112K-3.3, H1..H4 |
 
 Net names follow the spec (`A1..A23`, `D0..D15` CPU data bus, `MD0..MD15` SRAM-side bus,
-`MA0..MA16` SRAM address, `AS`, `UDS`, `LDS`, `RW`, `DTACK`, `BERR`, `VPA`, `ROMCE`,
+`MA0..MA16` SRAM address, `AS`, `UDS`, `LDS`, `RW`, `DTACK`, `BERR`, `VPA`, `ROMOE`, `ROMWE`,
 `RAMOE`, `WEU`, `WEL`, `BUFEN`, `IOCS`, `LATCH`, `DE`, `HSYNC`, `VSYNC`, `DUARTCS`,
 `SYSRESET`, `CLK24`, `CPUCLK`, `IPL0..2`, `PS2_CLK/DAT`, `SD_*`, `UIO0..3`, `LED0/1`,
 `AUDIO`, `R0..R2 G0..G2 B0..B1`, `PALJMP`, `NMIBTN`, `DUART_IRQ`). Active-low signals keep
@@ -66,8 +66,10 @@ behind FB1).
   (`MD*`) is on the **A** side and the CPU bus (`D*`) on the **B** side. This is the same
   behaviour as the testbench's `dir = ~rw` with A = CPU; `docs/architecture.md` just says
   "direction from R/W".
-* **EPROM OE tied to GND**; CE = ROMCE does the gating (fastest access, CE is combinational
-  anyway).
+* **Flash CE tied to GND**; CPLD1 drives OE (`ROMOE`, the old ROMCE expression) and WE
+  (`ROMWE`, pin 50) so the firmware can reprogram the SST39SF040 pair in place (spec rev 3).
+  Data appears 35 ns after OE instead of 70 ns after CE; the flash symbol's pin 31 is
+  named PGM and is /WE.
 * **AD724 ENCD** tied directly to +5 V as in the data sheet's typical circuit
   (`docs/video-encoder.md` says "through 10 k"; the AD725 stand-in symbol types that pin
   power_in, which ERC would flag behind a resistor). SELECT: 10 k to GND. STND: 10 k to
@@ -112,7 +114,7 @@ All symbols and footprints are KiCad 9 system libraries except:
 | MC68681 (U10) | `Interface:68681` | `Package_DIP:DIP-40_W15.24mm_Socket` | pin numbers checked against MC68681 Table 2-1 |
 | AD724 (U11) | `Video:AD725` stand-in, value AD724JR | `Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm` | same pinout; pin 3 shows "4FSC_CLK" (= FIN) and pin 12 "TRAP" (= SELECT) |
 | KM681000BLP-7 (U2/U3) | `Memory_RAM:AS6C1008-xxP` | `Package_DIP:DIP-32_W15.24mm_Socket` | pin compatible |
-| M27C512 (U4/U5) | `Memory_EPROM:27C512` | `Socket:DIP_Socket-28_..._3M_228-1277-00-0602J` | 3M ZIF socket; courtyard includes the lever |
+| SST39SF040 (U4/U5) | `Memory_Flash:SST39SF040` | `Package_DIP:DIP-32_W15.24mm_Socket` | plain dual-wipe socket (Assmann A 32-LC-TT); the TL866 programs the first image, later ones go in from the SD card |
 | 74AHCT245 (U8/U9) | `74xx:74HC245` | `Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm` | no AHCT symbol, pins identical; SN74AHCT245DW |
 | MCP130 (U13) | `Power_Supervisor:MCP130-xxxxTT` | `Package_TO_SOT_SMD:SOT-23` | MCP130T-450I/TT |
 | ATF1508AS (U6/U7) | `CPLD_Microchip:ATF1508ASx-xxJx84` | `Package_LCC:PLCC-84_THT-Socket` | all I/O pins are named "I/O", so they are wired by number from `hdl/pins_*.json` |
@@ -134,7 +136,7 @@ number, a description, and an `assembly` class:
 | class | meaning |
 |---|---|
 | `pcba` | the assembler buys and mounts it (passives, LDO, AD724, supervisor, 74AHCT245, connectors, switches, crystals ...) |
-| `socket` | the assembler mounts the **socket** (`socket.mfr/mpn`); the chip is a separate line, supplied by `chip_supply` = `customer` (68000, 68681, SRAM, EPROM, CPLDs) or `pcba` |
+| `socket` | the assembler mounts the **socket** (`socket.mfr/mpn`); the chip is a separate line, supplied by `chip_supply` = `customer` (68000, 68681, SRAM, CPLDs) or `pcba` (the SST39SF040 flash, inserted blank) |
 | `customer` | we supply and fit it ourselves; not in the assembly files |
 | `dnp` | not fitted (the crystal trim capacitor, mounting holes, test pads) |
 
@@ -162,9 +164,9 @@ distributor listing; clear the flag once it has.
 ```json
 "board": {"width": 180, "height": 125, "corner_radius": 3, "layers": 4,
           "zones": {"In1.Cu": "GND", "In2.Cu": "VCC"}},
-"checks": {"sockets": true, "zif": ["U4", "U5"]},
+"checks": {"sockets": true},
 "parts": {"U1": {"x": 100, "y": 85.5, "rot": 90},
-          "U4": {"x": 139, "y": 112.2, "rot": 270, "keepout": [[x0, y0, x1, y1, "why"], ...]}, ...}
+          "U4": {"x": 126, "y": 113, "rot": 90, "keepout": [[x0, y0, x1, y1, "why"], ...]}, ...}
 ```
 
 * `x`, `y` are the **centre of the footprint courtyard** in mm from the board's top-left
@@ -180,19 +182,18 @@ distributor listing; clear the flag once it has.
 * `texts` adds silkscreen text. Zones are full-board pours on the named layers.
 * `fanout` names the plane nets whose SMD pads get a via each (see "Flow details").
 * **Sockets are part of the placement.** Every DIP and PLCC part is placed with its
-  *socket* footprint (`Package_DIP:*_Socket`, `Package_LCC:PLCC-84_THT-Socket`), and the
-  two EPROMs with the 3M Textool ZIF footprint
-  (`Socket:DIP_Socket-28_..._3M_228-1277-00-0602J`), whose courtyard extends 23.4 mm past
-  the pin-1 end to cover the lever: 25.2 x 63.8 mm instead of 18.4 x 36.3 for a plain
-  socket. `checks.sockets: true` makes `gen_pcb.py build` fail on any DIP/PLCC part with a
-  bare-chip footprint, `checks.zif` on a listed part whose footprint is not a
-  zero-insertion-force socket; the build prints the socket table (ref, footprint,
-  courtyard size) so the sizes used for placement are visible.
+  *socket* footprint (`Package_DIP:*_Socket`, `Package_LCC:PLCC-84_THT-Socket`).
+  `checks.sockets: true` makes `gen_pcb.py build` fail on any DIP/PLCC part with a
+  bare-chip footprint; an optional `checks.zif: [refs]` demands a zero-insertion-force
+  socket for the listed parts (rev B used it for the EPROMs; a ZIF footprint's courtyard
+  must include the lever travel, e.g. the 3M Textool one in the `Socket` library is
+  25.2 x 63.8 mm against 18.4 x 36.3 for a plain DIP-28 socket). The build prints the
+  socket table (ref, footprint, courtyard size) so the sizes used for placement are visible.
 * **Collisions are errors.** `gen_pcb.py build` stops when two listed parts' extents
   (courtyard plus reference text) overlap, naming both rectangles; set
   `"allow_overlap": true` on one of them if it is intended. A note is printed for
   courtyards past the outline (normal for edge connectors). KiCad's DRC checks courtyard
-  overlaps again on the finished board, so a ZIF lever zone that gets something placed in
+  overlaps again on the finished board, so a keepout that gets something placed in
   it by hand in KiCad is still reported.
 * **Keepouts.** `"keepout": [[x0, y0, x1, y1, "why"], ...]` on a part (footprint-local mm,
   unrotated, y down, origin at the footprint anchor) adds a KiCad rule area on the part's
@@ -212,12 +213,12 @@ Layout rev B (180 x 125 mm, 4 layers: F.Cu / GND / VCC / B.Cu, all parts on top)
   memory) right of centre next to the SRAM pair U2/U3 (top right, horizontal) and the two
   bus transceivers U8/U9 (SOIC-20, between U6 and the SRAMs). X1 above and between the CPLDs.
 * U1 lies horizontally under both CPLDs.
-* The EPROM ZIF sockets lie along the bottom edge: U5 with its lever to the left (over the
-  gap next to the audio jack), U4 with its lever to the right (over the corner mounting
-  hole's quadrant, clear of the hole itself). Both levers lift at a board edge.
+* The two flash chips U5 (odd) and U4 (even) lie horizontally side by side along the
+  bottom edge under the CPU (rev 3: SST39SF040 in plain DIP-32 sockets; rev B had 3M ZIF
+  sockets for EPROMs there, with the levers lifting at the board edge).
 
 Rev A had CPLD1 on the left and the memory stacked down the right edge, which put the
-whole bus across the board; rev B is what made room for the ZIF sockets.
+whole bus across the board; rev B is what made room for the memory along the bottom.
 
 Knobs the author may want to turn: board size, which edge the video connectors use,
 whether the SMD passives should go to the bottom side under the sockets (`"side":

@@ -89,7 +89,8 @@ def main():
     out = lambda suffix: os.path.join(a.outdir, f"{a.name}-{suffix}")
 
     assembled = []      # dicts: ref, mfr, mpn, lcsc, desc, footprint, type, comment
-    customer = []       # chips we fit ourselves
+    customer = []       # chips we fit ourselves (or the assembler inserts loose, see note)
+    loose = []          # chips the assembler buys and inserts into a socket: BOM line, no placement
     problems = {"verify": [], "no_mpn": [], "no_lcsc": []}
     for ref in sorted(comps, key=natural):
         c = comps[ref]
@@ -113,6 +114,10 @@ def main():
             customer.append({"ref": ref, "mfr": f.get("Manufacturer", ""), "mpn": f.get("MPN", ""), "desc": f.get("Desc", c["value"]),
                              "note": "customer supplies and inserts into socket" if supply == "customer"
                              else "ASSEMBLER supplies loose, inserted into socket after assembly"})
+            if supply != "customer":
+                loose.append({"ref": ref, "mfr": f.get("Manufacturer", ""), "mpn": f.get("MPN", ""), "lcsc": f.get("LCSC", ""),
+                              "desc": f.get("Desc", c["value"]) + " (insert into the socket after assembly)",
+                              "footprint": c["footprint"], "type": "THT", "comment": c["value"]})
             continue
         assembled.append({"ref": ref, "mfr": f.get("Manufacturer", ""), "mpn": f.get("MPN", ""), "lcsc": f.get("LCSC", ""),
                           "desc": f.get("Desc", c["value"]), "footprint": c["footprint"], "type": p["type"], "comment": c["value"]})
@@ -137,7 +142,7 @@ def main():
     # JLCPCB
     with open(out("jlcpcb-bom.csv"), "w", newline="") as f:
         w = csv.writer(f); w.writerow(["Comment", "Designator", "Footprint", "LCSC Part #"])
-        for rows in grouped(assembled):
+        for rows in grouped(assembled) + grouped(loose):
             w.writerow([rows[0]["comment"], ",".join(r["ref"] for r in rows), short_fp(rows[0]["footprint"]), rows[0]["lcsc"]])
     with open(out("jlcpcb-cpl.csv"), "w", newline="") as f:
         w = csv.writer(f); w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
@@ -152,7 +157,7 @@ def main():
     with open(out("pcbway-bom.csv"), "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["Item", "Designator", "Qty", "Manufacturer", "Mfg Part #", "Description", "Package", "Type", "Supplied By"])
-        for i, rows in enumerate(grouped(assembled), 1):
+        for i, rows in enumerate(grouped(assembled) + grouped(loose), 1):
             r = rows[0]
             w.writerow([i, ",".join(x["ref"] for x in rows), len(rows), r["mfr"], r["mpn"], r["desc"], short_fp(r["footprint"]), r["type"], "PCBWay"])
         for e in db.get("extras", []):
@@ -168,7 +173,7 @@ def main():
         for r in customer:
             w.writerow([r["ref"], r["mfr"], r["mpn"], r["desc"], r["note"]])
     with open(out("bom-check.txt"), "w") as f:
-        f.write(f"assembled: {len(assembled)} placements, {len(grouped(assembled))} BOM lines; fitted by us: {len(customer)}\n")
+        f.write(f"assembled: {len(assembled)} placements, {len(grouped(assembled))} BOM lines; assembler-supplied chips inserted into sockets: {len(loose)}; fitted by us: {len(customer) - len(loose)}\n")
         f.write("\nPart numbers written from memory, not yet checked against a distributor listing:\n")
         f.writelines(f"  {s}\n" for s in problems["verify"])
         f.write(f"\nAssembled parts without an MPN: {', '.join(problems['no_mpn']) or 'none'}\n")
@@ -186,7 +191,7 @@ def main():
                 z.write(os.path.join(a.outdir, g), g)
     smd = sum(1 for r in assembled if r["type"] == "SMD")
     print(f"fab_export: {len(assembled)} assembled placements ({smd} SMD, {len(assembled) - smd} THT), "
-          f"{len(grouped(assembled))} BOM lines, {len(customer)} parts fitted by us, {len(gerbers)} Gerber/drill files zipped; "
+          f"{len(grouped(assembled)) + len(grouped(loose))} BOM lines ({len(loose)} loose chips for sockets), {len(customer) - len(loose)} parts fitted by us, {len(gerbers)} Gerber/drill files zipped; "
           f"{len(problems['verify'])} part numbers to verify (see {out('bom-check.txt')})")
 
 
