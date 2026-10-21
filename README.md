@@ -22,6 +22,7 @@ emulator, all generated from one specification.
 | `generated/` | C/asm headers, linker scripts, Verilog parameters, syscall stubs/dispatcher, emulator tables, `HARDWARE.md` |
 | `docs/architecture.md` | the bus-timing contract: slot schedule, decode, alignment, peripherals |
 | `docs/bringup.md` | staged hardware bring-up plan |
+| `docs/programmers-guide.md` | programmer's guide: writing applications with the SDK, and programming the hardware directly |
 | `hdl/` | Verilog for both CPLDs plus a system testbench with a 68000 bus model |
 | `emu/` | SDL2 emulator (Musashi 68000 core), used to run the firmware and user programs |
 | `fw/` | BIOS/monitor ROM: POST, serial, video console, PS/2, exceptions, monitor, syscalls, FAT32, ELF loader |
