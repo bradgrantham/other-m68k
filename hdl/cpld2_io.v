@@ -10,13 +10,19 @@
 // Written to fit the Atmel fitter (docs/atf15xx.md): one clock, GCLR reset, a sentinel
 // shifter instead of a bit counter, and a read mux that only carries what the CPU cannot
 // shadow.  The control registers INTEN, SDIO,
-// GPIO and USERIO.OUT are therefore WRITE-ONLY (they read as 0); the BIOS keeps shadows.
+// GPIO, AUDIO and USERIO.OUT are therefore WRITE-ONLY (they read as 0); the BIOS keeps shadows.
 // Serial lives in a 68681 DUART on the CPU bus (spec revision 2); CPLD2 only routes the
 // DUART's IRQ pin into the interrupt encoder (level 3) and INTSTAT.DUARTIRQ.
 // Spec revision 4 (1 MB SRAM, 2x 512Kx8): CPLD1 ran out of pins, so the two upper SRAM
 // address lines MA18..MA17 come from here: loaded with the CPU's A19..A18 at E4 (the same
 // edge at which CPLD1 loads MA16..MA0 with A17..A1) and with FB_PAGE_HI, the fixed bits
 // 19..18 of both framebuffer pages, at E1 for the video fetch.
+// Spec revision 5: audio is an 8-bit rotating PDM shifter (AUDIO register, byte offset 10)
+// instead of a GPIO bit.  Bit 7 drives the pin; the register rotates left at the leading
+// edge of HSYNC and then every 24 bus slots (192 clk24 = 1/8 line), so a line carries the
+// 8 bits MSB first (~126 kHz PDM) and a line without a write repeats the byte.  A write
+// loads the register at once and wins over a coincident rotate.  GPIO bit 2 is stored but
+// drives nothing.
 `timescale 1ns/1ps
 
 module cpld2_io #(
@@ -84,6 +90,7 @@ wire        sel_gpio    = (a[3:1] == IO_GPIO_OFF[2:0]);
 wire        sel_ps2data = (a[3:1] == IO_PS2DATA_OFF[2:0]);
 wire        sel_userio  = (a[3:1] == IO_USERIO_OFF[2:0]);
 wire        sel_id      = (a[3:1] == IO_ID_OFF[2:0]);
+wire        sel_audio   = (a[3:1] == IO_AUDIO_OFF[2:0]);
 
 wire        io_rd  = ~iocs_n &  rw;        // CPLD2 drives D while this is true (F5..F7)
 wire        wr_en  = e0 & ~iocs_n & ~rw;   // capture write data at E0
@@ -92,7 +99,9 @@ wire        rd_end = e0 & ~iocs_n &  rw;   // read side effects at E0
 // ---------------------------------------------------------------- registers
 reg [3:0]  inten;
 reg [2:0]  sdio;                        // CS, CLK, MOSI
-reg [4:0]  gpio;                        // PS2CLK, PS2DAT, AUDIO, LED0, LED1
+reg [4:0]  gpio;                        // PS2CLK, PS2DAT, (unused), LED0, LED1
+reg [7:0]  aud_sh;                      // PDM shifter; bit 7 is the pin
+reg [4:0]  aud_cnt;                     // bus slots since the last rotate (24 = 1/8 line)
 reg [3:0]  uio_out;
 reg [7:0]  ps2data;
 reg        f_ps2err;
@@ -114,7 +123,7 @@ assign sd_clk  = sdio[SDIO_CLK_BIT];
 assign sd_mosi = sdio[SDIO_MOSI_BIT];
 assign ps2_clk = gpio[GPIO_PS2CLK_BIT] ? 1'bz : gpio[GPIO_PS2CLK_BIT];
 assign ps2_dat = gpio[GPIO_PS2DAT_BIT] ? 1'bz : gpio[GPIO_PS2DAT_BIT];
-assign audio   = gpio[GPIO_AUDIO_BIT];
+assign audio   = aud_sh[7];
 assign led     = {gpio[GPIO_LED1_BIT], gpio[GPIO_LED0_BIT]};
 assign uio[0]  = uio_out[0] ? 1'bz : uio_out[0];
 assign uio[1]  = uio_out[1] ? 1'bz : uio_out[1];
@@ -184,6 +193,7 @@ always @(posedge clk24 or negedge sysreset_n) begin
         inten    <= 4'd0;
         sdio     <= 3'b001;             // SDIO reset 0x0001: CS high, CLK low
         gpio     <= 5'b00011;           // GPIO reset 0x0003: PS/2 released
+        aud_sh   <= 8'd0; aud_cnt <= 5'd0;
         uio_out  <= 4'hF;               // USERIO reset 0x000F
         ps2data  <= 8'd0; f_ps2err <= 1'b0;
         f_vblank <= 1'b0; f_hsync <= 1'b0; f_ps2rdy <= 1'b0; dirq_s <= 1'b0;
@@ -229,6 +239,7 @@ always @(posedge clk24 or negedge sysreset_n) begin
             if (sel_inten)  inten   <= d[3:0];
             if (sel_sdio)   sdio    <= d[2:0];
             if (sel_gpio)   gpio    <= d[4:0];
+            if (sel_audio)  aud_sh  <= d[7:0];
             if (sel_userio) uio_out <= d[USERIO_OUT_BIT +: 4];
         end
         // -------- read side effects
@@ -237,6 +248,18 @@ always @(posedge clk24 or negedge sysreset_n) begin
         // -------- interrupt flags (set wins over clear)
         if (vs_rise) f_vblank <= 1'b1;
         if (hs_rise) f_hsync  <= 1'b1;
+
+        // -------- PDM audio: rotate at the HSYNC leading edge and every 24 slots after it
+        // (8 bits per line, MSB first); a write in the same clock wins (it is above)
+        if (hs_rise) begin
+            aud_cnt <= 5'd0;
+            if (!(wr_en & sel_audio)) aud_sh <= {aud_sh[6:0], aud_sh[7]};
+        end else if (e0) begin
+            if (aud_cnt == 5'd23) begin
+                aud_cnt <= 5'd0;
+                if (!(wr_en & sel_audio)) aud_sh <= {aud_sh[6:0], aud_sh[7]};
+            end else aud_cnt <= aud_cnt + 5'd1;
+        end
         ipl_n <= ~level;
 
         // -------- PS/2 receiver

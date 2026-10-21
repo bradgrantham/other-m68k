@@ -6,12 +6,19 @@
   Verilog-2001, one clock, async reset, no inferred memories. Lint clean (`iverilog -Wall`).
 * `tb/`: 68000 bus master, 512Kx8 55 ns SRAM model (AS6C4008-55 timings) with timing
   checks, SST39SF040 flash model (JEDEC program/erase/ID, busy status, write-timing checks)
-  and 74AHCT245 models, whole-board testbench with 14 tests, a frame/pixel monitor, a
+  and 74AHCT245 models, whole-board testbench with 15 tests, a frame/pixel monitor, a
   bus-contention checker and an MA18..17 edge checker.
-  `make -C hdl sim` ends in `RESULT: PASS` (14 tests, 0 errors; ~30 s).
+  `make -C hdl sim` ends in `RESULT: PASS` (15 tests, 0 errors; ~30 s).
 * **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 111/128
-  (pass 2, fan-in 37/40, no I/O left) and CPLD2 107/128 (pass 1, 60/64 I/O) with the pin
-  blocks kept. JEDs in `build/fit/`.
+  (pass 2, fan-in 37/40, no I/O left) and CPLD2 119/128 (pass 1, 60/64 I/O, 127/128 nodes) with
+  the pin blocks kept. JEDs in `build/fit/`.
+* **Spec rev 5 (2026-10-21)**: audio became an 8-bit rotating PDM shifter fed by the new
+  write-only AUDIO register (byte offset 10): bit 7 drives pin 25, the register rotates at the
+  HSYNC leading edge and every 24 slots after it (8 bits per line, ~126 kHz, resynchronised
+  each line; a line without a write repeats the byte; a write loads immediately and wins over
+  a coincident rotate). GPIO bit 2 is stored but unused. Fit: 107 -> 119 macrocells, 73 -> 85
+  flops, 107 -> 127 nodes+foldbacks, pins identical to the rev 4 fit, so the rev B4 boards
+  take it as a JED update. New testbench test 14 checks the bit sequence, repeat and replace.
 * **Spec rev 4 (2026-10-20)**: the SRAMs became two AS6C4008-55 (512Kx8), 1 MB in all. The
   two new address lines MA18..MA17 come from CPLD2 (CPLD1 has no pin left): CPU A19..A18 are
   inputs on pins 54/55, MA17/MA18 outputs on pins 56/57, loaded at the same E4/E1 edges as

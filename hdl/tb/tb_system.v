@@ -352,6 +352,8 @@ localparam [18:0] FB0_WORD19 = {FB_PAGE_HI, FB_PAGE0_WORD};    // 19-bit SRAM wo
 localparam [18:0] FB1_WORD19 = {FB_PAGE_HI, FB_PAGE1_WORD};
 localparam [23:0] FB0_ADDR   = {4'b0000, FB0_WORD19, 1'b0};    // CPU byte addresses
 integer    exp_h_total;
+real       t_hs;
+reg [7:0]  aud_got;
 reg [7:0]  exp_pix;
 event      frame_start;
 event      line_start;
@@ -752,7 +754,8 @@ initial begin
     check_eq(u2.inten, 4'hF, "INTEN written (4 bits)");
     cpu.write_word(io_addr(IO_INTEN_OFF), 16'h0000);
     cpu.write_word(io_addr(IO_GPIO_OFF), 16'h001F);
-    check(led === 2'b11 && audio === 1'b1, "LEDs and audio follow GPIO");
+    check(led === 2'b11 && audio === 1'b0, "LEDs follow GPIO, audio does not (rev 5: bit 2 unused)");
+    cpu.read_word(io_addr(IO_AUDIO_OFF));   check_eq(cpu.last_data, 16'h0000, "AUDIO is write-only (reads 0)");
     cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0000, "GPIO reads 0");
     cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0000);        // pull PS/2 lines low, LEDs off
     check(ps2_clk === 1'b0 && ps2_dat === 1'b0 && led === 2'b00, "PS/2 open-drain pulled low");
@@ -920,6 +923,38 @@ initial begin
     duart_irq_n = 1; #300;
     check_eq(ipl_n, 3'b111, "IPL idle when the DUART releases IRQ");
     cpu.write_word(io_addr(IO_INTEN_OFF), 0);
+    end_test;
+
+    // ------------------------------------------------------------------ 10b
+    begin_test("AUDIO PDM shifter: 8 bits per line MSB first, repeats without a write, write replaces");
+    // write just after the HSYNC leading edge (as the HSYNC ISR does), then sample the pin in
+    // the middle of each 192-clk24 bit period measured from the edge CPLD2 sees
+    @(negedge hsync_p); t_hs = $time;
+    cpu.write_word(io_addr(IO_AUDIO_OFF), 16'h00B1);
+    #(2*T_CLK24);
+    check(audio === 1'b1, "bit 7 on the pin right after the write");
+    for (k = 0; k < 8; k = k + 1) begin
+        #(t_hs + (96 + 192*k)*T_CLK24 - $time);
+        aud_got[7-k] = audio;
+    end
+    check_eq(aud_got, 8'hB1, "line 1: pattern 0xB1 MSB first, one bit per 24 slots");
+    @(negedge hsync_p); t_hs = $time;                         // no write this line
+    for (k = 0; k < 8; k = k + 1) begin
+        #(t_hs + (96 + 192*k)*T_CLK24 - $time);
+        aud_got[7-k] = audio;
+    end
+    check_eq(aud_got, 8'hB1, "line 2: byte repeats unchanged without a write");
+    @(negedge hsync_p); t_hs = $time;
+    #(t_hs + (96 + 192*2)*T_CLK24 - $time);
+    check(audio === 1'b1, "line 3: bit 5 of 0xB1 before the replacing write");
+    cpu.write_word(io_addr(IO_AUDIO_OFF), 16'h0040);          // mid-line write
+    #(2*T_CLK24);
+    check(audio === 1'b0, "write replaces the register at once (bit 7 of 0x40)");
+    #(t_hs + (96 + 192*3)*T_CLK24 - $time);
+    check(audio === 1'b1, "shifting continues from the new byte (bit 6 of 0x40)");
+    #(t_hs + (96 + 192*4)*T_CLK24 - $time);
+    check(audio === 1'b0, "bit 5 of 0x40");
+    cpu.write_word(io_addr(IO_AUDIO_OFF), 16'h0000);
     end_test;
 
     // ------------------------------------------------------------------ 11

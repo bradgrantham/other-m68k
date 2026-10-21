@@ -12,7 +12,7 @@ from `generated/board_params.vh` (generated from `spec/board.json`), which both 
 | `cpld2_io.v` | CPLD2 "I/O + shifter": pixel path, registers, interrupt controller, PS/2 receiver, DUART IRQ routing, upper SRAM address bits MA18..MA17 |
 | `tb/tb_m68k_bus.v` | behavioural 68000 bus master with datasheet delays |
 | `tb/tb_sram.v` | 512Kx8 55 ns SRAM model (AS6C4008-55 class) with read timing and write-timing checks |
-| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, 2 flash, bus master, frame monitor, contention checker, MA18..17 edge checker, 14 tests |
+| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, 2 flash, bus master, frame monitor, contention checker, MA18..17 edge checker, 15 tests |
 | `Makefile` | `sim`, `wave`, `lint`, `synth`, `fit`, `clean` |
 | `fit.sh` | yosys -> EDIF -> Atmel fitter (wine); see "Synthesis and fitting" |
 | `pins.py` | harvest the fitter's pin choices into the sources' pin blocks / check them |
@@ -56,7 +56,7 @@ asserts this on every clock).
 
 | edge | `ph` before | CPLD1 | CPLD2 |
 |---|---|---|---|
-| **E0** | 7 | WE phase off, BUFEN off, IOCS off, DTACK(RAM/IO) off, RAMOE off. `serviced <= 1` if this slot serviced a cycle. H counter advances; DE for the new slot; HSYNC/VSYNC/V counter/VA reload/PAL change at the appropriate slot. | `pix <= active ? lo : 0` (second pixel). Write capture: if IOCS low and R/W low, latch D into the selected register (W1C for INTSTAT). Read side effects: PS2DATA read clears PS2RDY, SERDATA read clears SERRX. SERDATA write starts the transmitter. |
+| **E0** | 7 | WE phase off, BUFEN off, IOCS off, DTACK(RAM/IO) off, RAMOE off. `serviced <= 1` if this slot serviced a cycle. H counter advances; DE for the new slot; HSYNC/VSYNC/V counter/VA reload/PAL change at the appropriate slot. | `pix <= active ? lo : 0` (second pixel). Write capture: if IOCS low and R/W low, latch D into the selected register (W1C for INTSTAT; AUDIO loads the PDM shifter). Read side effects: PS2DATA read clears PS2RDY. Every 24th E0 after HSYNC rotates the PDM shifter. |
 | **E1** | 0 | `ma <= va` | |
 | **E2** | 1 | RAMOE on if this slot fetches (`de`) | |
 | **E3** | 2 | LATCH <= 1 | |
@@ -76,7 +76,7 @@ are the same thing).
 |---|---|---|---|
 | E0 | this slot | 4 | zero wait |
 | E6 (previous slot) | this slot | 5 | DTACK (E4) seen at E5 |
-| E2 | next slot | **7** | AS low at 229 ns misses E4; `architecture.md` says 6 (see STATUS.md) |
+| E2 | next slot | **7** | AS low at 229 ns misses E4 (see STATUS.md) |
 | E4 | next slot | 6 | |
 
 ROM, SWITCHES and overlay accesses take 4 clocks at any alignment (immediate DTACK).
@@ -138,17 +138,18 @@ Reset state: `ph=0`, `h=0`, `v=0`, `de=1`, `va=FB_PAGE0_WORD`, `overlay=1`, `pag
 | `ps2_clk`, `ps2_dat` | inout | open drain, driven low when the GPIO bit is 0 |
 | `a18`, `a19` | in | 68000 A18, A19 (spec rev 4) |
 | `ma17`, `ma18` | out | SRAM word address bits 17..18: `{a19,a18}` loaded at E4 (LATCH high), `FB_PAGE_HI` loaded at E1 (`ph2 == 0`); the same edges at which CPLD1 loads `ma[16:0]` |
-| `audio`, `led[1:0]` | out | GPIO bits |
+| `audio` | out | bit 7 of the 8-bit PDM shifter loaded by the AUDIO register (spec rev 5): rotated left at the HSYNC leading edge and every 24 slots after it, so 8 bits per line MSB first (~126 kHz); a line without a write repeats the byte |
+| `led[1:0]` | out | GPIO bits 4..3 |
 | `paljmp`, `nmibtn` | in | read in INTSTAT; `nmibtn` high forces IPL 7 |
 | `uio[3:0]` | inout | open drain; USERIO bits 3..0 drive, pin levels read in bits 11..8 |
 
 Registers (word offsets `IO_*_OFF`, bit positions `*_BIT`, all from the parameters file):
-INTSTAT (flags + live pins; W1C on VBLANK, HSYNC, PS2ERR, SERRXOVR), INTEN, SDIO, GPIO,
-PS2DATA, SERDATA, USERIO, ID (`ID_VALUE`). Reset values 0x0000 / 0x0003 / 0x0007 / 0x000F
-as in the spec. Address bits A4..A15 are not decoded (the register block is mirrored).
+INTSTAT (flags + live pins; W1C on VBLANK, HSYNC, PS2ERR), INTEN, SDIO, GPIO, PS2DATA,
+AUDIO, USERIO, ID (`ID_VALUE`). Reset values INTEN 0x0000 / SDIO 0x0001 / GPIO 0x0003 /
+AUDIO 0x0000 / USERIO 0x000F as in the spec. Address bits A4..A15 are not decoded (the register block is mirrored).
 
 * **Interrupts**: VBLANK flag on the rising edge of the (positive-logic) VSYNC, HSYNC flag
-  on the rising edge of HSYNC, PS2RDY on a completed PS/2 frame, SERRX on a received byte.
+  on the rising edge of HSYNC, PS2RDY on a completed PS/2 frame.
   `ipl_n` is the complement of the highest `IRQ_*_LEVEL` whose flag and enable are both set
   (computed as a max, so it follows the levels in the spec), or `IRQ_NMI_LEVEL` while the
   synchronised `nmibtn` is high. Flag set wins over a simultaneous clear.
@@ -160,8 +161,14 @@ as in the spec. Address bits A4..A15 are not decoded (the register block is mirr
 * **Serial**: none. The 68681 DUART on the CPU bus does it (spec rev 2); CPLD2 takes the
   DUART's open-drain IRQ on `duart_irq_n`, synchronises it, shows it as INTSTAT.DUARTIRQ and
   encodes level 3 when INTEN.DUART is set.
-* **Write-only control registers**: INTEN, SDIO, GPIO and USERIO.OUT read as 0 (the BIOS keeps
-  shadows). Every readable bit costs a product term and a fan-in on the data-bus LAB.
+* **Write-only control registers**: INTEN, SDIO, GPIO, AUDIO and USERIO.OUT read as 0 (the BIOS
+  keeps shadows).
+* **PDM audio** (spec rev 5): `aud_sh[7:0]` with `audio = aud_sh[7]`; a write to AUDIO loads it,
+  otherwise it rotates left at `hs_rise` and whenever the 5-bit slot counter `aud_cnt` (reset at
+  `hs_rise`) reaches 23 at an E0 edge, i.e. 8 rotations per 191-slot NTSC line (the last bit
+  period is 7 slots short). A write wins over a coincident rotate. GPIO bit 2 is stored but
+  drives nothing. Cost: 13 flops, +12 macrocells; CPLD2 is at 127/128 nodes, so this is the
+  last thing that fits. Every readable bit costs a product term and a fan-in on the data-bus LAB.
 * **Pixel path**: `pix` (the RGB pins) and `lo` as in the architecture doc (both zeroed when
   DE is low, so no `active` flop); pixels are 4 fast clocks each, upper byte first.
 
@@ -219,6 +226,9 @@ Tests (all pass; the suite runs ~143 ms of board time in ~30 s):
    (7b) PAL soft switch: in effect at the next frame start; 312 lines, 192 slots
 8. PS/2 frame -> PS2DATA, PS2RDY, IPL 2, cleared by the read; bad parity -> PS2ERR (W1C);
    truncated frame + silence -> watchdog resynchronises
+   (10b) AUDIO PDM shifter: a byte written just after the HSYNC edge appears on the pin MSB
+   first, one bit per 24 slots, 8 bits per line; the next line repeats it without a write; a
+   mid-line write replaces the register at once and shifting continues from the new byte
 9. DUART cycles (stub 68681 with open-drain DTACK 2.5 X1 clocks after CS): DUARTCS, byte
    read/write data and RS, CPLD1 releases DTACK, A5..A15 mirror, no IOCS/BUFEN/ROMOE/ROMWE
 10. DUART IRQ pin -> INTSTAT.DUARTIRQ, IPL 3 gated by INTEN.DUART
@@ -245,19 +255,24 @@ what costs what on this part.
 
 ### Results
 
-Current design (spec rev 4: DUART board, flash ROM, 1 MB SRAM), `-preassign keep` with the
+Current design (spec rev 5: DUART board, flash ROM, 1 MB SRAM, PDM audio), `-preassign keep` with the
 pin blocks in the sources, JTAG on, power_reset on, TDI/TMS pull-ups on (CPLD1 also
 xor_synthesis):
 
 | chip | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in | I/O pins |
 |---|---|---|---|---|---|---|---|---|
 | `cpld1_mmu` | 2 | **111 / 128** | 70 | 13 | 124 | 400 | 37 / 40 | 64 / 64 (incl. 4 JTAG) |
-| `cpld2_io` | 1 | **107 / 128** | 73 | 9 | 107 | 322 | 28 / 40 | 60 / 64 (incl. 4 JTAG) |
+| `cpld2_io` | 1 | **119 / 128** | 85 | 15 | 127 | 369 | 28 / 40 | 60 / 64 (incl. 4 JTAG) |
+| `cpld2_io` before rev 5 (no PDM) | 1 | 107 / 128 | 73 | 9 | 107 | 322 | 28 / 40 | 60 / 64 |
 
 Spec rev 4 (2x AS6C4008 = 1 MB) needed two more SRAM address lines; CPLD1 had no pin left,
 so CPLD2 drives MA18..MA17 from A19..A18 (inputs on pins 54/55, outputs on 56/57, fixed
 before fitting because the board netlist uses them): +3 macrocells, +4 I/O, still pass 1.
 CPLD1's RAM decode shrank from A23..A18 to A23..A20 but the kept-pin fit stays at 111 cells.
+
+Spec rev 5 (2026-10-21) added the 8-bit PDM audio shifter to CPLD2: +12 macrocells, +12 flops,
+no pin change (all 60 placements identical to the rev 4 fit, audio still on pin 25), so it is
+a JED-only change for rev B4 boards. Nodes+foldbacks are at 127/128: CPLD2 is full.
 
 Spec rev 3 added ROMWE (flash write strobe) to CPLD1 on its last free I/O (pin 50) and
 widened the ROM window to 1 MB. The fitter now needs pass 2 (cascade logic) with the pin
