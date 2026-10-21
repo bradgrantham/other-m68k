@@ -24,7 +24,7 @@ static void srec_store(void *ctx, uint32_t addr, const uint8_t *data, int n)
 }
 
 /* Line terminators: CR, LF or CRLF. A LF directly after a CR is part of the same end of
- * line (S-record files and most terminals send CRLF). */
+ * line (most terminals send CRLF). */
 static int prev_cr;
 static int getchar_eol(void)
 {
@@ -36,47 +36,43 @@ static int getchar_eol(void)
     }
 }
 
-/* Read one raw line without echo. Returns length, or -1 on ESC. */
-static int read_raw_line(char *buf, int max)
+/* S-records arrive on serial port A, which is not console input after the POST: read it
+ * directly. Returns the line length, or -1 if ESC was pressed on the keyboard or received
+ * on the port. Nothing is echoed while records arrive: at 38400 baud a record line lands
+ * every ~11 ms and echoing it (console glyphs, a 35 ms scroll) would take longer than
+ * that, so the 512-byte RX ring would overflow within a few lines. The DUART's 3-byte
+ * FIFO is drained by the level-3 ISR, which keeps running during the parse. */
+static int read_serial_line(char *buf, int max)
 {
-    int n = 0;
+    int n = 0, cr = 0;
     for (;;) {
-        int c = getchar_eol();
+        int c;
+        while ((c = serial_getc()) < 0)
+            if (input_pollchar() == 0x1B) return -1;
+        if (c == '\n' && cr) { cr = 0; continue; }
+        cr = (c == '\r');
         if (c == 0x1B) return -1;
         if (c == '\r' || c == '\n') { buf[n] = 0; return n; }
         if (n < max - 1) buf[n++] = (char)c;
     }
 }
 
-/* `first` is the already-read start of the first line ("S" + digit) or NULL. Nothing is
- * echoed while records arrive: at 38400 baud a record line lands every ~11 ms, and
- * echoing it (console glyphs, a 35 ms scroll, the serial copy) would take longer than
- * that, so the 512-byte RX ring would overflow within a few lines. The DUART's 3-byte
- * FIFO is drained by the level-3 ISR, which keeps running during the parse. */
-static void srec_receive(const char *first)
+static void srec_receive(void)
 {
     static char line[SREC_LINE_MAX];
     struct srec_state s;
     srec_init(&s, srec_store, 0);
     srec_rejected = 0;
-    int n;
-    if (first) {
-        size_t l = strlen(first);
-        memcpy(line, first, l);
-        n = read_raw_line(line + l, (int)(SREC_LINE_MAX - l));
-        if (n < 0) { kprintf("aborted\n"); return; }
-        n += (int)l;
-    } else {
-        kprintf("send S-records (ESC aborts)\n");
-        n = read_raw_line(line, SREC_LINE_MAX);
-        if (n < 0) { kprintf("aborted\n"); return; }
-    }
+    while (serial_getc() >= 0) ;                        /* stale bytes */
+    kprintf("send S-records on serial A (ESC aborts)\n");
+    int n = read_serial_line(line, SREC_LINE_MAX);
+    if (n < 0) { kprintf("aborted\n"); return; }
     for (;;) {
         if (n > 0) {
             if (line[0] != 'S' && line[0] != 's') break;   /* a non-record line ends the upload */
             if (srec_line(&s, line) == 1) break;
         }
-        n = read_raw_line(line, SREC_LINE_MAX);
+        n = read_serial_line(line, SREC_LINE_MAX);
         if (n < 0) break;
     }
     kprintf("srec: %u records, %u bytes", s.records, s.bytes);
@@ -91,24 +87,13 @@ static void srec_receive(const char *first)
 
 /* ---- line editor ------------------------------------------------------------------ */
 
-/* Returns the line length, or -1 if an S-record upload was handled instead. */
+/* Returns the line length. */
 static int read_line(char *buf, int max)
 {
-    int n = 0, pending_s = 0;
+    int n = 0;
     con_cursor_show(1);
     for (;;) {
         int c = getchar_eol();
-        if (pending_s) {
-            pending_s = 0;
-            if (c >= '0' && c <= '9') {
-                char first[3] = { 'S', (char)c, 0 };
-                con_cursor_show(0);
-                srec_receive(first);
-                return -1;
-            }
-            putchar_both('S');
-            buf[n++] = 'S';
-        }
         if (c == '\r' || c == '\n') {
             buf[n] = 0;
             con_cursor_show(0);
@@ -132,7 +117,6 @@ static int read_line(char *buf, int max)
             continue;
         }
         if (c < 0x20 || c > 0x7E) continue;
-        if (n == 0 && c == 'S') { pending_s = 1; continue; }   /* hold the echo */
         if (n < max - 1) { buf[n++] = (char)c; putchar_both(c); }
     }
 }
@@ -187,7 +171,7 @@ static void cmd_help(void)
             "fill a len v   fill bytes\n"
             "go [a]         run in user mode\n"
             "regs           last exception\n"
-            "srec           receive S-records\n"
+            "srec           receive S-records on serial A\n"
             "reset led n  page n  ticks  cls\n"
             "ramtest  beep  info\n"
             "sd [rd lba]    card info / dump block\n"
@@ -494,7 +478,7 @@ static void execute(char *line)
     else if (!strcmp(c, "beep")) cmd_beep();
     else if (!strcmp(c, "cls")) con_clear();
     else if (!strcmp(c, "info")) cmd_info();
-    else if (!strcmp(c, "srec")) srec_receive(0);
+    else if (!strcmp(c, "srec")) srec_receive();
     else if (!strcmp(c, "sd")) cmd_sd(argc, argv);
     else if (!strcmp(c, "dir") || !strcmp(c, "ls")) cmd_dir(argc, argv);
     else if (!strcmp(c, "cat") || !strcmp(c, "type")) cmd_cat(argc, argv);

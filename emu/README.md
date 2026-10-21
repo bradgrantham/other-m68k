@@ -4,7 +4,7 @@
 peripherals: 1 MB RAM, the 1 MB ROM window (two SST39SF040 flash chips, in-system
 programmable) with the reset overlay, the CPLD2 registers, the soft
 switches, the 320x240 RGB332 framebuffer in an SDL2 window, the 68681 DUART (channel A is the
-serial console), the PS/2 keyboard, an SDHC card on the native 4-bit SD bus (spec rev 7), the 8-bit PDM audio shifter (spec rev 5)
+host's stdin/stdout: the BIOS's POST and banner, then whatever a program sends to `/dev/ttya`), the PS/2 keyboard, an SDHC card on the native 4-bit SD bus (spec rev 7), the 8-bit PDM audio shifter (spec rev 5)
 and the NMI/reset buttons.
 Addresses, bits and timing constants come from `generated/hw.h` / `generated/emu_map.h`; nothing
 is hard-coded that the spec defines.
@@ -34,6 +34,7 @@ m68k-emu --rom fw/build/rom.bin [options]
   --sd-sdsc           emulate a byte-addressed SDSC card (CSD v1)
   --io-trace          log CPLD2 and DUART register accesses, soft switches and serial RX arrivals with cycle stamps
   --dump-regs-on-exit                                                --dump-mem ADDR LEN   hex dump at exit (repeatable)
+  --text-dump FILE    the 40x30 console text decoded from page 0 at exit (- = stdout); the BIOS console is video only after the POST
   --no-audio          disable audio                                  --no-stdin       do not read serial RX from stdin
   --audio-wav FILE    write the rendered audio to a 48 kHz 16-bit mono WAV (also with --headless / --fast)
   --audio-edge-log FILE  log every audio pin edge as 'cycle level' (timing checks)
@@ -163,8 +164,10 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   Not modelled: parity/framing/break detection, CTS/RTS, loopback and multidrop modes, the
   input-port change detector, 1X/16X clock outputs on OP pins, the "do not access" test
   registers (they read 0xFF with a one-time warning).
-* **Console** (`serial.c`): the host side of channel A (stdout, `--serial-log`, stdin raw
-  mode, `--serial-type` injection) and channel B's log file; no timing of its own.
+* **Serial** (`serial.c`): the host side of channel A (stdout, `--serial-log`, stdin raw
+  mode, `--serial-type` injection) and channel B's log file; no timing of its own. The BIOS
+  mirrors only the POST and banner there, so `--text-dump` (video.c) decodes the 40x30
+  console text from page 0 by matching 8x8 cells against the BIOS font.
 * **PS/2** (`ps2.c`): make/break sequences queued and delivered one byte per 1 ms of emulated
   time, only while PS2RDY is clear (the register is a single holding latch). Host-to-device
   traffic on GPIO.PS2CLK/PS2DAT is not emulated; the lines read back as the GPIO drives them
@@ -241,7 +244,7 @@ is a 1..3 slot run plus the line-start jitter; the `--audio-wav` file has a cons
 | `io.c/h` | CPLD2 registers, W1C flags, write-only shadows, PDM audio shifter, IPL, soft-switch latches, `--io-trace` |
 | `video.c/h` | NTSC/PAL timing, live pins, RGB332 -> ARGB8888, SDL window |
 | `duart.c/h` | MC68681 model: channels, FIFOs, ISR/IMR, counter/timer, bit timing |
-| `serial.c/h` | console back end: stdout, logs, stdin raw mode, `--serial-type` |
+| `serial.c/h` | DUART channel A host side: stdout, logs, stdin raw mode, `--serial-type` |
 | `ps2.c/h` | scan code set 2 keyboard, `--type` |
 | `sdcard.c/h` | native-bus SD card (1- and 4-bit data, CRC7/CRC16, state machine) |
 | `audio.c/h` | audio pin renderer: edges -> 48 kHz, SDL queue, `--audio-wav`, `--audio-edge-log` |

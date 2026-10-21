@@ -109,20 +109,20 @@ enum {
 
 /* ---- user-side prototypes (implemented by generated/syscall_stubs.S) ---- */
 void sys_exit(int code); /* Terminate the program and return to the monitor. */
-int sys_putchar(int c); /* Write a character to the console (video + serial). */
-int sys_getchar(void); /* Blocking read of one character from keyboard or serial. */
-int sys_pollchar(void); /* Non-blocking read; -1 if no character is available. */
-int sys_puts(const char * s); /* Write a NUL-terminated string to the console (no newline added). */
-int sys_serial_putc(int c); /* Write a byte to the serial port only. */
-int sys_serial_getc(void); /* Non-blocking serial read; -1 if none. */
+int sys_putchar(int c); /* Write a character to the video console. */
+int sys_getchar(void); /* Blocking read of one character from the keyboard. */
+int sys_pollchar(void); /* Non-blocking keyboard read; -1 if no character is available. */
+int sys_puts(const char * s); /* Write a NUL-terminated string to the video console (no newline added). */
+int sys_serial_putc(int c); /* Write a byte to serial port A (free for programs after the POST; see also /dev/ttya). */
+int sys_serial_getc(void); /* Non-blocking read from serial port A's receive ring; -1 if none. */
 uint32_t sys_ticks(void); /* Frames since boot (VBLANK counter, ~60 Hz). */
 void sys_wait_vblank(void); /* Block until the next vertical blanking interval. */
 int sys_video_info(struct video_info * info); /* Fill in framebuffer geometry, page addresses and current page. */
 int sys_video_set_page(int page); /* Select displayed framebuffer page (0 or 1); takes effect at next frame. */
-int sys_open(int flags, const char * path); /* Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. */
+int sys_open(int flags, const char * path); /* Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. Paths starting with /dev/ open a device instead (serial.devices); /dev/ttya needs no card. */
 int sys_close(int fd); /* Close a file. */
-int sys_read(int fd, unsigned len, void * buf); /* Read up to len bytes. Returns count or negative error. */
-int sys_write(int fd, unsigned len, const void * buf); /* Write len bytes. Returns count or negative error. */
+int sys_read(int fd, unsigned len, void * buf); /* Read up to len bytes. Returns count or negative error. fd 0 is the keyboard (blocks for the first byte, then returns what is queued); /dev/ttya behaves the same on the serial ring. */
+int sys_write(int fd, unsigned len, const void * buf); /* Write len bytes. Returns count or negative error. fd 1 and 2 are the video console; a /dev/ttya descriptor sends raw bytes to serial port A. */
 int sys_lseek(int fd, int offset, int whence); /* Reposition; returns new offset or negative error. */
 int sys_opendir(const char * path); /* Open a directory; returns handle or negative error. */
 int sys_readdir(int handle, struct dirent * ent); /* Next entry; 1 if filled, 0 at end, negative error. */

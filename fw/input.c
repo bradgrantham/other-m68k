@@ -40,9 +40,7 @@ int input_key_event(void)
 
 int input_pollchar(void)
 {
-    int c = queue_get(&kbd_q);
-    if (c < 0) c = queue_get(&serial_rx_q);
-    return c;
+    return queue_get(&kbd_q);           /* serial_rx_q is drained by /dev/ttya and serial_getc */
 }
 
 int input_getchar(void)

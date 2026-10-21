@@ -108,7 +108,7 @@ void delay_us(uint32_t us);
 
 /* ---- input.c ---- */
 void input_init(void);
-int input_pollchar(void);               /* keyboard first, then serial; -1 if none */
+int input_pollchar(void);               /* keyboard; -1 if none (serial is not console input) */
 int input_getchar(void);                /* blocking */
 int input_key_event(void);              /* -1 if none */
 extern struct queue serial_rx_q;
@@ -173,6 +173,7 @@ extern uint32_t last_entry;             /* default address for `go` */
 extern uint16_t post_rom_sum;           /* 16-bit word sum from POST (0 = good) */
 void bios_main(void);
 void print_banner(void);
-void putchar_both(int c);               /* console + serial */
+void putchar_both(int c);               /* console, plus serial while console_serial is set */
+extern int console_serial;              /* 1 during POST/banner, 0 after: serial A belongs to programs */
 
 #endif

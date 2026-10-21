@@ -3,6 +3,7 @@
 #define VIDEO_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 struct video_timing {
     const char *name;
@@ -39,5 +40,6 @@ int  video_present(void);
 
 /* Pointer to the 320x240 ARGB8888 image (for tests/screenshots). */
 const uint32_t *video_pixels(void);
+void video_text_dump(FILE *out);      /* 40x30 console text decoded from page 0 (--text-dump) */
 
 #endif

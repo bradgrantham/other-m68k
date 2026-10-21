@@ -273,4 +273,5 @@ Per line: HSYNC flag at the line's sync start; VBLANK flag at the
 first vsync line. RAM accesses may optionally add the alignment penalty (average +1 clock)
 for realism; ROM accesses none. The 68681 is modelled at register level (FIFOs, status,
 interrupts, counter/timer, bit-rate-timed transmit and receive); channel A is the emulator's
-serial console.
+stdin/stdout, carrying the POST and banner and then whatever a program sends through
+`/dev/ttya` (the BIOS console is video only after the banner, spec rev 8).

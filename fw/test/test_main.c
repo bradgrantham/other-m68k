@@ -9,6 +9,14 @@ static uint16_t ev_out[64]; static int ev_n;
 void input_kbd_push(uint8_t c) { if (kbd_n < 255) kbd_out[kbd_n++] = (char)c; kbd_out[kbd_n] = 0; }
 void input_key_event_push(uint16_t ev) { if (ev_n < 64) ev_out[ev_n++] = ev; }
 static void kbd_reset(void) { kbd_n = 0; kbd_out[0] = 0; ev_n = 0; }
+
+/* ---- DUART channel A stand-in for fs.c's /dev/ttya ---- */
+char test_serial_out[256]; int test_serial_out_n;
+static uint8_t serial_in[256]; static int serial_in_r, serial_in_w;
+void serial_putc(int c) { if (test_serial_out_n < 255) test_serial_out[test_serial_out_n++] = (char)c; test_serial_out[test_serial_out_n] = 0; }
+int serial_getc(void) { return serial_in_r < serial_in_w ? serial_in[serial_in_r++] : -1; }
+void test_serial_feed(const char *s) { while (*s && serial_in_w < 256) serial_in[serial_in_w++] = (uint8_t)*s++; }
+void test_serial_reset(void) { test_serial_out_n = 0; test_serial_out[0] = 0; serial_in_r = serial_in_w = 0; }
 static void feed(const uint8_t *b, int n) { while (n--) ps2_feed(*b++); }
 
 static void test_printf(void)

@@ -1,5 +1,6 @@
 /* File descriptor table and POSIX-ish semantics over FatFs R0.15 (8.3 names, one volume,
- * tiny mode: all partial-sector traffic goes through the FATFS window). */
+ * tiny mode: all partial-sector traffic goes through the FATFS window), plus the /dev/
+ * devices, which share the descriptor slots. */
 #include "bios.h"
 #include "fs.h"
 #include "sd.h"
@@ -8,7 +9,8 @@
 static FATFS fatfs;
 static int fs_mounted;
 
-struct fs_file { FIL fil; uint8_t used; uint8_t append; uint8_t mode; };
+enum { DEV_NONE = 0, DEV_TTYA };
+struct fs_file { FIL fil; uint8_t used; uint8_t append; uint8_t mode; uint8_t dev; };
 struct fs_dir  { DIR dir; uint8_t used; };
 static struct fs_file files[FS_NFILES];
 static struct fs_dir dirs[FS_NDIRS];
@@ -75,7 +77,7 @@ void fs_invalidate(void)
 {
     fs_mounted = 0;
     sd_card.ready = 0;
-    for (int i = 0; i < FS_NFILES; i++) files[i].used = 0;
+    for (int i = 0; i < FS_NFILES; i++) if (!files[i].dev) files[i].used = 0;   /* devices survive card errors */
     for (int i = 0; i < FS_NDIRS; i++) dirs[i].used = 0;
 }
 
@@ -88,16 +90,59 @@ static struct fs_file *fs_file(int fd)
     return &files[i];
 }
 
+/* ---- devices ------------------------------------------------------------------------- */
+
+static int dev_lookup(const char *path)
+{
+    if (strncmp(path, "/dev/", 5)) return DEV_NONE;
+    if (!strcmp(path + 5, "ttya")) return DEV_TTYA;
+    return -1;                              /* a /dev/ name we do not have */
+}
+
+/* /dev/ttya read: like the keyboard on fd 0, block for the first byte and then return
+ * whatever else the level-3 ISR has already put in the ring. */
+static int dev_read(int dev, uint8_t *p, unsigned len)
+{
+    (void)dev;
+    unsigned n = 0;
+    if (!len) return 0;
+    int c;
+    while ((c = serial_getc()) < 0) ;
+    p[n++] = (uint8_t)c;
+    while (n < len && (c = serial_getc()) >= 0) p[n++] = (uint8_t)c;
+    return (int)n;
+}
+
+static int dev_write(int dev, const uint8_t *p, unsigned len)
+{
+    (void)dev;
+    for (unsigned i = 0; i < len; i++) serial_putc(p[i]);    /* raw: no newline translation */
+    return (int)len;
+}
+
+/* ---- files --------------------------------------------------------------------------- */
+
 int fs_open(int flags, const char *path)
 {
+    int acc = flags & 3;
+    if (acc == 3) return E_INVAL;
+    int dev = dev_lookup(path);
+    if (dev < 0) return E_NOENT;
+    int i;
+    if (dev) {                              /* a device: no card needed, create/trunc/append ignored */
+        for (i = 0; i < FS_NFILES && files[i].used; i++) ;
+        if (i == FS_NFILES) return E_NFILE;
+        files[i].used = 1;
+        files[i].dev = (uint8_t)dev;
+        files[i].append = 0;
+        files[i].mode = (acc == O_WRONLY) ? FA_WRITE : (acc == O_RDWR) ? FA_READ | FA_WRITE : FA_READ;
+        return FS_FD_BASE + i;
+    }
     int rc = fs_mount();
     if (rc) return rc;
-    int i;
     for (i = 0; i < FS_NFILES && files[i].used; i++) ;
     if (i == FS_NFILES) return E_NFILE;
 
-    int acc = flags & 3;
-    if (acc == 3) return E_INVAL;
     BYTE mode = (acc == O_WRONLY) ? FA_WRITE : (acc == O_RDWR) ? FA_READ | FA_WRITE : FA_READ;
     if (flags & (O_CREAT | O_TRUNC | O_APPEND)) {
         if (acc == O_RDONLY) return E_INVAL;
@@ -114,6 +159,7 @@ int fs_open(int flags, const char *path)
     f->used = 1;
     f->append = (flags & O_APPEND) ? 1 : 0;
     f->mode = mode;
+    f->dev = DEV_NONE;
     return FS_FD_BASE + i;
 }
 
@@ -121,8 +167,9 @@ int fs_close(int fd)
 {
     struct fs_file *f = fs_file(fd);
     if (!f) return E_BADF;
-    FRESULT r = f_close(&f->fil);
     f->used = 0;
+    if (f->dev) return 0;
+    FRESULT r = f_close(&f->fil);
     return fs_err(r);
 }
 
@@ -131,6 +178,7 @@ int fs_read(int fd, void *buf, unsigned len)
     struct fs_file *f = fs_file(fd);
     if (!f) return E_BADF;
     if (!(f->mode & FA_READ)) return E_BADF;
+    if (f->dev) return dev_read(f->dev, buf, len);
     UINT got = 0;
     FRESULT r = f_read(&f->fil, buf, len, &got);
     if (r != FR_OK) return fs_err(r);
@@ -142,6 +190,7 @@ int fs_write(int fd, const void *buf, unsigned len)
     struct fs_file *f = fs_file(fd);
     if (!f) return E_BADF;
     if (!(f->mode & FA_WRITE)) return E_BADF;
+    if (f->dev) return dev_write(f->dev, buf, len);
     FRESULT r;
     if (f->append) {
         r = f_lseek(&f->fil, f_size(&f->fil));
@@ -158,6 +207,7 @@ int fs_lseek(int fd, int offset, int whence)
 {
     struct fs_file *f = fs_file(fd);
     if (!f) return E_BADF;
+    if (f->dev) return E_INVAL;                 /* a stream is not seekable */
     int32_t base;
     switch (whence) {
     case SEEK_SET: base = 0; break;
@@ -176,6 +226,7 @@ int fs_size(int fd)
 {
     struct fs_file *f = fs_file(fd);
     if (!f) return E_BADF;
+    if (f->dev) return E_INVAL;
     return (int)f_size(&f->fil);
 }
 
@@ -222,7 +273,7 @@ int fs_closedir(int handle)
 void fs_close_all(void)
 {
     for (int i = 0; i < FS_NFILES; i++)
-        if (files[i].used) { f_close(&files[i].fil); files[i].used = 0; }
+        if (files[i].used) { if (!files[i].dev) f_close(&files[i].fil); files[i].used = 0; }
     for (int i = 0; i < FS_NDIRS; i++)
         if (dirs[i].used) { f_closedir(&dirs[i].dir); dirs[i].used = 0; }
 }

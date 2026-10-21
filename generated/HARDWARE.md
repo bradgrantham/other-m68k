@@ -333,7 +333,7 @@ autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied in
 
 ## Peripherals
 
-**serial**: device: MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header); baud: 38400; format: 8N1; xtal_hz: 3686400; csr: 0xCC; acr_brg_set: 0; mr1: 0x13; mr2: 0x07; cr_commands: OrderedDict({'RESET_MR': '0x10', 'RESET_RX': '0x20', 'RESET_TX': '0x30', 'RESET_ERR': '0x40', 'RESET_BRK': '0x50', 'ENABLE': '0x05'}); init: MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x00 (baud-rate set 1), CSRA=0xCC (38.4k RX and TX), CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts; note: 38400 is the highest rate in the 68681's fixed tables: CSR code 0xC is 38.4k in set 1 (ACR[7]=0) and 19.2k in set 2 (ACR[7]=1), data sheet Table 4-5. The counter/timer or an external 16x clock could give more but are not used.; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected
+**serial**: device: MC68681 DUART channel A on the FTDI header (channel B TXD/RXD brought to the expansion header); baud: 38400; format: 8N1; xtal_hz: 3686400; csr: 0xCC; acr_brg_set: 0; mr1: 0x13; mr2: 0x07; cr_commands: OrderedDict({'RESET_MR': '0x10', 'RESET_RX': '0x20', 'RESET_TX': '0x30', 'RESET_ERR': '0x40', 'RESET_BRK': '0x50', 'ENABLE': '0x05'}); init: MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x00 (baud-rate set 1), CSRA=0xCC (38.4k RX and TX), CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts; note: 38400 is the highest rate in the 68681's fixed tables: CSR code 0xC is 38.4k in set 1 (ACR[7]=0) and 19.2k in set 2 (ACR[7]=1), data sheet Table 4-5. The counter/timer or an external 16x clock could give more but are not used.; connector: 6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected; console: Channel A carries the power-on self test report and the BIOS banner. After the banner the BIOS releases it: console output (monitor, exceptions, putchar/puts/write to fd 1 and 2) goes to the video console only and console input (getchar/pollchar, read from fd 0) comes from the PS/2 keyboard only. The receive interrupt keeps filling the 512-byte ring, which serial_getc and reads of /dev/ttya drain; the BIOS itself never touches the port again except for the monitor's `srec` command while it runs.; devices: `/dev/ttya` (DUART channel A as a byte stream: open(O_RDONLY/O_WRONLY/O_RDWR; O_CREAT, O_TRUNC and O_APPEND are ignored) needs no card. write sends raw bytes (no newline translation, blocks on the transmitter). read blocks for the first byte and then returns what else is already in the receive ring, up to len. lseek is E_INVAL. Unknown /dev/ names are E_NOENT. An operating system personality that wants a serial terminal opens this and uses it as its console; the BIOS's own console stays on video.)
 
 **ps2**: rx: hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY; tx: software bit-bang via GPIO.PS2CLK/PS2DAT open-drain bits; connector: 6-pin mini-DIN, 5V
 
@@ -352,20 +352,20 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | # | Name | Prototype | Description |
 |---|---|---|---|
 | 0 | exit | `void sys_exit(int code)` | Terminate the program and return to the monitor. |
-| 1 | putchar | `int sys_putchar(int c)` | Write a character to the console (video + serial). |
-| 2 | getchar | `int sys_getchar(void)` | Blocking read of one character from keyboard or serial. |
-| 3 | pollchar | `int sys_pollchar(void)` | Non-blocking read; -1 if no character is available. |
-| 4 | puts | `int sys_puts(const char * s)` | Write a NUL-terminated string to the console (no newline added). |
-| 5 | serial_putc | `int sys_serial_putc(int c)` | Write a byte to the serial port only. |
-| 6 | serial_getc | `int sys_serial_getc(void)` | Non-blocking serial read; -1 if none. |
+| 1 | putchar | `int sys_putchar(int c)` | Write a character to the video console. |
+| 2 | getchar | `int sys_getchar(void)` | Blocking read of one character from the keyboard. |
+| 3 | pollchar | `int sys_pollchar(void)` | Non-blocking keyboard read; -1 if no character is available. |
+| 4 | puts | `int sys_puts(const char * s)` | Write a NUL-terminated string to the video console (no newline added). |
+| 5 | serial_putc | `int sys_serial_putc(int c)` | Write a byte to serial port A (free for programs after the POST; see also /dev/ttya). |
+| 6 | serial_getc | `int sys_serial_getc(void)` | Non-blocking read from serial port A's receive ring; -1 if none. |
 | 7 | ticks | `uint32_t sys_ticks(void)` | Frames since boot (VBLANK counter, ~60 Hz). |
 | 8 | wait_vblank | `void sys_wait_vblank(void)` | Block until the next vertical blanking interval. |
 | 9 | video_info | `int sys_video_info(struct video_info * info)` | Fill in framebuffer geometry, page addresses and current page. |
 | 10 | video_set_page | `int sys_video_set_page(int page)` | Select displayed framebuffer page (0 or 1); takes effect at next frame. |
-| 11 | open | `int sys_open(int flags, const char * path)` | Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. |
+| 11 | open | `int sys_open(int flags, const char * path)` | Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. Paths starting with /dev/ open a device instead (serial.devices); /dev/ttya needs no card. |
 | 12 | close | `int sys_close(int fd)` | Close a file. |
-| 13 | read | `int sys_read(int fd, unsigned len, void * buf)` | Read up to len bytes. Returns count or negative error. |
-| 14 | write | `int sys_write(int fd, unsigned len, const void * buf)` | Write len bytes. Returns count or negative error. |
+| 13 | read | `int sys_read(int fd, unsigned len, void * buf)` | Read up to len bytes. Returns count or negative error. fd 0 is the keyboard (blocks for the first byte, then returns what is queued); /dev/ttya behaves the same on the serial ring. |
+| 14 | write | `int sys_write(int fd, unsigned len, const void * buf)` | Write len bytes. Returns count or negative error. fd 1 and 2 are the video console; a /dev/ttya descriptor sends raw bytes to serial port A. |
 | 15 | lseek | `int sys_lseek(int fd, int offset, int whence)` | Reposition; returns new offset or negative error. |
 | 16 | opendir | `int sys_opendir(const char * path)` | Open a directory; returns handle or negative error. |
 | 17 | readdir | `int sys_readdir(int handle, struct dirent * ent)` | Next entry; 1 if filled, 0 at end, negative error. |

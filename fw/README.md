@@ -60,7 +60,9 @@ emu/build/m68k-emu --rom fw/build/rom.bin --headless --frames 500 --type "help\n
 ```
 
 The serial port is the emulator's stdin/stdout (`--serial-log FILE` keeps a copy;
-`--serial-type "text\n"` injects serial input, `--type` types on the PS/2 keyboard).
+`--serial-type "text\n"` injects serial input, `--type` types on the PS/2 keyboard). Only
+the POST and the banner reach serial: after that the console is video only, so headless
+runs read the screen with `--text-dump FILE` (the 40x30 text decoded from page 0 at exit).
 
 With an SD card image (see "SD card" below for making one):
 
@@ -70,7 +72,7 @@ S=/tmp/sdimg; mkdir -p $S
 for p in hello plasma ls cat fstest; do cp sdk/build/$p.elf $S/$(echo $p | tr a-z A-Z).ELF; done
 sh fw/test/mkimage.sh $S/sd.img 64 $S/*.ELF fw/test/data/README.TXT     # mkfs.vfat + mcopy
 ./emu/build/m68k-emu --rom fw/build/rom.bin --sd $S/sd.img --headless --frames 1500 \
-    --serial-log $S/run.log --type "sd\ndir\nrun hello.elf\nx\n" --type-delay 350 \
+    --text-dump $S/screen.txt --type "sd\ndir\nrun hello.elf\nx\n" --type-delay 350 \
     --no-audio --no-stdin
 ```
 
@@ -231,9 +233,17 @@ Receive is interrupt driven: `IMR = RXRDYA` (set in `serial_init`), the DUART's 
 gated by `INTEN.DUART` to level 3, and `irq_duart` reads the DUART `ISR`, then pops `RBA`
 while `SRA.RXRDY`, counting `SRA.OE` as an overrun (and issuing the "reset error status"
 command 0x40 to clear it). The interrupt is level sensitive, so draining the 3-byte FIFO
-is what releases it. `INTSTAT.DUARTIRQ` shows the live pin. The monitor does not echo
-while receiving S-records (printing a line takes longer than a line takes to arrive);
-hosts should wait for the prompt before sending. Channel B is not used by the BIOS.
+is what releases it. `INTSTAT.DUARTIRQ` shows the live pin. Channel B is not used by the BIOS.
+
+The BIOS uses channel A only for the POST report and the banner (`console_serial` in
+`main.c`). After the banner the port is released (spec `serial.console`): `putchar_both`
+writes video only, `input_pollchar` reads the keyboard only, and nothing in the BIOS
+touches the port again except the monitor's `srec` command while it runs. The RX interrupt
+keeps filling the 512-byte ring, which `sys_serial_getc` and reads of `/dev/ttya` drain.
+A program claims the port by `sys_open`ing `/dev/ttya` (no card needed; `fs.c` gives it a
+descriptor slot): `read` blocks for one byte and returns what else is queued, `write`
+sends raw bytes, `lseek` is `E_INVAL`. An operating system personality that wants a
+serial terminal (CP/M-68K style) opens that and keeps the BIOS console on the screen.
 
 INTEN, GPIO and AUDIO are write-only in CPLD2 (they read as 0); the BIOS keeps
 `inten_shadow` and `gpio_shadow` and every write goes through `irq_update_inten` /
@@ -320,8 +330,9 @@ again rather than `go` to restart a loaded program.
 40 columns x 30 rows, 8x8 font (public-domain `font8x8_basic.h` from dhepper/font8x8),
 white on dark blue, page 0. Handles `\n` (CR+LF), `\r`, `\b` (non-destructive), `\t`
 (8 columns); scrolls at the bottom (a scroll is a 74 KB move, ~35 ms). Everything printed
-on the console is also sent to the serial port with `\n` -> `\r\n`. Input is merged from
-the keyboard (ASCII) and the serial port; `sys_key_event` reads raw PS/2 events.
+on the console during the POST and the banner is also sent to the serial port with `\n`
+-> `\r\n`; after the banner the console is video only (see "Serial"). Input is the
+keyboard (ASCII); `sys_key_event` reads raw PS/2 events.
 
 Keyboard: US layout, shift/caps/ctrl. Arrows -> `ESC [ A/B/C/D`, Home/End -> `ESC [ H/F`,
 Ins/Del/PgUp/PgDn -> `ESC [ 2~/3~/5~/6~`, F1-F4 -> `ESC O P..S`, F5-F12 -> `ESC [ 15~ 17~
@@ -346,7 +357,7 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 | `fill addr len v` | fill bytes |
 | `go [addr]` | run a program in user mode (default: the last S-record entry point, else 0x4000) |
 | `regs` | registers of the last exception |
-| `srec` | receive S-records (also auto-detected: any line starting with `S` and a digit) |
+| `srec` | receive S-records on serial port A (ESC on the keyboard or the port aborts) |
 | `reset` | RESET instruction, then the reset path |
 | `led n` | LEDs (bit 0 = LED0, bit 1 = LED1) |
 | `page n` | display framebuffer page 0 or 1 |
@@ -364,12 +375,15 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 
 ### S-record upload
 
-Send the `.srec` produced by the SDK (`objcopy -O srec`) over the serial port, for example
-`cat prog.srec > /dev/ttyUSB0` after the prompt appears. The monitor recognises the first
-`S<digit>` line, stops echoing, stores S1/S2/S3 data (only into 0x4000-0xFFFFF; records
-outside that are counted and dropped), and finishes at the S7/S8/S9 record, printing
-`srec: N records, M bytes, start-end, entry E`. Then `go` runs it. In the emulator, pipe
-the file to stdin once the prompt is visible (the emulator reads stdin as serial RX).
+Type `srec` in the monitor (on the keyboard: serial is not console input), then send the
+`.srec` produced by the SDK (`objcopy -O srec`) over the serial port, for example
+`cat prog.srec > /dev/ttyUSB0`. The monitor reads serial port A directly without echoing
+(at 38400 baud a record arrives every ~11 ms and echoing one would take longer, so the
+512-byte ring would overflow), stores S1/S2/S3 data (only into 0x4000-0xFFFFF; records
+outside that are counted and dropped), and finishes at the S7/S8/S9 record or at the first
+non-record line, printing `srec: N records, M bytes, start-end, entry E`. Then `go` runs
+it. In the emulator, type `srec` with `--type` and pipe the file to stdin or pass it with
+`--serial-type` (the emulator feeds stdin to the DUART as serial RX).
 
 ### Running programs
 

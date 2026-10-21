@@ -2,9 +2,11 @@
  * plain names (write, read, sbrk, ...), not _write etc. Everything maps onto TRAP #15
  * system calls from generated/syscall_stubs.S.
  *
- *   fd 0       console input  (read(): a small line editor with echo)
- *   fd 1, 2    console output (video + serial) via sys_write
- *   fd >= 3    SD card files via sys_open/read/write/lseek/close (8.3 names, see fw/README.md)
+ *   fd 0       console input  (read(): a small line editor with echo; the keyboard)
+ *   fd 1, 2    console output (the video console) via sys_write
+ *   fd >= 3    SD card files via sys_open/read/write/lseek/close (8.3 names, see fw/README.md),
+ *              or devices: open("/dev/ttya") is serial port A, which the BIOS releases
+ *              after the POST; those fds report isatty() so stdio line-buffers them
  *   sbrk       __heap_start .. mem_info.user_end - STACK_RESERVE
  *
  * newlib's O_* flag values (fcntl.h) differ from the BIOS ABI's (syscalls.h); open()
@@ -113,18 +115,26 @@ void *sbrk(ptrdiff_t incr)
     return old;
 }
 
+static unsigned dev_fds;                        /* bit n: fd n was opened as a /dev/ device */
+
 int open(const char *path, int flags, ...)
 {
     int f = flags & NL_O_ACCMODE;               /* O_RDONLY/O_WRONLY/O_RDWR are 0/1/2 in both */
     if (flags & NL_O_CREAT) f |= O_CREAT;
     if (flags & NL_O_TRUNC) f |= O_TRUNC;
     if (flags & NL_O_APPEND) f |= O_APPEND;
-    return map_err(sys_open(f, path));
+    int fd = map_err(sys_open(f, path));
+    if (fd >= 0 && fd < 32) {
+        if (!strncmp(path, "/dev/", 5)) dev_fds |= 1u << fd;
+        else dev_fds &= ~(1u << fd);
+    }
+    return fd;
 }
 
 int close(int fd)
 {
     if (fd < 3) return 0;
+    if (fd < 32) dev_fds &= ~(1u << fd);
     return map_err(sys_close(fd));
 }
 
@@ -171,7 +181,7 @@ int stat(const char *path, struct stat *st)
 
 int isatty(int fd)
 {
-    return fd >= 0 && fd < 3;
+    return (fd >= 0 && fd < 3) || (fd >= 3 && fd < 32 && (dev_fds >> fd) & 1);
 }
 
 int kill(int pid, int sig)

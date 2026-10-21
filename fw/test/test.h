@@ -15,5 +15,9 @@ void test_sd(void);
 void test_elf(const char *hello_elf);
 void test_fs(const char *image);
 void test_audio(void);
+/* test_main.c: DUART channel A stand-in used by fs.c's /dev/ttya */
+extern char test_serial_out[256]; extern int test_serial_out_n;
+void test_serial_feed(const char *s);
+void test_serial_reset(void);
 
 #endif

@@ -17,7 +17,7 @@ ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments -L$(B)
 LDLIBS  = -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 
-EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay
+EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term
 
 .PHONY: all clean check-sources host-bmpview
 

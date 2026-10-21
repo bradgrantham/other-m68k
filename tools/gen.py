@@ -480,8 +480,12 @@ def gen_doc(d):
         A("| %d | %s | %d (%s) | %s | %s |" % (i["level"], i["name"], 24 + i["level"], hx((24 + i["level"]) * 4, 3), i["source"], i["desc"]))
     A("")
     A("## Peripherals"); A("")
+    def peripheral_value(vv):
+        if not isinstance(vv, list):
+            return str(vv)
+        return ", ".join("`%s` (%s)" % (x["path"], x["desc"]) if isinstance(x, dict) else str(x) for x in vv)
     for k in ("serial", "ps2", "sd", "audio", "power", "reset"):
-        A("**%s**: %s" % (k, "; ".join("%s: %s" % (kk, vv) if not isinstance(vv, list) else "%s: %s" % (kk, ", ".join(vv)) for kk, vv in d[k].items()))); A("")
+        A("**%s**: %s" % (k, "; ".join("%s: %s" % (kk, peripheral_value(vv)) for kk, vv in d[k].items()))); A("")
     A("## System calls"); A(""); A(d["syscall"]["desc"]); A("")
     A("| # | Name | Prototype | Description |"); A("|---|---|---|---|")
     for s in d["syscalls"]:

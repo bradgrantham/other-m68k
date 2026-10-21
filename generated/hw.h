@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define BOARD_NAME "other-m68k"
-#define BOARD_REVISION 7
+#define BOARD_REVISION 8
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL
 #define SLOT_CPU_CLOCKS 4

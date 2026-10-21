@@ -241,6 +241,8 @@ static void usage(FILE *f)
         "  --exit-on-berr      exit with status 2 on the first bus error\n"
         "  --dump-regs-on-exit print the CPU registers at exit\n"
         "  --dump-mem ADDR LEN hex dump memory at exit (repeatable)\n"
+        "  --text-dump FILE    at exit, write the 40x30 console text decoded from page 0 to FILE\n"
+        "                      (- for stdout); the console is not on serial after the POST\n"
         "  --no-audio          disable audio output\n"
         "  --audio-wav FILE    write the rendered audio (48 kHz, 16-bit mono WAV) to FILE;\n"
         "                      works with --headless and --fast too\n"
@@ -303,6 +305,7 @@ static void parse_args(int argc, char **argv)
         else if (!strcmp(a, "--io-trace")) opts.io_trace = 1;
         else if (!strcmp(a, "--exit-on-berr")) opts.exit_on_berr = 1;
         else if (!strcmp(a, "--dump-regs-on-exit")) opts.dump_regs = 1;
+        else if (!strcmp(a, "--text-dump")) opts.text_dump_path = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--dump-mem")) {
             if (opts.dump_mem_count >= 8) {
                 fprintf(stderr, "m68k-emu: too many --dump-mem\n");
@@ -460,6 +463,11 @@ int main(int argc, char **argv)
         emu_dump_regs(stderr);
     for (int i = 0; i < opts.dump_mem_count; i++)
         bus_dump(opts.dump_mem[i].addr, opts.dump_mem[i].len);
+    if (opts.text_dump_path) {
+        FILE *f = !strcmp(opts.text_dump_path, "-") ? stdout : fopen(opts.text_dump_path, "w");
+        if (!f) perror(opts.text_dump_path);
+        else { video_text_dump(f); if (f != stdout) fclose(f); }
+    }
     if (opts.rom_save_path) {
         if (bus_rom_modified)
             bus_save_rom(opts.rom_save_path);

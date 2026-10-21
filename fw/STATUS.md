@@ -173,8 +173,12 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 * Banner line: `ID 6802  NTSC  DUART 38400 8N1`; `info` adds `DUART SRA xx`. `bios_main`
   zeroes `inten_shadow` with INTEN.
 * The S-record receiver still does not echo: at 38400 a record arrives every ~11 ms and
-  echoing one (console glyphs, 35 ms scroll, serial copy) takes longer, so the 512-byte
-  ring would overflow. The ISR keeps draining the DUART's 3-byte FIFO meanwhile.
+  echoing one (console glyphs, 35 ms scroll) takes longer, so the 512-byte ring would
+  overflow. The ISR keeps draining the DUART's 3-byte FIFO meanwhile.
+* Spec rev 8 (2026-10-21): serial A is released after the banner (`console_serial = 0` at
+  the end of `bios_main`): console output video only, console input keyboard only, `srec`
+  reads the port itself. Programs claim the port as `/dev/ttya` through `fs_open` (device
+  slots in the fd table, no card needed, survive `fs_invalidate`). Host tests cover it.
 * `sdk/README.md`: upload at 38400 8N1. No SDK code touched the serial registers.
 
 ## What exists
@@ -185,7 +189,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `post.S` | ROM word sum, RAM test (address, inverted address, byte lanes with both write orders), failure report + blink; registers only |
 | `duart.S`, `duart.h` | `duart_reset_init` (stack-less 68681 channel A set-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values |
 | `memops.S`, `string.c` | memset/memcpy/memmove (long moves when alignment allows), str*/memcmp |
-| `main.c` | `bios_main`, banner, `putchar_both` (console + serial, `\n` -> CRLF) |
+| `main.c` | `bios_main`, banner, `putchar_both` (console, plus serial with `\n` -> CRLF only while `console_serial` is set: POST and banner) |
 | `console.c`, `font8x8_basic.h` | 40x30 console, nibble table renderer, scroll, cursor, shadow text; renders through `con_fb` (host-testable) |
 | `serial.c` | GPIO shadow + atomic set/clear, DUART RX interrupt enable, polled TX, `delay_us` |
 | `input.c`, `queue.c` | serial 512 B, keyboard 256 B, key events 64 x 16-bit rings; merged `input_pollchar` |

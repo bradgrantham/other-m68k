@@ -35,6 +35,7 @@ struct emu_opts {
     int no_stdin;
     struct { uint32_t addr, len; } dump_mem[8];
     int dump_mem_count;
+    const char *text_dump_path;     /* --text-dump: decode the 40x30 console text from page 0 at exit */
 };
 
 extern struct emu_opts opts;

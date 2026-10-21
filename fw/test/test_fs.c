@@ -67,6 +67,33 @@ void test_fs(const char *path)
     fs_invalidate();
     FILE *save = img; img = 0;
     CHECK_EQ(fs_open(O_RDONLY, "README.TXT"), E_NODEV);
+
+    /* /dev/ttya needs no card: raw bytes both ways, not seekable, survives a card error */
+    test_serial_reset();
+    CHECK_EQ(fs_open(O_RDONLY, "/dev/ttyz"), E_NOENT);
+    CHECK_EQ(fs_open(O_RDONLY, "/dev/"), E_NOENT);
+    CHECK_EQ(fs_open(O_RDWR | O_CREAT | O_TRUNC, "/dev/ttya") >= FS_FD_BASE, 1);
+    int tty = fs_open(O_RDWR | O_CREAT | O_TRUNC, "/dev/ttya");
+    fs_close(tty - 1);
+    CHECK(tty >= FS_FD_BASE);
+    CHECK_EQ(fs_write(tty, "hi\n", 3), 3);
+    CHECK_STR(test_serial_out, "hi\n");                              /* no CR added */
+    CHECK_EQ(fs_lseek(tty, 0, SEEK_SET), E_INVAL);
+    CHECK_EQ(fs_size(tty), E_INVAL);
+    test_serial_feed("abc");
+    rc = fs_read(tty, buf, sizeof buf); CHECK_EQ(rc, 3); buf[3] = 0; CHECK_STR(buf, "abc");
+    test_serial_feed("defgh");
+    rc = fs_read(tty, buf, 2); CHECK_EQ(rc, 2); buf[2] = 0; CHECK_STR(buf, "de");   /* len caps it */
+    rc = fs_read(tty, buf, 8); CHECK_EQ(rc, 3); buf[3] = 0; CHECK_STR(buf, "fgh");
+    fs_invalidate();                                                 /* card error: device fd stays open */
+    CHECK_EQ(fs_write(tty, "x", 1), 1);
+    int ro = fs_open(O_RDONLY, "/dev/ttya");
+    CHECK_EQ(fs_write(ro, "x", 1), E_BADF);
+    int wo = fs_open(O_WRONLY, "/dev/ttya");
+    CHECK_EQ(fs_read(wo, buf, 1), E_BADF);
+    CHECK_EQ(fs_close(ro), 0); CHECK_EQ(fs_close(wo), 0);
+    CHECK_EQ(fs_close(tty), 0);
+    CHECK_EQ(fs_close(tty), E_BADF);
     img = save;
 
     /* lazy mount on first use, files put there by mcopy */

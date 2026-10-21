@@ -3,10 +3,12 @@
 #include "sd.h"
 
 uint16_t post_rom_sum;
+int console_serial = 1;             /* mirror the console to DUART A: only until the banner is out */
 
 void putchar_both(int c)
 {
     con_putc(c);
+    if (!console_serial) return;
     if (c == '\n') serial_putc('\r');
     serial_putc(c);
 }
@@ -47,5 +49,10 @@ void bios_main(void)
     serial_puts("\n");
     print_banner();
     gpio_clear(GPIO_LED0 | GPIO_LED1);
+    /* The POST and the banner went to video and serial. From here on serial port A is
+     * released (spec serial.console): the monitor, exceptions and programs print to video
+     * only and read the keyboard only; a program claims the port through /dev/ttya or the
+     * serial_putc/serial_getc syscalls. The RX interrupt keeps filling serial_rx_q. */
+    console_serial = 0;
     /* crt0 continues into monitor_restart() */
 }

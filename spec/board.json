@@ -1,7 +1,7 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 7,
+    "revision": 8,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
@@ -774,7 +774,7 @@
   ],
   "interrupt_mode": "autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied inactive); vector = 24 + level",
   "serial": {
-    "device": "MC68681 DUART channel A (channel B TXD/RXD brought to the expansion header)",
+    "device": "MC68681 DUART channel A on the FTDI header (channel B TXD/RXD brought to the expansion header)",
     "baud": 38400,
     "format": "8N1",
     "xtal_hz": 3686400,
@@ -792,7 +792,14 @@
     },
     "init": "MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x00 (baud-rate set 1), CSRA=0xCC (38.4k RX and TX), CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts",
     "note": "38400 is the highest rate in the 68681's fixed tables: CSR code 0xC is 38.4k in set 1 (ACR[7]=0) and 19.2k in set 2 (ACR[7]=1), data sheet Table 4-5. The counter/timer or an external 16x clock could give more but are not used.",
-    "connector": "6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected"
+    "connector": "6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected",
+    "console": "Channel A carries the power-on self test report and the BIOS banner. After the banner the BIOS releases it: console output (monitor, exceptions, putchar/puts/write to fd 1 and 2) goes to the video console only and console input (getchar/pollchar, read from fd 0) comes from the PS/2 keyboard only. The receive interrupt keeps filling the 512-byte ring, which serial_getc and reads of /dev/ttya drain; the BIOS itself never touches the port again except for the monitor's `srec` command while it runs.",
+    "devices": [
+      {
+        "path": "/dev/ttya",
+        "desc": "DUART channel A as a byte stream: open(O_RDONLY/O_WRONLY/O_RDWR; O_CREAT, O_TRUNC and O_APPEND are ignored) needs no card. write sends raw bytes (no newline translation, blocks on the transmitter). read blocks for the first byte and then returns what else is already in the receive ring, up to len. lseek is E_INVAL. Unknown /dev/ names are E_NOENT. An operating system personality that wants a serial terminal opens this and uses it as its console; the BIOS's own console stays on video."
+      }
+    ]
   },
   "ps2": {
     "rx": "hardware 11-bit frame receiver in CPLD2 (start, 8 data, odd parity, stop) -> PS2DATA + PS2RDY",
@@ -855,21 +862,21 @@
           "c"
         ]
       ],
-      "desc": "Write a character to the console (video + serial)."
+      "desc": "Write a character to the video console."
     },
     {
       "num": 2,
       "name": "getchar",
       "ret": "int",
       "args": [],
-      "desc": "Blocking read of one character from keyboard or serial."
+      "desc": "Blocking read of one character from the keyboard."
     },
     {
       "num": 3,
       "name": "pollchar",
       "ret": "int",
       "args": [],
-      "desc": "Non-blocking read; -1 if no character is available."
+      "desc": "Non-blocking keyboard read; -1 if no character is available."
     },
     {
       "num": 4,
@@ -881,7 +888,7 @@
           "s"
         ]
       ],
-      "desc": "Write a NUL-terminated string to the console (no newline added)."
+      "desc": "Write a NUL-terminated string to the video console (no newline added)."
     },
     {
       "num": 5,
@@ -893,14 +900,14 @@
           "c"
         ]
       ],
-      "desc": "Write a byte to the serial port only."
+      "desc": "Write a byte to serial port A (free for programs after the POST; see also /dev/ttya)."
     },
     {
       "num": 6,
       "name": "serial_getc",
       "ret": "int",
       "args": [],
-      "desc": "Non-blocking serial read; -1 if none."
+      "desc": "Non-blocking read from serial port A's receive ring; -1 if none."
     },
     {
       "num": 7,
@@ -954,7 +961,7 @@
           "path"
         ]
       ],
-      "desc": "Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console."
+      "desc": "Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. Paths starting with /dev/ open a device instead (serial.devices); /dev/ttya needs no card."
     },
     {
       "num": 12,
@@ -986,7 +993,7 @@
           "buf"
         ]
       ],
-      "desc": "Read up to len bytes. Returns count or negative error."
+      "desc": "Read up to len bytes. Returns count or negative error. fd 0 is the keyboard (blocks for the first byte, then returns what is queued); /dev/ttya behaves the same on the serial ring."
     },
     {
       "num": 14,
@@ -1006,7 +1013,7 @@
           "buf"
         ]
       ],
-      "desc": "Write len bytes. Returns count or negative error."
+      "desc": "Write len bytes. Returns count or negative error. fd 1 and 2 are the video console; a /dev/ttya descriptor sends raw bytes to serial port A."
     },
     {
       "num": 15,

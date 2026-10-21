@@ -2,11 +2,12 @@
 
 Programs are plain C with newlib, linked at `USER_BASE` (0x4000) and started by the BIOS
 monitor in user mode: `run prog.elf [args]` from the SD card, `go` after an S-record upload,
-or `sys_exec` from another program. Output goes to the video console and the serial port;
-input comes from the PS/2 keyboard and the serial port; files live on the FAT32 SD card.
+or `sys_exec` from another program. Output goes to the video console; input comes from the
+PS/2 keyboard; files live on the FAT32 SD card. Serial port A is free after the POST: open
+`/dev/ttya` (or use `sys_serial_putc`/`sys_serial_getc`) to talk to it.
 
 ```
-make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench}.elf + .srec
+make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term}.elf + .srec
 ```
 
 The `.elf` files are what `run` loads (ELF32 big-endian m68k, one `PT_LOAD` segment at
@@ -127,7 +128,6 @@ SD card: copy the `.elf` to a FAT32 card and type `run hello.elf` (`dir` lists t
 Emulator: build an image with `fw/test/mkimage.sh` (see `fw/README.md`) and pass it with
 `--sd`.
 
-Serial: wait for the `> ` prompt, then send `build/hello.srec` (e.g. `cat build/hello.srec >
-/dev/ttyUSB0`, 38400 8N1). The monitor detects the S-records, prints a summary and `go`
-runs the program. Emulator: pipe the file to stdin after the prompt appears, or type it
-with `--type` for small programs.
+Serial: type `srec` at the `> ` prompt (on the keyboard), then send `build/hello.srec`
+(e.g. `cat build/hello.srec > /dev/ttyUSB0`, 38400 8N1). The monitor prints a summary and
+`go` runs the program. Emulator: `--type "srec\n"` and pipe the file to stdin.

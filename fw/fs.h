@@ -1,6 +1,8 @@
-/* File table on top of FatFs: fds 3.. are files, directory handles 0.. are separate.
- * Every function returns 0/count/fd or a negative ABI error (E_*). No pointer checks
- * here; syscall.c validates user pointers before calling in. */
+/* File table on top of FatFs: fds 3.. are files or devices, directory handles 0.. are
+ * separate. Paths starting with /dev/ open a device (spec serial.devices): /dev/ttya is
+ * DUART channel A, a raw byte stream that needs no card. Every function returns
+ * 0/count/fd or a negative ABI error (E_*). No pointer checks here; syscall.c validates
+ * user pointers before calling in. */
 #ifndef FS_H
 #define FS_H
 #include <stdint.h>
