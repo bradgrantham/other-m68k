@@ -31,7 +31,7 @@ void bios_main(void)
     inten_shadow = 0;
     serial_init();
     input_init();
-    sd_hw_init();                       /* SDIO shadow: card deselected, clock idle */
+    sd_hw_init();                       /* all six card lines released */
     if (IO_INTSTAT & INTSTAT_PALJMP) {
         SW_PAL_SET();
         video_standard = VIDEO_STD_PAL;

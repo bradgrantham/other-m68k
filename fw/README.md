@@ -1,7 +1,7 @@
 # fw/ -- other-m68k BIOS / monitor ROM (stage 2)
 
 128 KB ROM image (the first 128 KB of the two SST39SF040 flash chips): power-on self test, 68681 DUART serial (38400 8N1), 40x30 video console, PS/2
-keyboard, exception reporting, machine monitor with S-record upload, SD card (SPI bit-bang)
+keyboard, exception reporting, machine monitor with S-record upload, SD card (native 4-bit bus, bit-banged)
 with a FAT32 filesystem (FatFs R0.15, 8.3 names), an ELF loader (`run`, `sys_exec`) and the
 TRAP #15 system call interface used by user programs (see `../sdk/`), including the file
 and directory calls.
@@ -12,8 +12,8 @@ and directory calls.
 make -C fw            # build/rom.elf, rom.bin (131072 bytes: what `flash` programs), rom.lst,
                       # rom.map, rom_even.bin (U4, D15..D8) and rom_odd.bin (U5, D7..D0): the two
                       # 512 KB chip images for the TL866, 0xFF beyond the BIOS image
-make -C fw test       # host unit tests: printf, queue, srec, ps2, console, hexdump, SD framing
-                      # (fake card), ELF parser (+ ../sdk/build/hello.elf), FatFs + fd table on
+make -C fw test       # host unit tests: printf, queue, srec, ps2, console, hexdump, the SD driver
+                      # against the emulator's card model, ELF parser (+ ../sdk/build/hello.elf), FatFs + fd table on
                       # a FAT32 image made with mkfs.vfat/mcopy (skipped if those are missing)
 make -C fw clean
 ```
@@ -235,29 +235,49 @@ is what releases it. `INTSTAT.DUARTIRQ` shows the live pin. The monitor does not
 while receiving S-records (printing a line takes longer than a line takes to arrive);
 hosts should wait for the prompt before sending. Channel B is not used by the BIOS.
 
-INTEN, SDIO, GPIO and USERIO.OUT are write-only in CPLD2 (they read as 0); the BIOS keeps
-`inten_shadow`, `gpio_shadow` and `sdio_shadow` and every write goes through
-`irq_update_inten` / `gpio_write/set/clear` / the SD driver. USERIO is not touched.
+INTEN, GPIO and AUDIO are write-only in CPLD2 (they read as 0); the BIOS keeps
+`inten_shadow` and `gpio_shadow` and every write goes through `irq_update_inten` /
+`gpio_write/set/clear`. SDIO reads back the six card lines, so the SD driver needs no shadow.
+(USERIO was removed in spec revision 7.)
 
 ## SD card
 
-`sd.c` bit-bangs SPI mode 0 on SDIO (bit 0 CS, active low; bit 1 CLK; bit 2 MOSI) and reads
-MISO from `INTSTAT.SDMISO`. Each bit is two register writes (MOSI with CLK low, then CLK
-high) and one read, so the generic byte exchange runs at roughly 200 kbit/s and the
-receive-only path (`sdhw_read` in `sdspi.S`, 46 or 48 clocks per bit plus 18 per byte) at
-about 240 kbit/s, 17 ms per 512-byte block. `sd_hw_init` (called from `bios_main`) leaves the card deselected
-with the clock low.
+Spec revision 7: the card sits on the native SD bus (not SPI), bit-banged through SDIO. The
+six lines DAT3 (bit 0), CLK (1), CMD (2), DAT0 (3), DAT1 (4), DAT2 (5) are open-drain outputs
+of CPLD2 with 10 k pull-ups to 3.3 V: writing 0 drives a line low, 1 releases it, and a read
+returns the level of every line (host AND card), so the driver keeps no shadow. One clock is
+three register accesses: the drive word with CLK low (the card changes CMD/DAT after the
+falling edge), a read, the same word with CLK high (the card samples on the rising edge).
 
-`sd_init`: slow clock (<= 400 kHz, `delay_loops` around each edge), 80 idle clocks with CS
-high, CMD0 (up to 8 tries), CMD8 with 0x1AA (v2 cards echo it; v1 cards reject it with
-"illegal command"), CMD55 + ACMD41 (HCS set for v2) until the idle bit clears (~1 s limit;
-cards that reject ACMD41 get CMD1), CMD58 for CCS (block vs byte addressing), CMD16 512 for
-byte-addressed cards, then full speed, CMD9 (CSD, capacity for both CSD versions) and CMD10
-(CID). Every command carries a correct CRC7; data CRC16 is not checked (CMD59 off). Reads are
-CMD17 (0xFE token wait ~160 ms), writes CMD24 (data response token checked, busy poll up to
-~500 ms). Errors are `SD_ERR_*` (`sd_strerror`), mapped to `E_IO`/`E_NODEV`/`E_INVAL` at the syscall
-boundary. The `sd` monitor command re-initialises the card and prints type, capacity, CID
-and CSD; `sd rd <lba>` hex-dumps a block. Multi-block commands are not used.
+`sd4.S` holds the bit-banging: `sd4_cmd` (48-bit frame with CRC7, wait up to 128 clocks for
+the response start bit, read 48 or 136 bits), `sd4_clocks`, `sd4_read512` (1024 nibbles on
+DAT3..0 through two 64-byte lookup tables: 86.5 clocks per byte, 3.7 ms per block, measured
+exactly that in the emulator), `sd4_write512` (112 clocks per byte) and `sd_crc16x4` (the
+four per-line CRC16s of a block, 6.9 ms). `sd.c` does the framing, the state machine and the
+waits. `sd_slow` (set during identification) inserts a delay around every edge in the command
+paths to stay under the 400 kHz the spec requires until the card has an RCA; data phases run
+at full speed. Interrupts stay enabled throughout: the card tolerates clock pauses.
+
+`sd_init`: 80 idle clocks, CMD0 (no response), CMD8 0x1AA (R7; v1 cards do not answer),
+CMD55 + ACMD41 with the voltage window and HCS for v2 until OCR bit 31 is set (~1 s limit;
+a card that never answers CMD55 is "no card"), CCS from the OCR (SDHC = block addressing),
+CMD2 (CID, R2), CMD3 (R6: RCA), then full speed, CMD9 (CSD, capacity for both CSD versions),
+CMD7 (select), CMD55 + ACMD6 2 (4-bit bus), CMD16 512 for byte-addressed cards. Every
+command carries a correct CRC7 and every R1/R2/R6/R7 CRC7 is checked (`SD_ERR_CRC`). Reads:
+CMD17, wait for the DAT0 start bit (up to ~200 ms), 1024 nibbles, CRCs ignored. Writes:
+CMD24, the four CRC16s, start bit, data, CRCs, end bit, then the CRC status token on DAT0
+(010 accepted, 101 rejected = `SD_ERR_TOKEN`) and the busy wait (up to ~400 ms). Card status
+error bits (OUT_OF_RANGE, ADDRESS_ERROR, ILLEGAL_COMMAND, COM_CRC_ERROR ...) map to
+`SD_ERR_RANGE/CMD/CRC`. Errors are `SD_ERR_*` (`sd_strerror`), mapped to `E_IO`/`E_NODEV`/
+`E_INVAL` at the syscall boundary. The `sd` monitor command re-initialises the card and prints
+type, bus width, RCA, capacity, CID and CSD; `sd rd <lba>` hex-dumps a block. Multi-block
+commands are not used.
+
+Measured in the emulator (`sdbench`, 300 reads / 60 writes through the syscalls): 5.05 ms per
+block read (101 KB/s; the SPI driver took 17 ms), 13.3 ms per block write (data 4.9 ms, CRCs
+6.9 ms, the emulated card is busy for only 16 clocks; real cards add their programming
+time). `sdplay -pcm` streaming 8-bit PCM at the line rate from the card now has 57 % of the
+CPU to spare (it fell 2-3 % short with SPI).
 
 ## Filesystem
 
@@ -382,7 +402,7 @@ direction and `lseek` on them `E_INVAL`.
 | `console.c`, `font8x8_basic.h` | video console |
 | `serial.c`, `input.c`, `queue.c`, `ps2.c`, `irq.c` | GPIO shadow, polled DUART TX, input rings, PS/2 decoder, ISRs (DUART RX drain) |
 | `exception.c`, `syscall.c`, `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | as named; `syscall.c` holds the user pointer checks and the fs/SD/exec call wrappers |
-| `sd.c`, `sd.h`, `sdspi.S` | SD SPI bit-bang driver (init, CMD17/CMD24, CSD/CID), asm receive path |
+| `sd.c`, `sd.h`, `sd4.S` | SD driver on the native 4-bit bus (init, CMD17/CMD24, CSD/CID); asm command, idle-clock, read, write and CRC16 paths |
 | `fatfs/` | FatFs R0.15 (`ff.c`, `ff.h`, `diskio.h`, configured `ffconf.h`, `LICENSE.txt`) |
 | `diskio.c` | FatFs media layer on `sd.c` |
 | `fs.c`, `fs.h` | fd table, `O_*` to FatFs mode mapping, `FRESULT` to `E_*`, `struct dirent` |

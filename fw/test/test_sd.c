@@ -1,215 +1,180 @@
-/* SD command framing: sd.c drives a fake SPI card that checks start bits, CRC7 and
- * arguments, records the command sequence and answers like an SDHC (or SDSC v1) card. */
+/* SD driver against the emulator's native-mode card model (emu/sdcard.c, compiled into the
+ * test with its lifecycle functions renamed emu_sd_*): sd.c's register accesses are routed
+ * to sd_bus()/sd_lines(), so the whole bit-banged protocol (CRC7 frames, R1/R2/R3/R6/R7,
+ * ACMD41 polling, 4-bit data with CRC16s, CRC status token, busy) is exercised end to end. */
+#include <unistd.h>
 #include "test.h"
 #include "sd.h"
 
-/* ---- fake card ---------------------------------------------------------------------- */
+int  emu_sd_init(const char *image_path, int trace, int sdsc);
+void emu_sd_shutdown(void);
+void emu_sd_reset(void);
+void sd_bus(unsigned host_drive);
+unsigned sd_lines(void);
 
-enum { CARD_NONE, CARD_SDHC, CARD_SDSC_V1 };
-static int card_kind = CARD_SDHC;
-static int selected, slow_mode;
-static int cmd_log[64], cmd_args_log[64], ncmds;
-static int bad_crc, bad_start, idle_clocks_before_cmd0, clocks_with_cs_high, ever_selected;
-static int acmd_pending, is_idle = 1, acmd41_polls;
-static uint8_t cmdbuf[6]; static int cmdlen;
-static uint8_t resp[1100]; static int resp_len, resp_idx;
-static int write_state, wlen; static uint8_t wbuf[514]; static uint32_t write_addr;
-static uint8_t block_image[2][512];
-static int slow_during_cmd41 = 1, fast_during_read;
+static unsigned host_drive = 0x3F;
+static unsigned long accesses;
 
-static void q(uint8_t b) { if (resp_len < (int)sizeof resp) resp[resp_len++] = b; }
-static void q_block(const uint8_t *d, int n) { q(0xFF); q(0xFE); for (int i = 0; i < n; i++) q(d[i]); q(0xAA); q(0x55); }
-
-static void handle_cmd(void)
+void sdt_write(uint16_t drive)
 {
-    unsigned cmd = cmdbuf[0] & 0x3F;
-    uint32_t arg = ((uint32_t)cmdbuf[1] << 24) | ((uint32_t)cmdbuf[2] << 16) | ((uint32_t)cmdbuf[3] << 8) | cmdbuf[4];
-    if ((cmdbuf[0] & 0xC0) != 0x40) bad_start++;
-    if (sd_crc7(cmdbuf, 5) != cmdbuf[5]) bad_crc++;
-    if (ncmds < 64) { cmd_log[ncmds] = (int)cmd | (acmd_pending ? 0x100 : 0); cmd_args_log[ncmds] = (int)arg; ncmds++; }
-    int was_acmd = acmd_pending;
-    acmd_pending = 0;
-    uint8_t r1 = is_idle ? 0x01 : 0x00;
-    resp_len = resp_idx = 0;
-    q(0xFF);                                            /* Ncr */
-    if (was_acmd && cmd == 41) {
-        if (!slow_mode) slow_during_cmd41 = 0;
-        if (++acmd41_polls >= 3) is_idle = 0;
-        q(is_idle ? 0x01 : 0x00);
-        return;
-    }
-    switch (cmd) {
-    case 0: is_idle = 1; acmd41_polls = 0; q(0x01); break;
-    case 8:
-        if (card_kind == CARD_SDSC_V1) { q(0x05); break; }  /* illegal command */
-        q(0x01); q(0); q(0); q(0x01); q((uint8_t)arg); break;
-    case 55: acmd_pending = 1; q(r1); break;
-    case 58: q(r1); q(card_kind == CARD_SDHC ? 0xC0 : 0x80); q(0xFF); q(0x80); q(0); break;
-    case 16: q(arg == 512 ? r1 : (uint8_t)(r1 | 0x40)); break;
-    case 9: {
-        uint8_t csd[16] = {0};
-        if (card_kind == CARD_SDHC) { csd[0] = 0x40; csd[7] = 0; csd[8] = 0x00; csd[9] = 0x7F; }   /* C_SIZE 127 -> 64 MB */
-        else { csd[0] = 0x00; csd[5] = 0x09; csd[6] = 0x00; csd[7] = 0x7F; csd[8] = 0xC0; csd[9] = 0x03; csd[10] = 0x80; } /* C_SIZE 511, MULT 7 */
-        csd[15] = sd_crc7(csd, 15);
-        q(r1); q_block(csd, 16); break;
-    }
-    case 10: {
-        uint8_t cid[16] = { 0x01, 'F', 'K', 'T', 'E', 'S', 'T', '0', 0x10, 1, 2, 3, 4, 0x01, 0x8A, 0 };
-        cid[15] = sd_crc7(cid, 15);
-        q(r1); q_block(cid, 16); break;
-    }
-    case 17:
-        if (slow_mode) fast_during_read = -1;
-        if (card_kind == CARD_SDHC ? arg >= 2 : arg >= 1024) { q(r1); q(0xFF); q(0x08); break; }
-        q(r1); q_block(block_image[card_kind == CARD_SDHC ? arg : arg / 512], 512); break;
-    case 24:
-        if (card_kind == CARD_SDHC ? arg >= 2 : arg >= 1024) { q((uint8_t)(r1 | 0x40)); break; }
-        q(r1); write_state = 1; wlen = 0; write_addr = card_kind == CARD_SDHC ? arg : arg / 512; break;
-    default: q((uint8_t)(r1 | 0x04)); break;
-    }
+    host_drive = drive & 0x3F;
+    accesses++;
+    sd_bus(host_drive);
 }
 
-uint8_t sdhw_xfer(uint8_t in)
+uint16_t sdt_read(void)
 {
-    if (!selected) {
-        clocks_with_cs_high += 8;
-        if (ncmds == 0) idle_clocks_before_cmd0 += 8;
-        return 0xFF;
-    }
-    if (card_kind == CARD_NONE) return 0xFF;
-    if (write_state == 1) {                             /* waiting for the start token */
-        if (in == 0xFE) { write_state = 2; wlen = 0; }
-        return resp_idx < resp_len ? resp[resp_idx++] : 0xFF;
-    }
-    if (write_state == 2) {
-        wbuf[wlen++] = in;
-        if (wlen == 514) {
-            memcpy(block_image[write_addr], wbuf, 512);
-            write_state = 0;
-            resp_len = resp_idx = 0;
-            q(0x05); q(0x00); q(0x00); q(0x00);        /* accepted, busy for 3 bytes */
-        }
-        return 0xFF;
-    }
-    if (cmdlen == 0) {
-        if ((in & 0xC0) == 0x40) cmdbuf[cmdlen++] = in;
-    } else {
-        cmdbuf[cmdlen++] = in;
-        if (cmdlen == 6) { cmdlen = 0; handle_cmd(); }
-    }
-    if (resp_idx < resp_len) return resp[resp_idx++];
-    return 0xFF;
+    accesses++;
+    return (uint16_t)(host_drive & sd_lines());
 }
 
-void sdhw_select(int on)
+/* reference bit-serial CRC16 of line L of a 4-bit block */
+static uint16_t ref_crc16_line(const uint8_t *d, int n, int line)
 {
-    if (on) ever_selected = 1;
-    if (!on) { cmdlen = 0; resp_len = resp_idx = 0; }
-    selected = on;
+    uint16_t crc = 0;
+    for (int i = 0; i < 2 * n; i++) {
+        unsigned nib = (i & 1) ? (d[i >> 1] & 15) : (d[i >> 1] >> 4);
+        int x = ((crc >> 15) & 1) ^ ((nib >> line) & 1);
+        crc = (uint16_t)(crc << 1);
+        if (x) crc ^= 0x1021;
+    }
+    return crc;
 }
 
-void sdhw_slow(int on) { slow_mode = on; }
-void sdhw_read(uint8_t *buf, int n) { while (n--) *buf++ = sdhw_xfer(0xFF); }
-void sd_hw_init(void) { sdio_shadow = SDIO_CS; }
+static char img_path[64];
 
-static void card_reset(int kind)
+static int make_image(size_t bytes)
 {
-    card_kind = kind;
-    selected = slow_mode = 0; ncmds = 0; bad_crc = bad_start = 0; idle_clocks_before_cmd0 = 0;
-    clocks_with_cs_high = 0; ever_selected = 0; acmd_pending = 0; is_idle = 1; acmd41_polls = 0;
-    cmdlen = 0; resp_len = resp_idx = 0; write_state = 0; slow_during_cmd41 = 1; fast_during_read = 0;
-    for (int i = 0; i < 512; i++) { block_image[0][i] = (uint8_t)i; block_image[1][i] = (uint8_t)(255 - i); }
+    strcpy(img_path, "/tmp/fwtest-sd-XXXXXX");
+    int fd = mkstemp(img_path);
+    if (fd < 0) return -1;
+    uint8_t blk[512];
+    for (size_t b = 0; b < bytes / 512; b++) {
+        for (int i = 0; i < 512; i++) blk[i] = (uint8_t)(b * 31 + i);
+        if (write(fd, blk, 512) != 512) { close(fd); return -1; }
+    }
+    close(fd);
+    return 0;
 }
 
-static int count_cmd(int c)
+static int image_byte(long off)
 {
-    int n = 0;
-    for (int i = 0; i < ncmds; i++) if (cmd_log[i] == c) n++;
-    return n;
+    FILE *f = fopen(img_path, "rb");
+    if (!f) return -1;
+    fseek(f, off, SEEK_SET);
+    int c = fgetc(f);
+    fclose(f);
+    return c;
 }
-
-/* ---- tests ---------------------------------------------------------------------------- */
 
 void test_sd(void)
 {
-    uint8_t buf[512];
+    uint8_t buf[512], crcbuf[512];
+    uint16_t crc[4];
 
     /* CRC7 known values: CMD0 arg 0 -> 0x95, CMD8 arg 0x1AA -> 0x87 */
     uint8_t c0[5] = { 0x40, 0, 0, 0, 0 }, c8[5] = { 0x48, 0, 0, 0x01, 0xAA };
     CHECK_EQ(sd_crc7(c0, 5), 0x95);
     CHECK_EQ(sd_crc7(c8, 5), 0x87);
 
-    /* SDHC: full init */
-    card_reset(CARD_SDHC);
-    CHECK_EQ(sd_init(), SD_OK);
-    CHECK(sd_card.ready);
-    CHECK_EQ(sd_card.type, SD_V2_HC);
-    CHECK_EQ(sd_card.block_addr, 1);
-    CHECK_EQ(sd_card.blocks, 128 * 1024);                   /* (127+1) * 1024 blocks = 64 MB */
-    CHECK(idle_clocks_before_cmd0 >= 74);
-    CHECK_EQ(bad_crc, 0);
-    CHECK_EQ(bad_start, 0);
-    CHECK_EQ(cmd_log[0], 0);                                /* CMD0 first */
-    CHECK_EQ(cmd_log[1], 8); CHECK_EQ(cmd_args_log[1], 0x1AA);
-    CHECK_EQ(cmd_log[2], 55); CHECK_EQ(cmd_log[3], 0x129); CHECK(cmd_args_log[3] & 0x40000000);  /* ACMD41 with HCS */
-    CHECK_EQ(count_cmd(0x129), 3);                          /* polled until ready */
-    CHECK_EQ(count_cmd(58), 1);
-    CHECK_EQ(count_cmd(16), 0);                             /* block addressed: no CMD16 */
-    CHECK_EQ(count_cmd(9), 1); CHECK_EQ(count_cmd(10), 1);
-    CHECK(slow_during_cmd41);                               /* still in slow mode through ACMD41 */
-    CHECK_EQ(sd_card.cid[1], 'F');
-    CHECK_EQ(sd_card.ocr[0], 0xC0);
-    CHECK_STR(sd_type_name(sd_card.type), "SDHC/SDXC (block addressed)");
-
-    /* read: block 1 pattern, CMD17 with the block number */
-    ncmds = 0;
-    CHECK_EQ(sd_read_block(1, buf), SD_OK);
-    CHECK_EQ(cmd_log[0], 17); CHECK_EQ(cmd_args_log[0], 1);
-    CHECK_EQ(buf[0], 255); CHECK_EQ(buf[511], 0);
-    CHECK_EQ(fast_during_read, 0);                          /* full speed after init */
-    /* out of range: our own check (CSD) first */
-    CHECK_EQ(sd_read_block(128 * 1024, buf), SD_ERR_RANGE);
-    /* card-reported range error (data error token) */
-    sd_card.blocks = 0;
-    CHECK_EQ(sd_read_block(5, buf), SD_ERR_TOKEN);
-    sd_card.blocks = 128 * 1024;
-
-    /* write then read back */
-    for (int i = 0; i < 512; i++) buf[i] = (uint8_t)(i * 7);
-    ncmds = 0;
-    CHECK_EQ(sd_write_block(0, buf), SD_OK);
-    CHECK_EQ(cmd_log[0], 24); CHECK_EQ(cmd_args_log[0], 0);
-    CHECK_EQ(block_image[0][3], 21);
-    memset(buf, 0, sizeof buf);
-    CHECK_EQ(sd_read_block(0, buf), SD_OK);
-    CHECK_EQ(buf[3], 21); CHECK_EQ(buf[511], (uint8_t)(511 * 7));
-    CHECK_EQ(sd_write_block(7, buf), SD_ERR_CMD);          /* card says address error */
-    CHECK_EQ(bad_crc, 0);
-    CHECK(!selected);                                       /* deselected after every op */
-
-    /* SDSC v1: CMD8 rejected, no HCS, CMD16 512, byte addressing */
-    card_reset(CARD_SDSC_V1);
-    CHECK_EQ(sd_init(), SD_OK);
-    CHECK_EQ(sd_card.type, SD_V1);
-    CHECK_EQ(sd_card.block_addr, 0);
-    CHECK_EQ(count_cmd(16), 1);
-    CHECK_EQ(count_cmd(58), 0);
-    CHECK_EQ(cmd_args_log[3] & 0x40000000, 0);             /* ACMD41 without HCS */
-    CHECK_EQ(sd_card.blocks, 262144);                        /* (511+1) << (7+2) blocks of 2^9 bytes = 128 MB */
-    ncmds = 0;
-    CHECK_EQ(sd_read_block(1, buf), SD_OK);
-    CHECK_EQ(cmd_args_log[0], 512);                         /* byte address */
-    CHECK_EQ(buf[0], 255);
-
-    /* no card: CMD0 never answers */
-    card_reset(CARD_NONE);
-    CHECK_EQ(sd_init(), SD_ERR_NOCARD);
-    CHECK(!sd_card.ready);
-    CHECK_EQ(sd_read_block(0, buf), SD_ERR_NOINIT);
-    CHECK_STR(sd_strerror(SD_ERR_NOCARD), "no card");
+    /* CRC16 x4 against the bit-serial reference */
+    for (int i = 0; i < 512; i++) crcbuf[i] = (uint8_t)(i * 193 + (i >> 3));
+    sd_crc16x4(crcbuf, 512, crc);
+    for (int l = 0; l < 4; l++) CHECK_EQ(crc[l], ref_crc16_line(crcbuf, 512, l));
+    memset(crcbuf, 0xFF, 512);
+    sd_crc16x4(crcbuf, 512, crc);
+    for (int l = 0; l < 4; l++) CHECK_EQ(crc[l], ref_crc16_line(crcbuf, 512, l));
+    memset(crcbuf, 0, 512);
+    sd_crc16x4(crcbuf, 512, crc);
+    CHECK_EQ(crc[0], 0); CHECK_EQ(crc[3], 0);
 
     /* CSD v1 capacity formula: 2 GB card (C_SIZE 4095, MULT 7, BL_LEN 10) */
     uint8_t csd[16] = {0};
     csd[5] = 0x0A; csd[6] = 0x03; csd[7] = 0xFF; csd[8] = 0xC0; csd[9] = 0x03; csd[10] = 0x80;
     CHECK_EQ(sd_csd_blocks(csd), 4096u * 512 * 2);
+
+    /* no card: CMD55 never answers */
+    emu_sd_init(NULL, 0, 0);
+    CHECK_EQ(sd_init(), SD_ERR_NOCARD);
+    CHECK(!sd_card.ready);
+    CHECK_EQ(sd_read_block(0, buf), SD_ERR_NOINIT);
+    CHECK_STR(sd_strerror(SD_ERR_NOCARD), "no card");
+
+    /* SDHC: a 1 MB image (2048 blocks) */
+    if (make_image(1024 * 1024) != 0) { printf("test_sd: cannot create image, skipping\n"); return; }
+    CHECK_EQ(emu_sd_init(img_path, 0, 0), 0);
+    CHECK_EQ(sd_init(), SD_OK);
+    CHECK(sd_card.ready);
+    CHECK_EQ(sd_card.type, SD_V2_HC);
+    CHECK_EQ(sd_card.block_addr, 1);
+    CHECK_EQ(sd_card.bus4, 1);
+    CHECK_EQ(sd_card.rca, 0x1234);
+    CHECK_EQ(sd_card.blocks, 2048);
+    CHECK_EQ(sd_card.ocr[0], 0xC0);
+    CHECK_EQ(sd_card.cid[0], 0x01);                         /* MID */
+    CHECK_EQ(sd_card.cid[1], 'E'); CHECK_EQ(sd_card.cid[2], 'M');
+    CHECK_EQ(sd_card.csd[0] >> 6, 1);                       /* CSD v2 */
+    CHECK_STR(sd_type_name(sd_card.type), "SDHC/SDXC (block addressed)");
+
+    /* reads: block pattern b*31+i */
+    CHECK_EQ(sd_read_block(0, buf), SD_OK);
+    CHECK_EQ(buf[0], 0); CHECK_EQ(buf[1], 1); CHECK_EQ(buf[511], 255);
+    CHECK_EQ(sd_read_block(7, buf), SD_OK);
+    CHECK_EQ(buf[0], (uint8_t)(7 * 31)); CHECK_EQ(buf[100], (uint8_t)(7 * 31 + 100));
+    accesses = 0;
+    CHECK_EQ(sd_read_block(2047, buf), SD_OK);
+    CHECK_EQ(buf[511], (uint8_t)(2047 * 31 + 511));
+    CHECK(accesses < 4000);                                 /* ~3 accesses per clock, ~1150 clocks */
+    /* out of range: our own check (CSD) first, then the card's OUT_OF_RANGE */
+    CHECK_EQ(sd_read_block(2048, buf), SD_ERR_RANGE);
+    sd_card.blocks = 0;
+    CHECK_EQ(sd_read_block(5000, buf), SD_ERR_RANGE);
+    sd_card.blocks = 2048;
+    CHECK_EQ(sd_read_block(3, buf), SD_OK);                 /* still in the transfer state */
+    CHECK_EQ(buf[0], (uint8_t)(3 * 31));
+
+    /* write then read back (the card checks the four CRC16s) */
+    for (int i = 0; i < 512; i++) buf[i] = (uint8_t)(i * 7 + 3);
+    CHECK_EQ(sd_write_block(5, buf), SD_OK);
+    CHECK_EQ(image_byte(5 * 512 + 3), (uint8_t)(3 * 7 + 3));
+    CHECK_EQ(image_byte(5 * 512 + 511), (uint8_t)(511 * 7 + 3));
+    memset(buf, 0, sizeof buf);
+    CHECK_EQ(sd_read_block(5, buf), SD_OK);
+    CHECK_EQ(buf[3], (uint8_t)(3 * 7 + 3)); CHECK_EQ(buf[511], (uint8_t)(511 * 7 + 3));
+    CHECK_EQ(sd_read_block(4, buf), SD_OK);                 /* neighbours untouched */
+    CHECK_EQ(buf[0], (uint8_t)(4 * 31));
+    CHECK_EQ(sd_write_block(2048, buf), SD_ERR_RANGE);
+    sd_card.blocks = 0;
+    CHECK_EQ(sd_write_block(9999, buf), SD_ERR_RANGE);
+    sd_card.blocks = 2048;
+    for (int i = 0; i < 512; i++) buf[i] = (uint8_t)(0xA5 ^ i);
+    CHECK_EQ(sd_write_block(0, buf), SD_OK);
+    CHECK_EQ(image_byte(0), 0xA5);
+    CHECK_EQ(sd_read_block(0, buf), SD_OK);
+    CHECK_EQ(buf[1], 0xA4);
+
+    /* re-initialisation works from the transfer state (CMD0 resets the card) */
+    CHECK_EQ(sd_init(), SD_OK);
+    CHECK_EQ(sd_read_block(1, buf), SD_OK);
+    CHECK_EQ(buf[0], 31);
+    emu_sd_shutdown();
+    unlink(img_path);
+
+    /* SDSC: byte addressed, CSD v1, CMD16; image a multiple of 256 KB */
+    if (make_image(512 * 1024) != 0) { printf("test_sd: cannot create image, skipping\n"); return; }
+    CHECK_EQ(emu_sd_init(img_path, 0, 1), 0);
+    CHECK_EQ(sd_init(), SD_OK);
+    CHECK_EQ(sd_card.type, SD_V2);
+    CHECK_EQ(sd_card.block_addr, 0);
+    CHECK_EQ(sd_card.bus4, 1);
+    CHECK_EQ(sd_card.blocks, 1024);
+    CHECK_EQ(sd_card.csd[0] >> 6, 0);
+    CHECK_EQ(sd_read_block(1, buf), SD_OK);
+    CHECK_EQ(buf[0], 31); CHECK_EQ(buf[511], (uint8_t)(31 + 511));
+    for (int i = 0; i < 512; i++) buf[i] = (uint8_t)(i + 99);
+    CHECK_EQ(sd_write_block(1023, buf), SD_OK);
+    CHECK_EQ(image_byte(1023L * 512 + 10), (uint8_t)(10 + 99));
+    CHECK_EQ(sd_read_block(1024, buf), SD_ERR_RANGE);
+    emu_sd_shutdown();
+    unlink(img_path);
 }

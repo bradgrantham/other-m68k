@@ -10,6 +10,34 @@ builds `libsys.a` and `hello/plasma/ls/cat/fstest.elf/.srec`. `.data+.bss` is 0x
 (ends at 0x1994), leaving ~9.8 KB of supervisor stack. See README.md for usage, the exact
 emulator commands and their output.
 
+## Spec rev 7: native 4-bit SD bus (2026-10-21)
+
+The SPI driver (`sdspi.S`, `sdio_shadow`, `INTSTAT.SDMISO`) is gone. `sd4.S` bit-bangs the
+six open-drain card lines through SDIO (which reads back the levels): `sd4_cmd` (CRC7 frames,
+Ncr wait, 48/136-bit responses), `sd4_clocks`, `sd4_read512` (86.5 clocks per byte, 3.7 ms
+per block, hand count confirmed by the emulator's cycle stamps), `sd4_write512` (112 per
+byte) and `sd_crc16x4` (per-line CRC16s, 6.9 ms). `sd.c` keeps the API (`sd_init`,
+`sd_read_block`, `sd_write_block`, `sd_card`, `SD_ERR_*`, new `SD_ERR_CRC`, `sd_card.rca`,
+`sd_card.bus4`) so diskio, the syscalls and the monitor barely changed; `sd` prints the bus
+width and RCA. Init: CMD0, CMD8, CMD55/ACMD41 (voltage window + HCS), CMD2, CMD3, CMD9,
+CMD7, CMD55/ACMD6 (4-bit), CMD16 for SDSC; `sd_slow` keeps identification under 400 kHz.
+
+Measured in the emulator: 5.05 ms per 512-byte read (101 KB/s, was 17 ms), 13.3 ms per
+write (emulated card busy 16 clocks); `ls`, `cat`, `fstest` (writes + readback), `bmpview`
+and `sdplay -pcm ode.pcm` (full-rate PCM from the card, 57 % CPU spare, no underruns) all
+run; `--sd-trace` shows no rejected block, bad CRC or illegal command. Host tests: 371 checks;
+`test_sd.c` now drives the emulator's own card model (`emu/sdcard.c` compiled into the test
+with its lifecycle functions renamed) end to end: SDHC and SDSC init, reads, writes with the
+card verifying the CRC16s, out-of-range, re-init, no card, plus `sd_crc16x4` against a
+bit-serial reference.
+
+Two things in the emulator that real cards do differently, both handled: the response
+starts exactly Ncr = 8 clocks after a command and the data block Nac = 8 clocks after the
+response (the driver waits up to 128 and ~50000 clocks); the card is ready on the second
+ACMD41 (the driver polls up to ~1 s). Not handled on purpose: read CRC16s are not checked,
+multi-block commands are not used, and a card that answers CMD8 but is not high capacity
+is addressed by bytes with CMD16.
+
 ## Spec rev 6: audio by buffer hand-off (2026-10-21)
 
 * The rev 5 sample queue (`audio_write`, 64 KB ROM encoder table) is gone. The BIOS now owns
@@ -47,7 +75,7 @@ emulator commands and their output.
 
 ## Stage 2 (what was added)
 
-* `sd.c/h`, `sdspi.S`: SPI mode 0 bit-bang on SDIO (`sdio_shadow`, MISO from
+* (historical, replaced by the rev 7 driver above) `sd.c/h`, `sdspi.S`: SPI mode 0 bit-bang on SDIO (`sdio_shadow`, MISO from
   `INTSTAT.SDMISO`), slow clock through ACMD41, CMD0/8/55/ACMD41(HCS)/58/16/9/10, CMD17 read,
   CMD24 write with data-response and busy handling, CRC7 on every command, timeouts in bytes
   exchanged, `SD_ERR_*`. `sdhw_read` (asm, 46/48 clocks/bit + 18/byte) does the data phases: a
@@ -74,7 +102,7 @@ emulator commands and their output.
 * SDK: `newlib_shim.c` translates newlib's `O_CREAT/O_TRUNC/O_APPEND` (0x200/0x400/0x8) to
   the ABI's (256/512/1024); `fstat` fills `st_size` via lseek; `stat` via open/opendir.
   New examples `ls.c`, `cat.c`, `fstest.c` (write + readback + `sys_exec` chain).
-* Host tests: `test_sd.c` (fake card checking start bits, CRC7, args, HCS, ACMD41 polling,
+* Host tests: `test_sd.c` (rev 7: the emulator's card model; originally a fake SPI card checking start bits, CRC7, args, HCS, ACMD41 polling,
   CMD16 only for SDSC, byte vs block addresses, data tokens, write data response, timeouts,
   no-card), `test_elf.c` (synthetic ELF, rejections, range checks, `sdk/build/hello.elf`),
   `test_fs.c` (fd table + FatFs on a 64 MB image from `test/mkimage.sh`: read/seek/create/
@@ -165,7 +193,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `irq.c` | ISRs (`interrupt_handler` attribute, verified `rte` in rom.lst), DUART RX FIFO drain, user hooks, INTEN shadow |
 | `exception.c` | names, register dump, `exception_entry` |
 | `syscall.c` | `syscall_dispatch` with the generated `.inc`, all 30 `bios_*` (fs/SD/exec real since stage 2), user pointer checks, `user_cleanup` |
-| `sd.c/h`, `sdspi.S`, `diskio.c`, `fatfs/`, `fs.c/h`, `elf.c/h`, `exec.c/h` | stage 2 (see above) |
+| `sd.c/h`, `sd4.S` (was `sdspi.S`), `diskio.c`, `fatfs/`, `fs.c/h`, `elf.c/h`, `exec.c/h` | stage 2 (see above; SD rewritten for spec rev 7) |
 | `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | monitor, S-record parser, dump line, kprintf/ksnprintf |
 | `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, FatFs/fd table |
 | `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma,ls,cat,fstest}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |

@@ -345,7 +345,7 @@ static void cmd_sd(int argc, char **argv)
     int rc = sd_init();
     if (rc) { kprintf("sd: %s\n", sd_strerror(rc)); return; }
     const uint8_t *cid = sd_card.cid;
-    kprintf("%s\n", sd_type_name(sd_card.type));
+    kprintf("%s, %d-bit bus, RCA %04x\n", sd_type_name(sd_card.type), sd_card.bus4 ? 4 : 1, sd_card.rca);
     kprintf("%u blocks = %u MB\n", sd_card.blocks, sd_card.blocks / 2048);
     kprintf("CID mid %02x oid %c%c pnm %c%c%c%c%c rev %u.%u\n", cid[0], cid[1], cid[2], cid[3],
             cid[4], cid[5], cid[6], cid[7], cid[8] >> 4, cid[8] & 15);

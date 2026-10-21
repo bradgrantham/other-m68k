@@ -1,33 +1,125 @@
-/* SD card driver: SPI mode 0 bit-banged on SDIO.
+/* SD card driver: native SD bus, bit-banged on the SDIO register (spec revision 7).
  *
- * Wire protocol (SD Physical Layer Simplified Spec, chapter 7): CS low, 6-byte command
- * (0x40|cmd, 32-bit argument, CRC7<<1|1), R1 response within 8 bytes (Ncr), optional
- * R3/R7 trailer, data blocks with a 0xFE start token and a CRC16 the card checks only
- * after CMD59 (CRC stays off; the command CRC7 is always computed, which is cheap and
- * lets a card that insists on CRC accept us).
+ * Lines (SDIO bits): DAT3 0, CLK 1, CMD 2, DAT0 3, DAT1 4, DAT2 5. Every bit is an
+ * open-drain driver: 0 drives the line low, 1 releases it to the 10 k pull-up; a read
+ * returns the level of each line (host AND card). One clock = write the drive word with CLK
+ * low (the card updates CMD/DAT after the falling edge), read the levels, write it with CLK
+ * high (the card samples CMD/DAT on the rising edge). Each register access is one bus
+ * cycle (8 clocks). Identification runs slower (sd_slow) to stay under the 400 kHz the spec
+ * requires until the card has an RCA.
  *
- * Pin level: SDIO bit 0 = CS (0 = selected), bit 1 = CLK, bit 2 = MOSI; MISO is
- * INTSTAT.SDMISO. Mode 0: MOSI is set while CLK is low, the card samples it on the rising
- * edge and drives the next MISO bit after the falling edge, so we read MISO after our own
- * rising edge. Each register access is one bus cycle, so a bit costs two writes and one
- * read (about 50 CPU clocks, ~250 kbit/s at full speed). Identification (the 74+ idle
- * clocks up to the end of ACMD41) runs with extra delays to stay under the 400 kHz the spec
- * demands there. Data blocks come in through sdhw_read (sdspi.S, 46 or 48 clocks per bit). Only
- * the monitor and the TRAP #15 handlers call this; no ISR touches SDIO, so no interrupt
- * masking is needed. */
+ * Protocol (SD Physical Layer Simplified Spec, chapter 4): 48-bit command frames on CMD with
+ * CRC7; R1/R3/R6/R7 responses are 48 bits, R2 (CID/CSD) 136 bits; after init ACMD6 selects
+ * the 4-bit data bus, so a 512-byte block is a start bit, 1024 nibbles on DAT3..0 (DAT3 =
+ * MSB, high nibble first), 16 CRC16 clocks (one CRC per line) and an end bit. Reads ignore the
+ * CRCs (the fast path is sd4_read512 in sd4.S); writes compute the four CRC16s
+ * (sd_crc16x4), then read the CRC status token on DAT0 and wait out the busy signal.
+ *
+ * Only the monitor and the TRAP #15 handlers call this; no ISR touches SDIO and the card
+ * tolerates any pause of its clock, so interrupts stay enabled throughout. */
 #include "bios.h"
 #include "sd.h"
 
-uint16_t sdio_shadow = IO_SDIO_RESET;
 struct sd_info sd_card;
 
-/* data-token wait and busy-poll limits, in bytes exchanged (~4 us each at full speed) */
-#define SD_READ_TOKEN_WAIT   40000      /* ~160 ms; spec: 100 ms read access time */
-#define SD_WRITE_BUSY_WAIT   125000     /* ~500 ms; spec: 250 ms write busy */
-#define SD_INIT_POLLS        2000       /* ACMD41 iterations (~1 s at 400 kHz) */
+/* ---- pin layer --------------------------------------------------------------------- */
+uint16_t sd_slow;           /* sd4.S: delay loops per half clock, 0 = full speed */
+#ifdef HOST_TEST
+#define SDIO_W(v)   sdt_write((uint16_t)(v))
+#define SDIO_R()    sdt_read()
+#else
+#define SDIO_W(v)   (IO_SDIO = (uint16_t)(v))
+#define SDIO_R()    (IO_SDIO)
+#endif
+#define SD_SLOW_LOOPS 20    /* x 10 clocks per half clock: ~25 kHz during identification */
 
-/* ---- CRC7 (x^7 + x^3 + 1) ------------------------------------------------------- */
+#define SD_LO   (IO_SDIO_RESET & ~SDIO_CLK)         /* 0x3D: everything released, CLK low */
+#define SD_HI   IO_SDIO_RESET                       /* 0x3F */
 
+/* limits in clocks (one clock = one sd_clk call) */
+#define SD_NCR_MAX        128       /* response start after the command (spec: 64) */
+#define SD_INIT_POLLS     2000      /* ACMD41 iterations (~1 s) */
+#define SD_READ_WAIT      50000     /* data start bit after R1 (~200 ms; spec: 100 ms) */
+#define SD_TOKEN_WAIT     1000      /* CRC status token after the written block */
+#define SD_BUSY_WAIT      100000    /* programming busy (~400 ms; spec: 250 ms) */
+
+/* One full-speed clock with the given drive word (CLK low); returns the levels read with
+ * CLK low. Used for the waits (start bits, CRC token, busy); the bulk work is in sd4.S. */
+static inline unsigned sd_clk(unsigned lo)
+{
+    SDIO_W(lo);
+    unsigned v = SDIO_R();
+    SDIO_W(lo | SDIO_CLK);
+    return v;
+}
+
+#define sd_clocks(n) sd4_clocks(n)
+
+#ifdef HOST_TEST
+/* C reference versions of the sd4.S primitives for the host tests. */
+void sd4_clocks(int n)
+{
+    while (n--) sd_clk(SD_LO);
+}
+
+int sd4_cmd(const uint8_t *frame, uint8_t *resp, int nbits)
+{
+    for (int i = 0; i < 6; i++)
+        for (unsigned m = 0x80; m; m >>= 1)
+            sd_clk((frame[i] & m) ? SD_LO : (SD_LO & ~SDIO_CMD));
+    if (!nbits) return 0;
+    int i;
+    for (i = 0; i < 128; i++)
+        if (!(sd_clk(SD_LO) & SDIO_CMD)) break;
+    if (i == 128) return -1;
+    unsigned acc = 0;                           /* start bit (0) is the first bit */
+    int n = 1, k = 0;
+    for (int b = 1; b < nbits; b++) {
+        acc = (acc << 1) | ((sd_clk(SD_LO) >> SDIO_CMD_BIT) & 1);
+        if (++n == 8) { resp[k++] = (uint8_t)acc; acc = 0; n = 0; }
+    }
+    return 0;
+}
+
+#define NIB(v) ((((v) >> SDIO_DAT3_BIT) & 1) << 3 | (((v) >> SDIO_DAT2_BIT) & 1) << 2 | \
+                (((v) >> SDIO_DAT1_BIT) & 1) << 1 | (((v) >> SDIO_DAT0_BIT) & 1))
+
+void sd4_read512(uint8_t *buf)
+{
+    for (int i = 0; i < SD_BLOCK_SIZE; i++) {
+        unsigned hi = sd_clk(SD_LO), lo = sd_clk(SD_LO);
+        buf[i] = (uint8_t)(NIB(hi) << 4 | NIB(lo));
+    }
+    sd_clocks(17);                              /* CRC16s and the end bit */
+}
+
+/* Drive word (CLK low) for a nibble on DAT3..0: a 0 bit drives its line low. */
+static const uint8_t sd_nib_drive[16] = {
+    0x04, 0x0C, 0x14, 0x1C, 0x24, 0x2C, 0x34, 0x3C,
+    0x05, 0x0D, 0x15, 0x1D, 0x25, 0x2D, 0x35, 0x3D,
+};
+
+void sd4_write512(const uint8_t *buf, const uint8_t *crcnib)
+{
+    sd_clk(sd_nib_drive[0]);                    /* start bit on all four lines */
+    for (int i = 0; i < SD_BLOCK_SIZE; i++) {
+        sd_clk(sd_nib_drive[buf[i] >> 4]);
+        sd_clk(sd_nib_drive[buf[i] & 15]);
+    }
+    for (int i = 0; i < 16; i++) sd_clk(sd_nib_drive[crcnib[i]]);
+    sd_clk(SD_LO);                              /* end bit */
+}
+#endif
+
+void sd_hw_init(void)
+{
+    SDIO_W(SD_HI);
+}
+
+/* ---- CRCs ---------------------------------------------------------------------- */
+
+/* CRC7 (x^7 + x^3 + 1) over n bytes, returned shifted left with the end bit set, as it
+ * appears in the last byte of a command frame, an R1/R6/R7 response, the CID or the CSD. */
 uint8_t sd_crc7(const uint8_t *p, int n)
 {
     uint8_t crc = 0;
@@ -38,6 +130,44 @@ uint8_t sd_crc7(const uint8_t *p, int n)
     }
     return (uint8_t)(crc | 1);          /* the loop leaves it shifted left by one bit */
 }
+
+#ifdef HOST_TEST
+/* C reference of the sd4.S routine for the host tests. */
+/* CRC16-CCITT (x^16 + x^12 + x^5 + 1, init 0) of each of the four DAT lines of a 4-bit block.
+ * Line L carries bit L of every nibble, high nibble first. TN[n] spreads the four bits of a
+ * nibble into four byte lanes (lane L = bit L); four data bytes (eight nibbles) then make one
+ * byte of each line's stream in a long, and each lane byte goes through the nibble table. */
+static const uint32_t TN[16] = {
+    0x00000000, 0x00000001, 0x00000100, 0x00000101, 0x00010000, 0x00010001, 0x00010100, 0x00010101,
+    0x01000000, 0x01000001, 0x01000100, 0x01000101, 0x01010000, 0x01010001, 0x01010100, 0x01010101,
+};
+static const uint16_t T4[16] = {
+    0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50A5, 0x60C6, 0x70E7,
+    0x8108, 0x9129, 0xA14A, 0xB16B, 0xC18C, 0xD1AD, 0xE1CE, 0xF1EF,
+};
+
+static inline uint16_t crc16_byte(uint16_t crc, uint8_t b)
+{
+    crc = (uint16_t)((crc << 4) ^ T4[((crc >> 12) ^ (b >> 4)) & 0xF]);
+    crc = (uint16_t)((crc << 4) ^ T4[((crc >> 12) ^ b) & 0xF]);
+    return crc;
+}
+
+void sd_crc16x4(const uint8_t *data, int n, uint16_t crc[4])
+{
+    crc[0] = crc[1] = crc[2] = crc[3] = 0;
+    for (int i = 0; i + 4 <= n; i += 4) {
+        uint32_t lanes = ((TN[data[i] >> 4] << 1 | TN[data[i] & 15]) << 6)
+                       | ((TN[data[i + 1] >> 4] << 1 | TN[data[i + 1] & 15]) << 4)
+                       | ((TN[data[i + 2] >> 4] << 1 | TN[data[i + 2] & 15]) << 2)
+                       | (TN[data[i + 3] >> 4] << 1 | TN[data[i + 3] & 15]);
+        crc[0] = crc16_byte(crc[0], (uint8_t)lanes);
+        crc[1] = crc16_byte(crc[1], (uint8_t)(lanes >> 8));
+        crc[2] = crc16_byte(crc[2], (uint8_t)(lanes >> 16));
+        crc[3] = crc16_byte(crc[3], (uint8_t)(lanes >> 24));
+    }
+}
+#endif
 
 /* ---- capacity from the CSD (spec 5.3.2 / 5.3.3) --------------------------------- */
 
@@ -58,203 +188,166 @@ uint32_t sd_csd_blocks(const uint8_t *csd)
     return 0;
 }
 
-/* ---- pin level -------------------------------------------------------------------- */
-#ifndef HOST_TEST
-
-static int sd_slow;
-
-void sd_hw_init(void)
-{
-    sdio_shadow = SDIO_CS;              /* deselected, CLK low (mode 0 idle), MOSI low */
-    IO_SDIO = sdio_shadow;
-}
-
-void sdhw_slow(int on) { sd_slow = on; }
-
-void sdhw_select(int on)
-{
-    /* CS changes while CLK is low */
-    sdio_shadow = (uint16_t)((sdio_shadow & SDIO_MOSI) | (on ? 0 : SDIO_CS));
-    IO_SDIO = sdio_shadow;
-}
-
-/* One bit: MOSI valid with CLK low, rising edge, then sample MISO (the card put this bit
- * on MISO after the previous falling edge). */
-#define SD_BIT(mask) \
-    v = (uint16_t)(base | ((out & (mask)) ? SDIO_MOSI : 0)); \
-    IO_SDIO = v; \
-    IO_SDIO = (uint16_t)(v | SDIO_CLK); \
-    in = (uint8_t)((in << 1) | ((IO_INTSTAT >> INTSTAT_SDMISO_BIT) & 1));
-
-uint8_t sdhw_xfer(uint8_t out)
-{
-    uint16_t base = (uint16_t)(sdio_shadow & SDIO_CS);     /* keep CS, CLK/MOSI low */
-    uint16_t v;
-    uint8_t in = 0;
-    if (sd_slow) {
-        for (int i = 0; i < 8; i++) {
-            v = (uint16_t)(base | ((out & 0x80) ? SDIO_MOSI : 0));
-            IO_SDIO = v;
-            delay_loops(8);                     /* >= 1.25 us per half period */
-            IO_SDIO = (uint16_t)(v | SDIO_CLK);
-            delay_loops(8);
-            in = (uint8_t)((in << 1) | ((IO_INTSTAT >> INTSTAT_SDMISO_BIT) & 1));
-            out = (uint8_t)(out << 1);
-        }
-    } else {
-        SD_BIT(0x80) SD_BIT(0x40) SD_BIT(0x20) SD_BIT(0x10)
-        SD_BIT(0x08) SD_BIT(0x04) SD_BIT(0x02) SD_BIT(0x01)
-    }
-    IO_SDIO = base;                             /* falling edge: card presents its next bit */
-    sdio_shadow = base;
-    return in;
-}
-
-#endif /* !HOST_TEST */
-
 /* ---- command layer ---------------------------------------------------------------- */
 
-static void sd_end(void)
+/* Send a command frame (start 0, transmission 1, index, argument, CRC7, end 1) and read a
+ * response of nbits (48 or 136; 0 = none) into resp, MSB first with the start bit in bit 7
+ * of resp[0]. SD_ERR_TIMEOUT if no start bit appears within 128 clocks (spec Ncr <= 64). */
+static int sd_xfer(uint8_t cmd, uint32_t arg, uint8_t *resp, int nbits)
 {
-    sdhw_select(0);
-    sdhw_xfer(0xFF);                            /* 8 clocks with CS high release MISO */
+    uint8_t f[6];
+    f[0] = (uint8_t)(0x40 | cmd);
+    f[1] = (uint8_t)(arg >> 24);
+    f[2] = (uint8_t)(arg >> 16);
+    f[3] = (uint8_t)(arg >> 8);
+    f[4] = (uint8_t)arg;
+    f[5] = sd_crc7(f, 5);
+    return sd4_cmd(f, resp, nbits) ? SD_ERR_TIMEOUT : SD_OK;
 }
 
-/* Send a command and return R1 (bit 7 clear), or 0xFF if nothing came within Ncr. The
- * card stays selected so the caller can read R3/R7 trailers or a data block. */
-static uint8_t sd_cmd(uint8_t cmd, uint32_t arg)
+/* Nrc: 8 clocks after a response before the next command. Not after a read command: the
+ * data block can start as soon as the card is ready (Nac >= 2) and the start-bit wait in
+ * sd_read_block must see it. */
+static void sd_after(uint8_t cmd)
 {
-    uint8_t buf[6];
-    buf[0] = (uint8_t)(0x40 | cmd);
-    buf[1] = (uint8_t)(arg >> 24);
-    buf[2] = (uint8_t)(arg >> 16);
-    buf[3] = (uint8_t)(arg >> 8);
-    buf[4] = (uint8_t)arg;
-    buf[5] = sd_crc7(buf, 5);
-    sdhw_select(1);
-    sdhw_xfer(0xFF);                            /* Ncs: at least one idle byte */
-    for (int i = 0; i < 6; i++) sdhw_xfer(buf[i]);
-    if (cmd == 12) sdhw_xfer(0xFF);             /* CMD12 has a stuff byte before R1 */
-    for (int i = 0; i < 8; i++) {
-        uint8_t r = sdhw_xfer(0xFF);
-        if (!(r & 0x80)) return r;
+    if (cmd != 17 && cmd != 18) sd_clocks(8);
+}
+
+/* Command with a 48-bit response. kind: 1 = R1/R7 (CRC7 and index checked), 6 = R6 (index
+ * 3), 3 = R3 (no CRC). *payload gets the 32 bits after the index. */
+static int sd_cmd48(uint8_t cmd, uint32_t arg, int kind, uint32_t *payload)
+{
+    uint8_t r[6];
+    int rc = sd_xfer(cmd, arg, r, 48);
+    if (rc) return rc;
+    sd_after(cmd);
+    if (kind != 3) {
+        if (sd_crc7(r, 5) != r[5]) return SD_ERR_CRC;
+        if ((r[0] & 0x3F) != (kind == 6 ? 3 : cmd)) return SD_ERR_CRC;
     }
-    return 0xFF;
-}
-
-static uint8_t sd_cmd_done(uint8_t cmd, uint32_t arg)
-{
-    uint8_t r = sd_cmd(cmd, arg);
-    sd_end();
-    return r;
-}
-
-static int sd_r1_error(uint8_t r1)
-{
-    return r1 == 0xFF ? SD_ERR_TIMEOUT : SD_ERR_CMD;
-}
-
-/* Wait for the 0xFE start token, then read n bytes and the 2 CRC bytes. Card selected. */
-static int sd_read_data(uint8_t *buf, int n, uint32_t wait)
-{
-    uint8_t t;
-    do {
-        t = sdhw_xfer(0xFF);
-        if (t == 0xFE) break;
-        if ((t & 0xF0) == 0) return SD_ERR_TOKEN;   /* data error token (0x08 = range) */
-    } while (--wait);
-    if (t != 0xFE) return SD_ERR_TIMEOUT;
-    sdhw_read(buf, n);
-    sdhw_xfer(0xFF);
-    sdhw_xfer(0xFF);                            /* CRC16, not checked (CRC is off) */
+    *payload = ((uint32_t)r[1] << 24) | ((uint32_t)r[2] << 16) | ((uint32_t)r[3] << 8) | r[4];
     return SD_OK;
 }
 
-static int sd_read_register(uint8_t cmd, uint8_t *out16)
+/* Command with an R2 response: the 16-byte register (CID or CSD, its own CRC7 last). */
+static int sd_cmd_r2(uint8_t cmd, uint32_t arg, uint8_t *reg16)
 {
-    uint8_t r = sd_cmd(cmd, 0);
-    int rc;
-    if (r != 0) rc = sd_r1_error(r);
-    else rc = sd_read_data(out16, 16, 1000);
-    sd_end();
-    return rc;
+    uint8_t r[17];
+    int rc = sd_xfer(cmd, arg, r, 136);
+    if (rc) return rc;
+    sd_after(cmd);
+    memcpy(reg16, r + 1, 16);
+    if (sd_crc7(reg16, 15) != reg16[15]) return SD_ERR_CRC;
+    return SD_OK;
+}
+
+/* Card status (R1 payload) error bits: OUT_OF_RANGE 31, ADDRESS_ERROR 30, BLOCK_LEN_ERROR
+ * 29, ERASE_SEQ 28, ERASE_PARAM 27, WP_VIOLATION 26, LOCK_UNLOCK_FAILED 24, COM_CRC_ERROR 23,
+ * ILLEGAL_COMMAND 22, CARD_ECC_FAILED 21, CC_ERROR 20, ERROR 19, CSD_OVERWRITE 16,
+ * WP_ERASE_SKIP 15, AKE_SEQ_ERROR 3. */
+#define SD_STATUS_ERRORS 0xFDF98008u
+
+static int sd_status_error(uint32_t st)
+{
+    if (!(st & SD_STATUS_ERRORS)) return SD_OK;
+    if (st & 0xC0000000u) return SD_ERR_RANGE;
+    if (st & (1u << 23)) return SD_ERR_CRC;
+    return SD_ERR_CMD;
+}
+
+/* R1 command: send, check, return SD_OK or an error; *st gets the status if wanted. */
+static int sd_cmd_r1(uint8_t cmd, uint32_t arg, uint32_t *st)
+{
+    uint32_t status;
+    int rc = sd_cmd48(cmd, arg, 1, &status);
+    if (rc) return rc;
+    if (st) *st = status;
+    return sd_status_error(status);
+}
+
+/* CMD55 then the application command (R1). */
+static int sd_acmd_r1(uint8_t cmd, uint32_t arg, uint32_t *st)
+{
+    uint32_t status;
+    int rc = sd_cmd_r1(55, (uint32_t)sd_card.rca << 16, &status);
+    if (rc) return rc;
+    if (!(status & (1u << 5))) return SD_ERR_CMD;        /* APP_CMD not accepted */
+    return sd_cmd_r1(cmd, arg, st);
 }
 
 /* ---- initialisation --------------------------------------------------------------- */
 
 int sd_init(void)
 {
-    uint8_t r;
     int rc;
+    uint32_t p;
 
     memset(&sd_card, 0, sizeof sd_card);
     sd_hw_init();
-    sdhw_slow(1);
-    sdhw_select(0);
-    for (int i = 0; i < 10; i++) sdhw_xfer(0xFF);      /* >= 74 clocks with CS high */
+    sd_slow = SD_SLOW_LOOPS;
+    sd_clocks(80);                              /* >= 74 clocks with everything released */
 
-    /* CMD0: software reset into SPI mode (CRC 0x95 with arg 0). */
-    r = 0xFF;
-    for (int i = 0; i < 8 && r != 0x01; i++) r = sd_cmd_done(0, 0);
-    if (r != 0x01) { rc = SD_ERR_NOCARD; goto fail; }
+    /* CMD0: reset; no response. */
+    sd_xfer(0, 0, 0, 0);
+    sd_clocks(8);
 
-    /* CMD8: voltage check; v2 cards answer R7 echoing the pattern, v1 cards reject it. */
-    r = sd_cmd(8, 0x000001AA);
-    if (r == 0x01) {
-        uint8_t r7[4];
-        for (int i = 0; i < 4; i++) r7[i] = sdhw_xfer(0xFF);
-        sd_end();
-        if ((r7[2] & 0x0F) != 0x01 || r7[3] != 0xAA) { rc = SD_ERR_VOLTAGE; goto fail; }
+    /* CMD8: voltage check. v2 cards echo the pattern in R7; v1 cards do not answer. */
+    rc = sd_cmd48(8, 0x000001AA, 1, &p);
+    if (rc == SD_OK) {
+        if ((p & 0xFFF) != 0x1AA) { rc = SD_ERR_VOLTAGE; goto fail; }
         sd_card.type = SD_V2;
-    } else {
-        sd_end();
-        if (r == 0xFF || !(r & 0x04)) { rc = sd_r1_error(r); goto fail; }
+    } else if (rc == SD_ERR_TIMEOUT) {
         sd_card.type = SD_V1;
-    }
+    } else goto fail;
 
-    /* ACMD41 (HCS set for v2) until the card leaves the idle state; cards that reject
-     * ACMD41 (old MMC) get CMD1. */
+    /* ACMD41 with the voltage window (and HCS for v2) until the card leaves busy. A card
+     * that never answers CMD55 is no card at all. */
     {
-        int use_cmd1 = 0, polls = SD_INIT_POLLS;
-        uint32_t arg = sd_card.type == SD_V2 ? 0x40000000 : 0;
+        uint32_t arg = (sd_card.type == SD_V2 ? 0x40000000u : 0) | 0x00FF8000u;
+        int polls = SD_INIT_POLLS;
         for (;;) {
-            if (!use_cmd1) {
-                r = sd_cmd_done(55, 0);
-                if (r == 0xFF) { rc = SD_ERR_TIMEOUT; goto fail; }
-                if (r & 0x04) use_cmd1 = 1;
-                else r = sd_cmd_done(41, arg);
-            }
-            if (use_cmd1) r = sd_cmd_done(1, 0);
-            if (r == 0x00) break;
-            if (r != 0x01) { rc = sd_r1_error(r); goto fail; }
+            uint32_t st;
+            rc = sd_cmd_r1(55, 0, &st);
+            if (rc == SD_ERR_TIMEOUT) { rc = SD_ERR_NOCARD; goto fail; }
+            if (rc) goto fail;
+            rc = sd_cmd48(41, arg, 3, &p);      /* R3: OCR */
+            if (rc) goto fail;
+            if (p & 0x80000000u) break;
             if (--polls == 0) { rc = SD_ERR_TIMEOUT; goto fail; }
         }
+        sd_card.ocr[0] = (uint8_t)(p >> 24); sd_card.ocr[1] = (uint8_t)(p >> 16);
+        sd_card.ocr[2] = (uint8_t)(p >> 8);  sd_card.ocr[3] = (uint8_t)p;
+        if (p & 0x40000000u) { sd_card.type = SD_V2_HC; sd_card.block_addr = 1; }
     }
 
-    /* CMD58: OCR, bit 30 (CCS) = block addressing (SDHC/SDXC). */
-    if (sd_card.type == SD_V2) {
-        r = sd_cmd(58, 0);
-        if (r != 0) { sd_end(); rc = sd_r1_error(r); goto fail; }
-        for (int i = 0; i < 4; i++) sd_card.ocr[i] = sdhw_xfer(0xFF);
-        sd_end();
-        if (sd_card.ocr[0] & 0x40) { sd_card.type = SD_V2_HC; sd_card.block_addr = 1; }
-    }
-    if (!sd_card.block_addr) {
-        r = sd_cmd_done(16, SD_BLOCK_SIZE);     /* byte addressed: fix the block length */
-        if (r != 0) { rc = sd_r1_error(r); goto fail; }
-    }
-
-    sdhw_slow(0);
-    rc = sd_read_register(9, sd_card.csd);      /* CSD: capacity */
+    /* CMD2: CID (R2). CMD3: RCA (R6). Identification ends here: full speed from now on. */
+    rc = sd_cmd_r2(2, 0, sd_card.cid);
     if (rc) goto fail;
-    rc = sd_read_register(10, sd_card.cid);     /* CID: manufacturer, name, serial */
+    rc = sd_cmd48(3, 0, 6, &p);
+    if (rc) goto fail;
+    sd_card.rca = (uint16_t)(p >> 16);
+    sd_slow = 0;
+
+    /* CMD9: CSD (stand-by state), then CMD7 selects the card (transfer state). */
+    rc = sd_cmd_r2(9, (uint32_t)sd_card.rca << 16, sd_card.csd);
     if (rc) goto fail;
     sd_card.blocks = sd_csd_blocks(sd_card.csd);
+    rc = sd_cmd_r1(7, (uint32_t)sd_card.rca << 16, 0);
+    if (rc) goto fail;
+
+    /* ACMD6: 4-bit bus. CMD16: 512-byte blocks for byte-addressed cards. */
+    rc = sd_acmd_r1(6, 2, 0);
+    if (rc) goto fail;
+    sd_card.bus4 = 1;
+    if (!sd_card.block_addr) {
+        rc = sd_cmd_r1(16, SD_BLOCK_SIZE, 0);
+        if (rc) goto fail;
+    }
     sd_card.ready = 1;
     return SD_OK;
 
 fail:
-    sdhw_slow(0);
+    sd_slow = 0;
     sd_card.ready = 0;
     return rc;
 }
@@ -275,35 +368,46 @@ int sd_read_block(uint32_t lba, void *buf)
     uint32_t addr;
     int rc = sd_check(lba, &addr);
     if (rc) return rc;
-    uint8_t r = sd_cmd(17, addr);
-    if (r != 0) rc = sd_r1_error(r);
-    else rc = sd_read_data(buf, SD_BLOCK_SIZE, SD_READ_TOKEN_WAIT);
-    sd_end();
-    return rc;
+    rc = sd_cmd_r1(17, addr, 0);
+    if (rc) return rc;
+    /* data start bit: DAT0 low */
+    uint32_t wait = SD_READ_WAIT;
+    while (sd_clk(SD_LO) & SDIO_DAT0)
+        if (--wait == 0) return SD_ERR_TIMEOUT;
+    sd4_read512(buf);
+    sd_clocks(8);
+    return SD_OK;
 }
 
 int sd_write_block(uint32_t lba, const void *buf)
 {
     const uint8_t *p = buf;
     uint32_t addr;
+    uint16_t crc[4];
     int rc = sd_check(lba, &addr);
     if (rc) return rc;
-    uint8_t r = sd_cmd(24, addr);
-    if (r != 0) { sd_end(); return sd_r1_error(r); }
-    sdhw_xfer(0xFF);                            /* Nwr */
-    sdhw_xfer(0xFE);                            /* start token */
-    for (int i = 0; i < SD_BLOCK_SIZE; i++) sdhw_xfer(p[i]);
-    sdhw_xfer(0xFF);
-    sdhw_xfer(0xFF);                            /* CRC16 placeholder */
-    /* data response token xxx0sss1: 010 accepted, 101 CRC error, 110 write error */
-    r = 0xFF;
-    for (int i = 0; i < 8 && r == 0xFF; i++) r = sdhw_xfer(0xFF);
-    if ((r & 0x1F) != 0x05) { sd_end(); return r == 0xFF ? SD_ERR_TIMEOUT : SD_ERR_TOKEN; }
-    /* busy: MISO low until the card has programmed the block */
-    uint32_t wait = SD_WRITE_BUSY_WAIT;
-    while (sdhw_xfer(0xFF) != 0xFF)
-        if (--wait == 0) { sd_end(); return SD_ERR_TIMEOUT; }
-    sd_end();
+    rc = sd_cmd_r1(24, addr, 0);
+    if (rc) return rc;
+    sd_crc16x4(p, SD_BLOCK_SIZE, crc);
+    uint8_t crcnib[16];                         /* one nibble per CRC clock, MSB first */
+    for (int b = 15; b >= 0; b--)
+        crcnib[15 - b] = (uint8_t)(((crc[3] >> b) & 1) << 3 | ((crc[2] >> b) & 1) << 2 |
+                                   ((crc[1] >> b) & 1) << 1 | ((crc[0] >> b) & 1));
+    sd_clocks(2);                               /* Nwr */
+    sd4_write512(p, crcnib);                    /* start bit, data, CRCs, end bit */
+    /* CRC status token on DAT0: start 0, then 010 = accepted, 101 = CRC error, end 1 */
+    uint32_t wait = SD_TOKEN_WAIT;
+    while (sd_clk(SD_LO) & SDIO_DAT0)
+        if (--wait == 0) return SD_ERR_TIMEOUT;
+    unsigned tok = 0;
+    for (int i = 0; i < 3; i++) tok = (tok << 1) | ((sd_clk(SD_LO) >> SDIO_DAT0_BIT) & 1);
+    sd_clk(SD_LO);                              /* end bit */
+    if (tok != 2) return SD_ERR_TOKEN;
+    /* busy: DAT0 low while the card programs the block */
+    wait = SD_BUSY_WAIT;
+    while (!(sd_clk(SD_LO) & SDIO_DAT0))
+        if (--wait == 0) return SD_ERR_TIMEOUT;
+    sd_clocks(8);
     return SD_OK;
 }
 
@@ -316,10 +420,11 @@ const char *sd_strerror(int err)
     case SD_ERR_NOCARD: return "no card";
     case SD_ERR_TIMEOUT: return "timeout";
     case SD_ERR_CMD: return "command rejected";
-    case SD_ERR_TOKEN: return "data error";
+    case SD_ERR_TOKEN: return "write rejected (CRC)";
     case SD_ERR_RANGE: return "block out of range";
     case SD_ERR_NOINIT: return "not initialised";
     case SD_ERR_VOLTAGE: return "voltage range";
+    case SD_ERR_CRC: return "response CRC";
     default: return "?";
     }
 }

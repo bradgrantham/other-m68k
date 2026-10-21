@@ -26,7 +26,7 @@ ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections -Wl,-Map=$(B)/rom.map
 
 # Planned source list (see STATUS.md); only files that exist are built.
-ASRCS = crt0.S post.S duart.S memops.S sdspi.S flashram.S irq_hsync.S
+ASRCS = crt0.S post.S duart.S memops.S sd4.S flashram.S irq_hsync.S
 CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c queue.c \
         hexdump.c printf.c syscall.c string.c sd.c diskio.c fs.c elf.c exec.c flash.c audio.c
 FATFS = fatfs/ff.c
@@ -70,18 +70,22 @@ $(B)/rom.bin $(B)/rom_even.bin $(B)/rom_odd.bin: $(B)/rom.elf mkrom.py
 $(B)/rom.lst: $(B)/rom.elf
 	$(OBJDUMP) -d -S $< > $@
 
-# Host-side unit tests: pure-C modules (srec, ps2, printf, console, hexdump, queue), SD
-# command framing against a fake card, the ELF parser (synthetic image and
+# Host-side unit tests: pure-C modules (srec, ps2, printf, console, hexdump, queue), the SD
+# driver against the emulator's card model, the ELF parser (synthetic image and
 # ../sdk/build/hello.elf when present) and FatFs + the fd table against a FAT32 image made
 # with mkfs.vfat/mcopy (skipped with a message when mtools/dosfstools are missing).
 TEST_SRCS = test/test_main.c test/test_sd.c test/test_elf.c test/test_fs.c test/test_audio.c \
             srec.c ps2.c printf.c console.c hexdump.c queue.c sd.c fs.c elf.c audio.c $(FATFS)
 TEST_IMG  = $(B)/test/fat.img
 
+# The SD tests drive the emulator's card model (../emu/sdcard.c); its lifecycle functions
+# are renamed so they do not collide with the BIOS's sd_init.
 test: $(TEST_IMG)
 	mkdir -p $(B)/test
+	$(HOSTCC) -std=gnu11 -Wall -Wextra -O1 -g -I$(GEN) -I../emu -Dsd_init=emu_sd_init \
+	    -Dsd_shutdown=emu_sd_shutdown -Dsd_reset=emu_sd_reset -c -o $(B)/test/emu_sdcard.o ../emu/sdcard.c
 	$(HOSTCC) -std=gnu11 -Wall -Wextra -O1 -g -DHOST_TEST -I$(GEN) -I. -Ifatfs -Itest \
-	    -Wno-unused-parameter -o $(B)/test/fwtest $(TEST_SRCS)
+	    -Wno-unused-parameter -o $(B)/test/fwtest $(TEST_SRCS) $(B)/test/emu_sdcard.o
 	$(B)/test/fwtest $(TEST_IMG) ../sdk/build/hello.elf
 
 # 64 MB sparse FAT32 image with a few files (FAT32 needs >= 65525 clusters, so 32 MB is
