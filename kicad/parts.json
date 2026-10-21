@@ -320,27 +320,27 @@
    }
   },
   "U2": {
-   "mfr": "Samsung",
-   "mpn": "KM681000BLP-7",
-   "desc": "128K x 8 SRAM DIP-32",
+   "mfr": "Alliance Memory",
+   "mpn": "AS6C4008-55PCN",
+   "desc": "512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8)",
    "assembly": "socket",
-   "chip_supply": "customer",
+   "chip_supply": "pcba",
    "socket": {
-    "mfr": "Mill-Max",
-    "mpn": "110-43-632-41-001000",
-    "desc": "DIP-32 socket, 15.24 mm rows, gold contacts, RoHS"
+    "mfr": "Assmann WSW",
+    "mpn": "A 32-LC-TT",
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
    }
   },
   "U3": {
-   "mfr": "Samsung",
-   "mpn": "KM681000BLP-7",
-   "desc": "128K x 8 SRAM DIP-32",
+   "mfr": "Alliance Memory",
+   "mpn": "AS6C4008-55PCN",
+   "desc": "512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (lower byte, D7..D0)",
    "assembly": "socket",
-   "chip_supply": "customer",
+   "chip_supply": "pcba",
    "socket": {
-    "mfr": "Mill-Max",
-    "mpn": "110-43-632-41-001000",
-    "desc": "DIP-32 socket, 15.24 mm rows, gold contacts, RoHS"
+    "mfr": "Assmann WSW",
+    "mpn": "A 32-LC-TT",
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
    }
   },
   "U4": {

@@ -23,9 +23,9 @@ assembly.
 |---|---|
 | BOM | `other-m68k-pcbway-bom.csv` (Item, Designator, Qty, Manufacturer, Mfg Part #, Description, Package, Type SMD/THT, Supplied By) |
 | placement | `other-m68k-pcbway-centroid.csv` (KiCad convention: mm, Y up, KiCad rotation, top side only) |
-| scope | SMD **and** through-hole: passives, LDO, AD724, supervisor, 74AHCT245 (SOIC), connectors, headers, jacks, switches, crystals, oscillator, electrolytics, every IC socket (plain DIP/PLCC sockets, no ZIF), and the two SST39SF040 flash chips, which PCBWay buys and inserts blank into their sockets |
+| scope | SMD **and** through-hole: passives, LDO, AD724, supervisor, 74AHCT245 (SOIC), connectors, headers, jacks, switches, crystals, oscillator, electrolytics, every IC socket (plain DIP/PLCC sockets, no ZIF), and four memory chips that PCBWay buys and inserts into their sockets: the two AS6C4008-55PCN SRAMs (U2/U3) and the two SST39SF040 flash chips (U4/U5, inserted blank) |
 | consigned | AD724JRZ (U11): last-time-buy part, we buy five and ship them to PCBWay |
-| customer fits afterwards | `other-m68k-customer-parts.csv`: U1 MC68000P12, U2/U3 KM681000BLP-7, U6/U7 ATF1508AS-7JX84, U10 MC68681P, all into their sockets |
+| customer fits afterwards | `other-m68k-customer-parts.csv`: U1 MC68000P12, U6/U7 ATF1508AS-7JX84, U10 MC68681P, all into their sockets |
 | first firmware | the flash chips arrive blank: program `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0) with the TL866 (SST39SF040, 512 KB images), then later updates with the monitor's `flash ROM.BIN` from the SD card and `reboot` |
 | not fitted | mounting holes, test pads, the crystal trim capacitor (DNP) |
 | loose parts | none (the PAL jumper is gone; no shunts) |
@@ -35,7 +35,9 @@ All part numbers were checked against distributor listings on 2026-10-20 (`parts
 LTST-C171GKT/KRKT LEDs (the Everlight 19-217 parts are 0603, the footprint is 0805), Yageo
 YC164 arrays (YC124 is the 4x0402 size), Rubycon 35ZLH100MEFC6.3X11 for the 100 uF bulk
 capacitor (the 16 V part only comes in a 5 mm can), Mill-Max 110-43 series DIP sockets (gold
-contacts, RoHS; the 110-99 codes are tin-lead), ECS-36-20-4XDN. If PCBWay proposes
+contacts, RoHS; the 110-99 codes are tin-lead), ECS-36-20-4XDN. Rev 4 (same day) replaced the
+256 KB of KM681000 SRAM with two AS6C4008-55PCN (512Kx8, 55 ns, 2.7-5.5 V; DigiKey, Mouser and
+Future all stock it) in the same dual-wipe DIP-32 sockets as the flash. If PCBWay proposes
 equivalents in the quote review, same package and ratings are acceptable.
 
 ## Power note for the order and for use

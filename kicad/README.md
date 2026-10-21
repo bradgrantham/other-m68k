@@ -113,7 +113,7 @@ All symbols and footprints are KiCad 9 system libraries except:
 |---|---|---|---|
 | MC68681 (U10) | `Interface:68681` | `Package_DIP:DIP-40_W15.24mm_Socket` | pin numbers checked against MC68681 Table 2-1 |
 | AD724 (U11) | `Video:AD725` stand-in, value AD724JR | `Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm` | same pinout; pin 3 shows "4FSC_CLK" (= FIN) and pin 12 "TRAP" (= SELECT) |
-| KM681000BLP-7 (U2/U3) | `Memory_RAM:AS6C1008-xxP` | `Package_DIP:DIP-32_W15.24mm_Socket` | pin compatible |
+| AS6C4008-55PCN (U2/U3) | `Memory_RAM:AS6C4008-55PCN` | `Package_DIP:DIP-32_W15.24mm_Socket` | 512Kx8; A0..A16 from CPLD1 (MA0..MA16), A17/A18 from CPLD2 (MA17/MA18); same dual-wipe socket as the flash |
 | SST39SF040 (U4/U5) | `Memory_Flash:SST39SF040` | `Package_DIP:DIP-32_W15.24mm_Socket` | plain dual-wipe socket (Assmann A 32-LC-TT); the TL866 programs the first image, later ones go in from the SD card |
 | 74AHCT245 (U8/U9) | `74xx:74HC245` | `Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm` | no AHCT symbol, pins identical; SN74AHCT245DW |
 | MCP130 (U13) | `Power_Supervisor:MCP130-xxxxTT` | `Package_TO_SOT_SMD:SOT-23` | MCP130T-450I/TT |

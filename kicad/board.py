@@ -102,8 +102,8 @@ def build():
 
     # ------------------------------------------------------------------ parts
     u1 = b.part("U1", "CPU_NXP_68000", "MC68000P", "Package_DIP:DIP-64_W22.86mm_Socket", "MC68000P12", sheet="cpu")
-    u2 = b.part("U2", "Memory_RAM", "AS6C1008-xxP", "Package_DIP:DIP-32_W15.24mm_Socket", "KM681000BLP-7", sheet="memory")
-    u3 = b.part("U3", "Memory_RAM", "AS6C1008-xxP", "Package_DIP:DIP-32_W15.24mm_Socket", "KM681000BLP-7", sheet="memory")
+    u2 = b.part("U2", "Memory_RAM", "AS6C4008-55PCN", "Package_DIP:DIP-32_W15.24mm_Socket", "AS6C4008-55PCN (upper, D15..D8)", sheet="memory")
+    u3 = b.part("U3", "Memory_RAM", "AS6C4008-55PCN", "Package_DIP:DIP-32_W15.24mm_Socket", "AS6C4008-55PCN (lower, D7..D0)", sheet="memory")
     u4 = b.part("U4", "Memory_Flash", "SST39SF040", "Package_DIP:DIP-32_W15.24mm_Socket", "SST39SF040-70 (even, D15..D8)", sheet="memory")
     u5 = b.part("U5", "Memory_Flash", "SST39SF040", "Package_DIP:DIP-32_W15.24mm_Socket", "SST39SF040-70 (odd, D7..D0)", sheet="memory")
     u6 = b.part("U6", "CPLD_Microchip", "ATF1508ASx-xxJx84", "Package_LCC:PLCC-84_THT-Socket", "ATF1508AS-7JX84 (MMU)", sheet="cpld1")
@@ -144,10 +144,10 @@ def build():
     p2 = cpld_pins("cpld2_io")
 
     # ------------------------------------------------------------------ CPU buses
-    # A1..A23: CPU -> CPLD1; A1..A3 also CPLD2; A1..A4 also DUART RS1..RS4; A1..A19 -> flash A0..A18
+    # A1..A23: CPU -> CPLD1; A1..A3 and A18..A19 also CPLD2; A1..A4 also DUART RS1..RS4; A1..A19 -> flash A0..A18
     for i in range(1, 24):
         pins = [u1.pin(f"A{i}"), u6.pin(p1[f"A{i}"])]
-        if i <= 3:
+        if i <= 3 or i in (18, 19):
             pins.append(u7.pin(p2[f"A{i}"]))
         if i <= 4:
             pins.append(u10.pin(f"RS{i}"))
@@ -170,9 +170,11 @@ def build():
             pins = [u3.pin(f"DQ{i}"), u9.pin(f"A{i}")]
         pins.append(u7.pin(p2[f"D{i}"]))
         b.net(f"MD{i}", *pins)
-    # SRAM address MA0..MA16 from CPLD1
+    # SRAM address MA0..MA16 from CPLD1, MA17..MA18 from CPLD2 (A18/A19 in the CPU half, FB_PAGE_HI in the video half)
     for i in range(17):
         b.net(f"MA{i}", u6.pin(p1[f"MA{i}"]), u2.pin(f"A{i}"), u3.pin(f"A{i}"))
+    for i in (17, 18):
+        b.net(f"MA{i}", u7.pin(p2[f"MA{i}"]), u2.pin(f"A{i}"), u3.pin(f"A{i}"))
 
     # ------------------------------------------------------------------ CPU control
     b.net("AS", u1.pin("AS"), u6.pin(p1["AS"]))
@@ -205,13 +207,12 @@ def build():
 
     # ------------------------------------------------------------------ memory
     for u in (u2, u3):
-        b.power("GND", u.pin("CS1/CE1"))        # pin 22, active low: always enabled
-        b.power("VCC", u.pin("CS2/CE2"))        # pin 30, active high
+        b.power("GND", u.pin("CE#"))            # pin 22, active low: always enabled (OE/WE gate)
         b.power("VCC", u.pin("VCC"))
-        b.power("GND", u.pin("GND"))
-    b.net("RAMOE", u6.pin(p1["RAMOE"]), u2.pin("OE"), u3.pin("OE"))
-    b.net("WEU", u6.pin(p1["WEU"]), u2.pin("WE"))
-    b.net("WEL", u6.pin(p1["WEL"]), u3.pin("WE"))
+        b.power("GND", u.pin("VSS"))
+    b.net("RAMOE", u6.pin(p1["RAMOE"]), u2.pin("OE#"), u3.pin("OE#"))
+    b.net("WEU", u6.pin(p1["WEU"]), u2.pin("WE#"))
+    b.net("WEL", u6.pin(p1["WEL"]), u3.pin("WE#"))
     for u in (u4, u5):
         b.power("GND", u.pin("CE"))             # CE tied low; OE/WE from CPLD1 do the gating
         b.power("VCC", u.pin("VCC"))
