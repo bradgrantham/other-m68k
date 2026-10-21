@@ -1,7 +1,11 @@
 /* SD SPI receive fast path. void sdhw_read(uint8_t *buf, int n): clock n bytes in with
  * MOSI held high (0xFF out) at full speed, CS as left by sdhw_select. Per bit: CLK low,
- * CLK high, read INTSTAT, test SDMISO -- 44 clocks (sne/sub trick instead of shifting the
- * bit down from position 8), about 15 ms for a 512-byte block. The slow (identification)
+ * CLK high, read INTSTAT, test SDMISO (sne/sub trick instead of shifting the bit down from
+ * position 8). MC68000 UM timing tables, zero wait states (ROM code, CPLD2 I/O):
+ *   move.w Dn,(An) 8 + move.w Dn,(An) 8 + move.w (An),Dn 8 + btst #imm,Dn 10
+ *   + sne Dn 4 (bit clear) or 6 (bit set) + add.b 4 + sub.b 4 = 46 or 48 clocks per bit;
+ *   per byte also move.b Dn,(An)+ 8 + dbf (taken) 10 = 18, so 386..402 clocks a byte,
+ * about 17 ms (~240 kbit/s) for a 512-byte block at 12 MHz. The slow (identification)
  * clock is never needed for data phases, so this ignores sd_slow. */
 #include "hw.inc"
 

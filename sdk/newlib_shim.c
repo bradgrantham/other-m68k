@@ -17,6 +17,8 @@
 #include <sys/times.h>
 #include <sys/time.h>
 #include <string.h>
+#include <time.h>
+#include "hw.h"                                 /* CPU_CLOCK_HZ, VIDEO_*_FRAME_CLOCKS */
 enum { NL_O_ACCMODE = O_ACCMODE, NL_O_APPEND = O_APPEND, NL_O_CREAT = O_CREAT, NL_O_TRUNC = O_TRUNC };
 #undef O_RDONLY
 #undef O_WRONLY
@@ -35,19 +37,26 @@ char **environ = __env;
 static int map_err(int r)
 {
     if (r >= 0) return r;
+    /* every E_* in syscalls.h; the ABI values are Linux numbers, newlib's differ for some */
     switch (r) {
     case E_NOENT: errno = ENOENT; break;
     case E_IO: errno = EIO; break;
     case E_NOEXEC: errno = ENOEXEC; break;
     case E_BADF: errno = EBADF; break;
     case E_NOMEM: errno = ENOMEM; break;
+    case E_ACCES: errno = EACCES; break;
+    case E_FAULT: errno = EFAULT; break;
     case E_EXIST: errno = EEXIST; break;
+    case E_NODEV: errno = ENODEV; break;
     case E_NOTDIR: errno = ENOTDIR; break;
     case E_ISDIR: errno = EISDIR; break;
     case E_INVAL: errno = EINVAL; break;
     case E_NFILE: errno = ENFILE; break;
     case E_NOSPC: errno = ENOSPC; break;
-    default: errno = ENOSYS; break;
+    case E_ROFS: errno = EROFS; break;
+    case E_NAMETOOLONG: errno = ENAMETOOLONG; break;
+    case E_NOSYS: errno = ENOSYS; break;
+    default: errno = ENOSYS; break;         /* not in the ABI */
     }
     return -1;
 }
@@ -180,20 +189,42 @@ int getpid(void)
 int link(const char *a, const char *b) { (void)a; (void)b; errno = ENOSYS; return -1; }
 int unlink(const char *a) { (void)a; errno = ENOSYS; return -1; }
 
+/* sys_ticks() counts frames. The frame length in CPU clocks comes from the video standard
+ * the BIOS selected at boot (video_info.standard; it cannot change while a program runs):
+ * 764 x 262 clocks on NTSC (59.95 Hz), 768 x 312 on PAL (50.08 Hz), at CPU_CLOCK_HZ. */
+static uint32_t frame_clocks(void)
+{
+    static uint32_t fc;
+    if (!fc) {
+        struct video_info vi;
+        fc = (sys_video_info(&vi) == 0 && vi.standard == VIDEO_STD_PAL)
+            ? VIDEO_PAL_FRAME_CLOCKS : VIDEO_NTSC_FRAME_CLOCKS;
+    }
+    return fc;
+}
+
+/* CPU clocks since boot, at frame resolution (64 bits: 32 overflow after ~6 minutes) */
+static uint64_t uptime_clocks(void)
+{
+    return (uint64_t)sys_ticks() * frame_clocks();
+}
+
+/* newlib's clock() is times() utime + stime, divided by CLOCKS_PER_SEC (1000) by the
+ * caller, so times() counts milliseconds here (POSIX leaves the unit to the system). */
 clock_t times(struct tms *t)
 {
-    clock_t ticks = (clock_t)sys_ticks();
-    if (t) { t->tms_utime = ticks; t->tms_stime = 0; t->tms_cutime = 0; t->tms_cstime = 0; }
-    return ticks;
+    clock_t ms = (clock_t)(uptime_clocks() / (CPU_CLOCK_HZ / CLOCKS_PER_SEC));
+    if (t) { t->tms_utime = ms; t->tms_stime = 0; t->tms_cutime = 0; t->tms_cstime = 0; }
+    return ms;
 }
 
 int gettimeofday(struct timeval *tv, void *tz)
 {
     (void)tz;
     if (tv) {
-        unsigned long t = sys_ticks();
-        tv->tv_sec = (time_t)(t / 60);
-        tv->tv_usec = (suseconds_t)((t % 60) * 16667);
+        uint64_t c = uptime_clocks();
+        tv->tv_sec = (time_t)(c / CPU_CLOCK_HZ);
+        tv->tv_usec = (suseconds_t)((uint32_t)(c % CPU_CLOCK_HZ) / (CPU_CLOCK_HZ / 1000000));
     }
     return 0;
 }

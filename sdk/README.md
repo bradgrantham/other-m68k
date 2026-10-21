@@ -48,8 +48,10 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   current directory; `unlink`/`mkdir`/`rename` have no system calls). Directories are read
   with `sys_opendir`/`sys_readdir`(`struct dirent`: `name[64]`, `size`, `attr` with
   `ATTR_DIR`/`ATTR_READONLY`/`ATTR_HIDDEN`)/`sys_closedir` directly, see `examples/ls.c`.
-  Errors come back as `errno` (`ENOENT`, `EINVAL` for a name that is not 8.3 or a pointer
-  outside user RAM, `EIO` for no card / no FAT volume, `ENFILE`, `ENOSPC`, `EBADF`).
+  Errors come back as `errno` (`ENOENT`, `ENAMETOOLONG` for a name that is not 8.3,
+  `EFAULT` for a pointer outside user RAM, `ENODEV` for no card / no FAT volume, `EIO` for a
+  card error, `ENFILE`, `ENOSPC`, `EBADF`; the shim maps every `E_*` of the ABI to the
+  newlib `errno` of the same name).
   `sys_exec(path, args)` replaces the running program; it returns a negative error only if
   the file could not be opened or is not a loadable ELF.
 * `syscalls.h` defines `O_RDONLY`...`O_APPEND` and `SEEK_*` with the ABI's values, which
@@ -60,7 +62,8 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   Framebuffer page 1 (0xDA800-0xED3FF) is free RAM if you do not double buffer.
 * The program runs in user mode: it cannot change SR or use privileged instructions.
   Interrupt hooks are installed with `sys_set_irq_handler(level, fn)` (levels 1-4; the hook
-  is a plain `void fn(void)` called from the BIOS ISR in supervisor mode) and
+  is a plain `void fn(void)` called from the BIOS ISR in supervisor mode, at the interrupt's
+  own level, so higher levels can still interrupt it) and
   `sys_set_audio_cb(fn)` (once per video line from HSYNC; the callback owns `IO_AUDIO`).
 * Sound (spec rev 5): `sys_audio_write(samples, n)` queues unsigned 8-bit samples (128 =
   silence) that the BIOS plays one per video line (15707 Hz NTSC) through the PDM shifter; it
@@ -72,6 +75,12 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
 * Returning from `main` or calling `exit()` ends in `sys_exit`, which prints `[exit N]` and
   returns to the monitor. Page 0 is the console; a program that draws on it should
   `sys_con_clear()` before exiting.
+* Time: `clock()` and `times()` count milliseconds (newlib's `CLOCKS_PER_SEC` is 1000) and
+  `gettimeofday()` gives seconds/microseconds since boot, both derived from `sys_ticks()` and
+  the frame length of the video standard (`video_info.standard`: 764 x 262 clocks = 59.95 Hz
+  NTSC, 768 x 312 = 50.08 Hz PAL), so they advance in whole frames (16.7 / 20 ms steps).
+  `sys_sleep_ms(ms)` waits `ms * ticks_per_sec / 1000` whole frames (nominal 60 or 50 per
+  second) plus a calibrated loop for the rest of a frame.
 * Static constructors are not run (no crti/crtn); C only.
 
 ## bmpview: pictures from the card

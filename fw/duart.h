@@ -7,7 +7,7 @@
 
 #define DUART_MR1_8N           SERIAL_MR1_VALUE   /* 8 bits/char, no parity, RxRDY interrupt */
 #define DUART_MR2_1STOP        SERIAL_MR2_VALUE   /* one stop bit, normal mode, no CTS/RTS */
-#define DUART_ACR_VALUE        SERIAL_ACR_VALUE   /* baud-rate set 2, counter/timer unused */
+#define DUART_ACR_VALUE        SERIAL_ACR_VALUE   /* 0x00: baud-rate set 1, counter/timer unused */
 /* DUART_CR_RESET_MR/RX/TX/ERR/BRK and DUART_CR_ENABLE come from hw.h / hw.inc */
 
 #endif

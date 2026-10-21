@@ -119,8 +119,8 @@ plus loading the 35 KB `hello.elf` takes about 2.5 s of emulated time.
 
 `_start` masks interrupts, writes INTEN = 0 and the GPIO idle value (PS/2 lines released,
 LED0 on), then programs DUART channel A from registers (`duart_reset_init` in `duart.S`):
-IMR = 0; CRA = reset MR pointer, reset RX, reset TX, reset error status; ACR = 0x80 (baud
-set 2); MR1A = 0x13 (8 bits, no parity); MR2A = 0x07 (1 stop bit); CSRA = 0xCC (38400 RX and
+IMR = 0; CRA = reset MR pointer, reset RX, reset TX, reset error status; ACR = 0x00 (baud
+set 1, in which CSR code 0xC is 38.4k); MR1A = 0x13 (8 bits, no parity); MR2A = 0x07 (1 stop bit); CSRA = 0xCC (38400 RX and
 TX); CRA = 0x05 (enable TX + RX). The data sheet requires the RX/TX reset commands before
 ACR[7] is changed, and the pointer reset makes the first MRA write hit MR1A even on a warm
 restart (`reset` command) where the DUART may not have seen a hardware reset. Only byte
@@ -237,8 +237,8 @@ INTEN, SDIO, GPIO and USERIO.OUT are write-only in CPLD2 (they read as 0); the B
 `sd.c` bit-bangs SPI mode 0 on SDIO (bit 0 CS, active low; bit 1 CLK; bit 2 MOSI) and reads
 MISO from `INTSTAT.SDMISO`. Each bit is two register writes (MOSI with CLK low, then CLK
 high) and one read, so the generic byte exchange runs at roughly 200 kbit/s and the
-receive-only path (`sdhw_read` in `sdspi.S`, 44 clocks per bit) at about 270 kbit/s, 15 ms
-per 512-byte block. `sd_hw_init` (called from `bios_main`) leaves the card deselected
+receive-only path (`sdhw_read` in `sdspi.S`, 46 or 48 clocks per bit plus 18 per byte) at
+about 240 kbit/s, 17 ms per 512-byte block. `sd_hw_init` (called from `bios_main`) leaves the card deselected
 with the clock low.
 
 `sd_init`: slow clock (<= 400 kHz, `delay_loops` around each edge), 80 idle clocks with CS
@@ -266,7 +266,7 @@ the next call re-initialises and remounts (open descriptors are closed). A user 
 descriptors are closed by `user_cleanup` when it exits.
 
 Long file names on the card appear as their 8.3 aliases (`LONGNA~1.TXT`), names longer than
-8.3 cannot be created (`E_INVAL`), and lookups are case-insensitive. Removing, renaming and
+8.3 cannot be created (`E_NAMETOOLONG`), and lookups are case-insensitive. Removing, renaming and
 making directories have no syscalls in the ABI, so they are not exposed (FatFs has them).
 
 ## ELF loader
@@ -349,7 +349,8 @@ the file to stdin once the prompt is visible (the emulator reads stdin as serial
 `run`/`go` enter user mode with the stack described under "ELF loader" (`argc`/`argv` and a
 return address that performs `sys_exit(0)`, so a program may simply `rts`). Programs cannot touch SR; they use TRAP #15 (see
 `generated/HARDWARE.md`, "System calls") and `sys_set_irq_handler` for interrupt hooks,
-which are called from the BIOS ISRs in supervisor mode. `sys_exit` closes the program's
+which are called from the BIOS ISRs in supervisor mode at the interrupt's own level (higher
+levels can still interrupt them). `sys_exit` closes the program's
 files, restores the BIOS interrupt enables, drops user hooks, the audio callback and any
 queued audio samples, selects page 0 and prints `[exit N]`. `sys_exec(path, args)` loads another ELF over the
 current program and starts it (`argv[0] = path`, `args` split on blanks); it returns only
@@ -357,7 +358,8 @@ on failure, before anything was overwritten.
 
 System calls check user pointers: buffers and strings must lie in RAM above the BIOS area
 (`USER_BASE`..`RAM_END`, which includes both framebuffer pages so a file can be read
-straight into one); otherwise `E_INVAL` (the ABI has no `E_FAULT`). fd 0/1/2 are the
+straight into one); otherwise `E_FAULT`. Strings must also be NUL-terminated inside that
+range (`sys_puts` prints at most up to `RAM_END`). fd 0/1/2 are the
 console; `read`/`write` on them from the file calls return `E_BADF` for the wrong
 direction and `lseek` on them `E_INVAL`.
 

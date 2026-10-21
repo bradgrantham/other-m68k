@@ -12,7 +12,7 @@
  * rising edge. Each register access is one bus cycle, so a bit costs two writes and one
  * read (about 50 CPU clocks, ~250 kbit/s at full speed). Identification (the 74+ idle
  * clocks up to the end of ACMD41) runs with extra delays to stay under the 400 kHz the spec
- * demands there. Data blocks come in through sdhw_read (sdspi.S, 44 clocks per bit). Only
+ * demands there. Data blocks come in through sdhw_read (sdspi.S, 46 or 48 clocks per bit). Only
  * the monitor and the TRAP #15 handlers call this; no ISR touches SDIO, so no interrupt
  * masking is needed. */
 #include "bios.h"

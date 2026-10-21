@@ -27,13 +27,25 @@ emulator commands and their output.
 * Not yet verified by ear: the emulator's shifter model is being added separately; `tune.elf`
   was checked for note printing, run time (785 chunks = 25.6 s) and INTEN on/off in `--io-trace`.
 
+## Review fixes (2026-10-21)
+
+* `sys_sleep_ms` waits `ms * ticks_per_sec / 1000` whole frames (computed without 32-bit
+  overflow) plus `delay_us` for the fraction of a frame; it used a 16 ms frame and ran ~3 %
+  long on NTSC. Emulator: `sys_sleep_ms(1000)` = 60 ticks NTSC, 50 PAL.
+* `sys_video_info`/`sys_mem_info`/`sys_con_info` range-check the whole structure (`E_FAULT`);
+  `sys_puts` needs its string to start in user RAM (`E_FAULT`) and stops at `RAM_END`.
+* SDK shim: every ABI `E_*` maps to its newlib `errno` (`ENAMETOOLONG`, `EFAULT`, `ENODEV`,
+  `EACCES`, `EROFS` were missing and became `ENOSYS`); `times()`/`clock()` count milliseconds and
+  `gettimeofday()` uses the real NTSC/PAL frame length.
+* Docs: ACR is 0x00 (baud-rate set 1), `sdhw_read` is 46/48 clocks per bit.
+
 ## Stage 2 (what was added)
 
 * `sd.c/h`, `sdspi.S`: SPI mode 0 bit-bang on SDIO (`sdio_shadow`, MISO from
   `INTSTAT.SDMISO`), slow clock through ACMD41, CMD0/8/55/ACMD41(HCS)/58/16/9/10, CMD17 read,
   CMD24 write with data-response and busy handling, CRC7 on every command, timeouts in bytes
-  exchanged, `SD_ERR_*`. `sdhw_read` (asm, 44 clocks/bit) does the data phases: a block is
-  ~15 ms, so card init + mount + loading the 35 KB `hello.elf` is ~2.5 s. Byte-addressed
+  exchanged, `SD_ERR_*`. `sdhw_read` (asm, 46/48 clocks/bit + 18/byte) does the data phases: a
+  block is ~17 ms, so card init + mount + loading the 35 KB `hello.elf` is ~2.5 s. Byte-addressed
   SDSC (v1/v2) and block-addressed SDHC both handled (host-tested; the emulator is SDHC).
 * `fatfs/`: FatFs R0.15 from elm-chan (ff.c unmodified, `ffconf.h`: RW, LFN off, RPATH 0,
   1 volume, TINY, CP437, NORTC fixed 2026-10-20, no mkfs). `diskio.c` on `sd.c`. Lazy mount
@@ -41,7 +53,7 @@ emulator commands and their output.
 * `fs.c/h`: 8 `FIL` + 4 `DIR` table (fd 3..10, dir handles 0..3), `O_*` -> FatFs modes
   (`O_TRUNC` without `O_CREAT` = `f_truncate`, `O_APPEND` = seek-to-end per write),
   `FRESULT` -> `E_*`, `struct dirent` fill. `syscall.c`: user pointer checks
-  (`USER_BASE..RAM_END`, `E_INVAL` otherwise), fd 0/1/2 stay the console, `sd_read_block`/
+  (`USER_BASE..RAM_END`, `E_FAULT` otherwise), fd 0/1/2 stay the console, `sd_read_block`/
   `sd_write_block`, `exec`. `user_cleanup` closes the program's files.
 * `elf.c/h`, `exec.c/h`: ELF32 MSB `ET_EXEC` `EM_68K`, `PT_LOAD` segments must fit in
   `[USER_BASE, USER_END)` (`E_NOMEM`; framebuffers and BIOS data rejected), bss zeroed,
@@ -90,7 +102,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 ## Known limitations
 
 * 8.3 names only (`FF_USE_LFN 0`); long names show as `~1` aliases, lookups are
-  case-insensitive, creating a non-8.3 name is `E_INVAL`. No current directory (`cd`),
+  case-insensitive, creating a non-8.3 name is `E_NAMETOOLONG`. No current directory (`cd`),
   no unlink/mkdir/rename (no syscalls in the ABI).
 * Write support: `sd_write_block`, `O_CREAT/O_TRUNC/O_APPEND`, `write`, `lseek` past EOF
   are implemented and tested on the host (fake card, FAT image) and in the emulator
@@ -115,8 +127,8 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
   `post_putc/puts/puthex` (poll `SRA.TXRDY`, write `TBA`) and `delay_loops`. `duart.h` has
   the MR1/MR2/CR/ACR values with data-sheet section references (shared by C and `.S`).
 * Init order (data sheet 4.2): IMR=0; CRA = 0x10 reset MR pointer, 0x20 reset RX, 0x30 reset
-  TX, 0x40 reset error status; ACR = `SERIAL_ACR_BRG_SET << 7` (0x80, only legal after the
-  RX/TX resets); MR1A = 0x13; MR2A = 0x07; CSRA = `SERIAL_CSR_VALUE` (0xCC); CRA = 0x05.
+  TX, 0x40 reset error status; ACR = `SERIAL_ACR_VALUE` (0x00: baud-rate set 1, where
+  CSR code 0xC is 38.4k; ACR[7] may only change after the RX/TX resets); MR1A = 0x13; MR2A = 0x07; CSRA = `SERIAL_CSR_VALUE` (0xCC); CRA = 0x05.
 * `serial_init` (C) drains anything received during the POST, resets error status and sets
   `IMR = RXRDYA`; `irq_init` enables `INTEN.DUART`. `irq_duart` (vector 27) reads `ISR`,
   then pops `RBA` while `SRA.RXRDY`, counting `SRA.OE` and clearing it with CRA = 0x40.
@@ -201,9 +213,9 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 
 Stage 2:
 
-* The ABI needs an error code for bad user pointers; `E_INVAL` is used now. Suggest
+* The ABI needed an error code for bad user pointers (`E_INVAL` was used at first)
   (resolved in spec rev 2: `E_FAULT -14` for bad pointers, `E_NODEV -19` for no card / no FAT volume, `E_NAMETOOLONG -36` for non-8.3 names are in the ABI and used.) Previously suggested: `E_NODEV -19`,
-  `E_ROFS -30` (write-protected card), `E_NAMETOOLONG -36` (not 8.3, now `E_INVAL`),
+  `E_ROFS -30` (write-protected card), `E_NAMETOOLONG -36` (not 8.3, `E_INVAL` before rev 2),
   `E_ACCES -13`.
 * The argv convention should be in the spec (`abi` or `syscalls.exec`): user stack at entry
   = `{return address, argc, argv}` as for a C call `_start(argc, argv)`, `argv[0]` = path,

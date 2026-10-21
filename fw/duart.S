@@ -19,9 +19,9 @@
  *                                and transmitter(s) have been issued software Rx and
  *                                Tx reset commands"; also puts them in a known state
  *   CRA = reset error status     clear stale RB/PE/FE/OE from before the reset
- *   ACR = BRG set 2              needed for the 38.4k CSR code 0xC
+ *   ACR = 0x00 (BRG set 1)       CSR code 0xC is 38.4k in set 1 (19.2k in set 2)
  *   MRA = MR1A, MRA = MR2A       first access hits MR1A, the pointer then stays at MR2A
- *   CSRA = SERIAL_CSR_VALUE      RX and TX clock select (0xCC = 38400 with ACR[7]=1)
+ *   CSRA = SERIAL_CSR_VALUE      RX and TX clock select (0xCC = 38400 with ACR[7]=0)
  *   CRA = enable TX + RX         TxRDY becomes set; receiver starts looking for a start bit
  * A hardware RESET already leaves IMR=0 and the pointers at MR1, but the 68000 RESET
  * instruction path (`reset` command) and a warm restart cannot rely on that.

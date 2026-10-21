@@ -65,10 +65,14 @@ int bios_putchar(int c)
 int bios_getchar(void) { return input_getchar(); }
 int bios_pollchar(void) { return input_pollchar(); }
 
+/* The string must start in user RAM; printing stops at the NUL or at RAM_END, so an
+ * unterminated string cannot walk into the I/O or ROM regions. */
 int bios_puts(const char *s)
 {
+    if (!user_range_ok(s, 1)) return E_FAULT;
+    uint32_t room = (uint32_t)(RAM_END - (uintptr_t)s);
     int n = 0;
-    while (*s) { putchar_both(*s++); n++; }
+    while ((uint32_t)n < room && s[n]) putchar_both(s[n++]);
     return n;
 }
 
@@ -84,7 +88,7 @@ void bios_wait_vblank(void)
 
 int bios_video_info(struct video_info *info)
 {
-    if (!info) return E_INVAL;
+    if (!user_range_ok(info, sizeof *info)) return E_FAULT;
     info->width = VIDEO_WIDTH;
     info->height = VIDEO_HEIGHT;
     info->bpp = VIDEO_BPP;
@@ -227,7 +231,7 @@ void *bios_set_irq_handler(int level, void *handler)
 
 int bios_mem_info(struct mem_info *info)
 {
-    if (!info) return E_INVAL;
+    if (!user_range_ok(info, sizeof *info)) return E_FAULT;
     info->user_start = USER_BASE;
     info->user_end = USER_END;
     info->user_end_without_fb1 = FB1_END;
@@ -246,7 +250,7 @@ int bios_con_clear(void) { con_clear(); return 0; }
 int bios_con_info(struct con_info *info)
 {
     int x, y;
-    if (!info) return E_INVAL;
+    if (!user_range_ok(info, sizeof *info)) return E_FAULT;
     con_get_cursor(&x, &y);
     info->cols = CON_COLS;
     info->rows = CON_ROWS;
@@ -259,14 +263,18 @@ int bios_key_event(void) { return input_key_event(); }
 
 void bios_sleep_ms(uint32_t ms)
 {
-    /* whole frames by the VBLANK counter, remainder by a calibrated loop */
-    uint32_t frame_ms = 1000 / ticks_per_sec;
-    uint32_t frames = ms / frame_ms;
+    /* Whole frames by the VBLANK counter, the fraction of a frame by a calibrated loop.
+     * frames = floor(ms * tps / 1000), split into seconds and milliseconds so the product
+     * cannot overflow 32 bits for any ms; the leftover (ms * tps) mod 1000 is in units of
+     * 1/(1000 * tps) s, i.e. rest * 1000 / tps microseconds (< one frame). */
+    uint32_t tps = ticks_per_sec;
+    uint32_t sub = (ms % 1000) * tps;                  /* < 1000 * 60 */
+    uint32_t frames = (ms / 1000) * tps + sub / 1000;
     if (frames) {
         uint32_t t0 = ticks;
         while ((uint32_t)(ticks - t0) < frames) ;
     }
-    delay_us((ms - frames * frame_ms) * 1000);
+    delay_us((sub % 1000) * 1000 / tps);
 }
 
 int bios_set_audio_cb(void *cb)
