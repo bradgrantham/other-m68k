@@ -11,7 +11,11 @@ extern int bus_overlay;         /* ROM overlaid on the RAM region (set at reset)
 /* Load a ROM image (padded with 0xFF to ROM_SIZE).  Returns 0 or -1. */
 int bus_load_rom(const char *path);
 
-/* Power-on / reset-button state: overlay set, BERR statistics kept. */
+/* Write the ROM window (flash contents after in-system programming) to a file. */
+int bus_save_rom(const char *path);
+extern int bus_rom_modified;    /* a program or erase command changed the contents */
+
+/* Power-on / reset-button state: overlay set, flash command state cleared. */
 void bus_reset(void);
 
 /* Side-effect-free peeks for the disassembler, --dump-mem and the video

@@ -163,6 +163,7 @@ void monitor_main(void) __attribute__((noreturn));
 void monitor_restart(void) __attribute__((noreturn));    /* crt0.S */
 void run_user(uint32_t pc, uint32_t usp) __attribute__((noreturn)); /* crt0.S; see exec.c user_launch */
 void cpu_reset(void) __attribute__((noreturn));          /* crt0.S */
+void cpu_reboot(void) __attribute__((noreturn));         /* crt0.S: jump through the reset vectors in the flash */
 extern uint32_t last_entry;             /* default address for `go` */
 
 /* ---- sd.c / fs.c / elf.c / exec.c: see sd.h, fs.h, elf.h, exec.h ---- */

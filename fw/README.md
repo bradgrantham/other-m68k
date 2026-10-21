@@ -1,6 +1,6 @@
 # fw/ -- other-m68k BIOS / monitor ROM (stage 2)
 
-128 KB EPROM image: power-on self test, 68681 DUART serial (38400 8N1), 40x30 video console, PS/2
+128 KB ROM image (the first 128 KB of the two SST39SF040 flash chips): power-on self test, 68681 DUART serial (38400 8N1), 40x30 video console, PS/2
 keyboard, exception reporting, machine monitor with S-record upload, SD card (SPI bit-bang)
 with a FAT32 filesystem (FatFs R0.15, 8.3 names), an ELF loader (`run`, `sys_exec`) and the
 TRAP #15 system call interface used by user programs (see `../sdk/`), including the file
@@ -9,8 +9,9 @@ and directory calls.
 ## Build
 
 ```
-make -C fw            # build/rom.elf, rom.bin (131072 bytes), rom.lst, rom.map,
-                      # rom_even.bin (D15..D8 EPROM), rom_odd.bin (D7..D0 EPROM)
+make -C fw            # build/rom.elf, rom.bin (131072 bytes: what `flash` programs), rom.lst,
+                      # rom.map, rom_even.bin (U4, D15..D8) and rom_odd.bin (U5, D7..D0): the two
+                      # 512 KB chip images for the TL866, 0xFF beyond the BIOS image
 make -C fw test       # host unit tests: printf, queue, srec, ps2, console, hexdump, SD framing
                       # (fake card), ELF parser (+ ../sdk/build/hello.elf), FatFs + fd table on
                       # a FAT32 image made with mkfs.vfat/mcopy (skipped if those are missing)
@@ -24,8 +25,32 @@ come from `../generated/` (`hw.h`, `hw.inc`, `syscalls.h`, `bios_syscalls.h`,
 `syscall_dispatch.inc`, `memory.ld`); nothing is duplicated here. `fatfs/` is vendored
 FatFs R0.15 (ff.c/ff.h/diskio.h unmodified, `ffconf.h` configured, `LICENSE.txt` kept).
 
-`mkrom.py` sets the last ROM word so that the 16-bit big-endian sum of all 65536 words is
-zero, then writes the even/odd split. The POST sums the whole ROM and expects 0.
+`mkrom.py` sets the last word of the 128 KB image so that the 16-bit big-endian sum of all
+65536 words is zero, then writes the even/odd split padded to the chip size (`ROM_IMAGE_SIZE`
+and `FLASH_CHIP_SIZE` from `generated/hw.h`). The POST sums the image and expects 0; the rest
+of the 1 MB window (`ROM_SIZE`) is not part of the image.
+
+## Programming the ROM
+
+* **First time, or after a failed update**: TL866 (minipro) with device `SST39SF040`,
+  `rom_even.bin` into U4 (even bytes, D15..D8) and `rom_odd.bin` into U5 (odd bytes, D7..D0).
+* **Afterwards, in system**: copy `rom.bin` to the SD card (any 8.3 name), then in the monitor
+  `flashid` shows the chip IDs (`bfbf/b7b7` = two SST39SF040) and `flash ROM.BIN` reads the
+  image into RAM, checks its size and word sum, asks `y/N`, and hands over to a routine in RAM
+  (`flashram.S`) that erases, programs and verifies the sixteen 8 KB sectors (one `.` per sector
+  on the serial port) and jumps through the new image's reset vectors: the new ROM's POST banner
+  is the confirmation. `reboot` does that jump on its own (SP and PC from `ROM_BASE`).
+  Interrupts are masked during the update and nothing runs from the flash, because the running
+  ROM is being replaced under its own feet; **do not press the NMI button** during a flash (the
+  vectors point into the ROM being rewritten). On an erase/program timeout or a verify mismatch
+  the routine prints which sector failed and stops the CPU: reset and retry `flash` if the
+  monitor still boots, otherwise program the chips in the TL866. `flash` stages the image at
+  `USER_BASE` (through framebuffer page 1; the display is switched to page 0), so it clobbers
+  user RAM. The same image (`rom.bin`) serves the emulator, `flash` and, split, the TL866.
+
+  Tested in the emulator: `--rom A.bin --sd sd.img --type "flashid\nflash ROM.BIN\ny" --rom-save out.bin`
+  with a `ROM.BIN` built with another `FW_VERSION`: the dots, the new banner, and `out.bin`
+  whose first 128 KB equal `ROM.BIN`.
 
 Run in the emulator:
 

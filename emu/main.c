@@ -218,7 +218,8 @@ static void usage(FILE *f)
 {
     fprintf(f,
         "usage: m68k-emu --rom FILE [options]\n"
-        "  --rom FILE          ROM image (<= 128 KB, padded with 0xFF)\n"
+        "  --rom FILE          ROM image (<= 1 MB, padded with 0xFF)\n"
+        "  --rom-save FILE     write the flash contents to FILE at exit if they were reprogrammed\n"
         "  --sd FILE           SD card image (multiple of 512 bytes, read/write)\n"
         "  --scale N           window scale factor (default 3)\n"
         "  --pal               fit the PAL jumper (INTSTAT.PALJMP = 1)\n"
@@ -271,6 +272,7 @@ static void parse_args(int argc, char **argv)
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
         if (!strcmp(a, "--rom")) opts.rom_path = need_arg(argc, argv, &i);
+        else if (!strcmp(a, "--rom-save")) opts.rom_save_path = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--sd")) opts.sd_path = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--scale")) opts.scale = (int)parse_num(need_arg(argc, argv, &i), "scale");
         else if (!strcmp(a, "--pal")) opts.pal_jumper = 1;
@@ -448,5 +450,11 @@ int main(int argc, char **argv)
         emu_dump_regs(stderr);
     for (int i = 0; i < opts.dump_mem_count; i++)
         bus_dump(opts.dump_mem[i].addr, opts.dump_mem[i].len);
+    if (opts.rom_save_path) {
+        if (bus_rom_modified)
+            bus_save_rom(opts.rom_save_path);
+        else
+            fprintf(stderr, "m68k-emu: ROM not modified, %s not written\n", opts.rom_save_path);
+    }
     return exit_code;
 }

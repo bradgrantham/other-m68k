@@ -21,19 +21,19 @@ this file explains the mechanism. If the two disagree, fix the spec and regenera
        |A1..A23,AS,     |MA0..16, RAMOE, WEU/WEL         | D0..D15 (SRAM-side bus)
        |UDS,LDS,RW      |                                |
    +---+------+     +---v----------------+    +----------+-----+
-   |  68000   |     | 2x KM681000 SRAM   |====| 2x 74AHCT245   |==== CPU data bus ==== 2x 27C512 EPROM
+   |  68000   |     | 2x KM681000 SRAM   |====| 2x 74AHCT245   |==== CPU data bus ==== 2x SST39SF040 flash
    | 12 MHz   |==== | (SRAM-side bus)    |    | (BUFEN, dir=RW)|                  \== 68681 DUART (D0..D7) -> serial
    +----------+     +--------------------+    +----------------+
 ```
 
 Two data buses:
 
-* **CPU bus**: 68000, EPROMs, the 68681 DUART (low byte only), A-side of the transceivers.
+* **CPU bus**: 68000, the two flash chips, the 68681 DUART (low byte only), A-side of the transceivers.
 * **SRAM-side bus**: SRAMs, CPLD2, B-side of the transceivers.
 
 The transceivers are enabled only during the CPU half of a slot for RAM and I/O cycles, so
 the video fetch (SRAM -> CPLD2) never shares wires with the CPU driving write data or the
-EPROMs driving read data. This is what makes 12 MHz with 70 ns parts close cleanly.
+flash chips driving read data. This is what makes 12 MHz with 70 ns parts close cleanly.
 
 ## 2. Clocks and the slot
 
@@ -92,8 +92,17 @@ during F3): at E4 capture D and DE; at E0 capture D into a register if IOCS and 
 * AS is asserted no earlier than 3 ns after the CPU's clock edge, which itself lags the
   CPLD's edge, so a cycle whose S2 falls exactly on E4 is always sampled "AS high" at that
   E4 and serviced in the next slot: the decision is deterministic, never a race.
-* ROM: CE = region & AS & R/W, combinational. AS low by 131 ns (S0 at E0) -> data by 208
-  ns, sampled at 289. Zero wait states at any phase; the EPROM only ever drives the CPU bus.
+* ROM read: the flash chips' CE is tied low, so the only read strobe is ROMOE = region & AS
+  & R/W, combinational. Address valid by 105 ns (S1 + 50), AS low by 131 ns (S0 at E0) ->
+  data by max(105 + 70 tACC, 131 + 7.5 + 35 tOE) = 175 ns, sampled at 289. Zero wait states
+  at any phase; the flash only ever drives the CPU bus (ROMOE is high whenever R/W is low).
+* ROM write (flash programming): ROMWE = real-ROM region & AS & !R/W & (UDS | LDS),
+  combinational, so it follows the data strobes: low from S4 + 47.5 ns, high 57.5 ns after
+  the S7 edge -> tWP about 125 ns (>= 40). Write data is valid from S3 + 50, i.e. about 40
+  ns before WE falls and 170 ns before it rises (tDS >= 40); the 68000 holds it >= 20 ns
+  after DS negates (tDH 0). The address is stable from S1 to after S7 (tAH 30 after the WE
+  falling edge). ROMOE is high throughout because R/W is low, so the chips never drive
+  against the CPU's write data. The immediate DTACK makes it a 4-clock cycle.
 * Transceiver B-side stops driving 22 ns after E0; next video OE at E2 (91 ns later).
 
 ### Alignment (the "cycle stealing" cost)
@@ -125,7 +134,7 @@ sits in S4 with the address and (for writes) data stable, which is what the sche
 | region | condition | DTACK | notes |
 |---|---|---|---|
 | RAM 0x000000-0x03FFFF | A23..A18 = 0 | slot-aligned | overlaid by ROM at reset |
-| ROM 0xE00000-0xE1FFFF | A23..A17 = 1110000 | immediate | read only; writes get DTACK and are ignored |
+| ROM 0xE00000-0xEFFFFF | A23..A20 = 1110 | immediate | reads: ROMOE; writes: ROMWE pulse to both flash chips (JEDEC command protocol, see below) |
 | IO 0xF00000-0xF0FFFF | A23..A16 = 0xF0 | slot-aligned | CPLD2 registers, A1..A3 select |
 | SWITCHES 0xF10000-0xF1FFFF | A23..A16 = 0xF1 | immediate | write performs action; A1..A2 select |
 | DUART 0xF20000-0xF2FFFF | A23..A16 = 0xF2 | **from the DUART** | DUARTCS asserted; byte registers at odd addresses, A1..A4 -> RS1..RS4 |
@@ -133,7 +142,7 @@ sits in S4 with the address and (for writes) data stable, which is what the sche
 | anything else | | **BERR** | bus error exception |
 
 **Overlay**: a flip-flop set by SYSRESET. While set, the RAM condition is treated as ROM
-(reads return EPROM contents, EPROM address = A1..A16). It clears when AS rises at the end
+(reads return flash contents, flash address = A1..A19; writes get DTACK but no ROMWE). It clears when AS rises at the end
 of any cycle whose address is in the real ROM region. The reset vector's initial PC must
 therefore point into 0xE0xxxx, and nothing else is required of software. The RESET
 instruction does not reset the CPLDs, so the overlay does not come back under software.
@@ -150,6 +159,18 @@ sits on the CPU bus (D0..D7), so BUFEN stays off and the video fetch is undistur
 **Soft switches** (0xF10000 + 2n): decoded from A1..A2 on a write; PAGE and PAL flip-flops.
 PAGE takes effect when VA is reloaded at the start of the frame; PAL swaps the H/V
 comparison constants at the start of the next frame.
+
+**Flash programming**: the two SST39SF040 (512K x 8, one per byte lane, CE tied low) are
+written through the JEDEC command sequence described in the `flash` section of
+`spec/board.json` (constants `FLASH_*` in `generated/hw.h`): every command is a word write,
+so both chips see it at once, and chip byte address N is CPU address ROM_BASE + 2N. The
+glue adds nothing but the ROMWE strobe; the unlock sequence is the only write protection.
+While a program or erase is in progress the chips return status instead of data, so the
+routine that issues the commands runs from RAM with interrupts masked (the vector table and
+the handlers live in ROM), and the NMI button must not be pressed meanwhile. The BIOS
+image occupies the first 128 KB of the window (`ROM_IMAGE_SIZE`); the TL866 programs blank
+chips with the even/odd images for the first boot, after that `flash` in the monitor
+rewrites them in place.
 
 ## 4. Video (CPLD1 counters, CPLD2 pixel path)
 

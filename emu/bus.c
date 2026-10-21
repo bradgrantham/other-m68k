@@ -1,7 +1,8 @@
 /* Address decode, RAM/ROM, overlay, bus error -- the CPLD1 side of the glue.
  *
  * Regions (generated/hw.h): RAM 0x000000 (256 KB, overlaid by ROM at reset),
- * ROM 0xE00000 (128 KB), IO 0xF00000 (CPLD2 registers), SWITCHES 0xF10000
+ * ROM 0xE00000 (1 MB window: two SST39SF040 flash chips, see "flash" below),
+ * IO 0xF00000 (CPLD2 registers), SWITCHES 0xF10000
  * (CPLD1 soft switches), DUART 0xF20000 (68681 on D0..D7, odd addresses,
  * A1..A4 = RS1..RS4, mirrored).  Anything else asserts BERR, except the
  * interrupt acknowledge pattern A23..A4 = 1 (0xFFFFF0..0xFFFFFF) which gets
@@ -27,7 +28,128 @@
 uint8_t bus_ram[RAM_SIZE];
 uint8_t bus_rom[ROM_SIZE];
 int bus_overlay = 1;
+int bus_rom_modified;
 unsigned long bus_berr_count;
+
+/* ---- flash ------------------------------------------------------------
+ * The ROM window holds two SST39SF040 (U4 = even bytes, U5 = odd bytes), /CE
+ * grounded, /OE on reads, /WE on any write in the real ROM region (writes
+ * under the overlay never reach them).  Each chip sees byte address
+ * N = (addr - ROM_BASE) / 2 and the byte on its own lane, so the JEDEC
+ * sequences are modelled per lane: unlock (AA@5555, 55@2AAA), byte program
+ * (A0, data: bits can only be cleared), sector erase (80, AA, 55, 30@sector:
+ * 4 KB per chip = FLASH_SECTOR_BYTES in the CPU view), chip erase (.. 10),
+ * software ID (90: byte 0 = FLASH_MFR_ID, byte 1 = FLASH_DEV_ID), F0 = exit
+ * ID mode / reset.  A write that is not part of a sequence is ignored, as on
+ * the chip.  After a program or erase the lane answers a few reads with the
+ * status bits (DQ7 inverted, DQ6 toggling) so the firmware's polling loop is
+ * exercised, then the array data appears. */
+enum { FL_IDLE, FL_AA, FL_UNLOCKED, FL_PROGRAM, FL_ER80, FL_ERAA, FL_ERUNLOCKED };
+
+struct flash_lane {
+    int state;
+    int id_mode;
+    int busy_reads;         /* status reads left before the data shows */
+};
+static struct flash_lane flash[2];      /* [0] = even/upper lane, [1] = odd/lower lane */
+
+#define FLASH_BUSY_READS_PROGRAM 3
+#define FLASH_BUSY_READS_ERASE   6
+
+static void flash_write_byte(int lane, uint32_t n, uint8_t val)
+{
+    struct flash_lane *f = &flash[lane];
+    uint8_t *cell = &bus_rom[2 * n + lane];
+    uint32_t chip_n = n & (FLASH_CHIP_SIZE - 1);
+
+    if (f->state == FL_PROGRAM) {
+        *cell &= val;
+        bus_rom_modified = 1;
+        f->busy_reads = FLASH_BUSY_READS_PROGRAM;
+        f->state = FL_IDLE;
+        return;
+    }
+    if (f->state == FL_ERUNLOCKED) {
+        if (val == 0x30) {
+            uint32_t first = n & ~(uint32_t)(FLASH_SECTOR_BYTES / 2 - 1);
+            for (uint32_t i = 0; i < FLASH_SECTOR_BYTES / 2; i++)
+                bus_rom[2 * (first + i) + lane] = 0xFF;
+            bus_rom_modified = 1;
+            f->busy_reads = FLASH_BUSY_READS_ERASE;
+        } else if (val == 0x10) {
+            for (uint32_t i = 0; i < ROM_SIZE / 2; i++)
+                bus_rom[2 * i + lane] = 0xFF;
+            bus_rom_modified = 1;
+            f->busy_reads = FLASH_BUSY_READS_ERASE;
+        }
+        f->state = FL_IDLE;
+        return;
+    }
+    if (val == 0xF0) {                  /* reset / exit ID mode, any address */
+        f->id_mode = 0;
+        f->state = FL_IDLE;
+        return;
+    }
+    int at1 = chip_n == 0x5555, at2 = chip_n == 0x2AAA;
+    switch (f->state) {
+    case FL_IDLE:       f->state = (at1 && val == 0xAA) ? FL_AA : FL_IDLE; break;
+    case FL_AA:         f->state = (at2 && val == 0x55) ? FL_UNLOCKED : FL_IDLE; break;
+    case FL_UNLOCKED:
+        if (at1 && val == 0xA0)      f->state = FL_PROGRAM;
+        else if (at1 && val == 0x80) f->state = FL_ER80;
+        else if (at1 && val == 0x90) { f->id_mode = 1; f->state = FL_IDLE; }
+        else f->state = FL_IDLE;
+        break;
+    case FL_ER80:       f->state = (at1 && val == 0xAA) ? FL_ERAA : FL_IDLE; break;
+    case FL_ERAA:       f->state = (at2 && val == 0x55) ? FL_ERUNLOCKED : FL_IDLE; break;
+    default:            f->state = FL_IDLE; break;
+    }
+}
+
+static uint8_t flash_read_byte(int lane, uint32_t n)
+{
+    struct flash_lane *f = &flash[lane];
+    uint8_t data = bus_rom[2 * n + lane];
+    if (f->busy_reads > 0) {
+        f->busy_reads--;
+        /* DQ7 = complement of the data, DQ6 toggles on each read, rest undefined (0) */
+        return (uint8_t)(((~data) & 0x80) | ((f->busy_reads & 1) << 6));
+    }
+    if (f->id_mode) {
+        uint32_t chip_n = n & (FLASH_CHIP_SIZE - 1);
+        if (chip_n == 0) return FLASH_MFR_ID;
+        if (chip_n == 1) return FLASH_DEV_ID;
+    }
+    return data;
+}
+
+static uint16_t flash_read16(uint32_t n)
+{
+    return (uint16_t)((flash_read_byte(0, n) << 8) | flash_read_byte(1, n));
+}
+
+static void flash_write16(uint32_t n, uint16_t val, int lanes)
+{
+    if (lanes & 2) flash_write_byte(0, n, (uint8_t)(val >> 8));
+    if (lanes & 1) flash_write_byte(1, n, (uint8_t)val);
+}
+
+int bus_save_rom(const char *path)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        fprintf(stderr, "m68k-emu: cannot write ROM '%s'\n", path);
+        return -1;
+    }
+    size_t n = fwrite(bus_rom, 1, sizeof bus_rom, f);
+    fclose(f);
+    if (n != sizeof bus_rom) {
+        fprintf(stderr, "m68k-emu: short write to ROM '%s'\n", path);
+        return -1;
+    }
+    fprintf(stderr, "m68k-emu: ROM contents (%lu bytes) saved to %s\n", (unsigned long)ROM_SIZE, path);
+    return 0;
+}
 
 /* Function code of the current access, written by Musashi through the
  * M68K_SET_FC_CALLBACK macro in m68kconf.h. */
@@ -76,6 +198,7 @@ int bus_load_rom(const char *path)
 void bus_reset(void)
 {
     bus_overlay = 1;
+    memset(flash, 0, sizeof flash);
 }
 
 /* ---- bus error -------------------------------------------------------- */
@@ -187,11 +310,11 @@ static uint16_t bus_read16(uint32_t addr, int lanes)
 
     if (in_region(a, RAM_BASE, RAM_SIZE)) {
         if (bus_overlay)
-            v = rd16(&bus_rom[(a - RAM_BASE) & (ROM_SIZE - 1)]);
+            v = flash_read16(((a - RAM_BASE) & (ROM_SIZE - 1)) / 2);
         else
             v = rd16(&bus_ram[a - RAM_BASE]);
     } else if (in_region(a, ROM_BASE, ROM_SIZE)) {
-        v = rd16(&bus_rom[a - ROM_BASE]);
+        v = flash_read16((a - ROM_BASE) / 2);
         bus_overlay = 0;                /* clears at the end of the cycle */
     } else if (in_region(a, IO_BASE, IO_SIZE)) {
         v = io_read16(a & 0xE, lanes);
@@ -222,7 +345,8 @@ static void bus_write16(uint32_t addr, uint16_t val, int lanes)
         if (lanes & 2) p[0] = (uint8_t)(val >> 8);
         if (lanes & 1) p[1] = (uint8_t)val;
     } else if (in_region(a, ROM_BASE, ROM_SIZE)) {
-        bus_overlay = 0;                /* write ignored, overlay still clears */
+        flash_write16((a - ROM_BASE) / 2, val, lanes);   /* ROMWE: DTACK, chips see it */
+        bus_overlay = 0;                /* overlay still clears */
     } else if (in_region(a, IO_BASE, IO_SIZE)) {
         io_write16(a & 0xE, val, lanes);
     } else if (in_region(a, SWITCHES_BASE, SWITCHES_SIZE)) {

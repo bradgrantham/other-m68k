@@ -7,6 +7,7 @@
 
 struct emu_opts {
     const char *rom_path;
+    const char *rom_save_path;  /* --rom-save: write the flash contents here at exit if modified */
     const char *sd_path;
     const char *serial_log_path;
     const char *duart_b_log_path;

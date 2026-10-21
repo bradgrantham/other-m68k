@@ -200,6 +200,17 @@ cpu_reset:
 	reset
 	jmp	_start
 
+/* void cpu_reboot(void) -- start whatever ROM is in the flash now: interrupts off, SSP and
+ * PC from the reset vector pair at ROM_BASE (not this image's _start: after `flash` the
+ * new image's vectors are there). The glue is not reset (overlay stays clear). */
+	.globl	cpu_reboot
+cpu_reboot:
+	move.w	#0x2700,%sr
+	move.w	#0,IO_INTEN_ADDR
+	movea.l	ROM_BASE,%sp
+	movea.l	ROM_BASE+4,%a0
+	jmp	(%a0)
+
 /* uint16_t irq_disable(void) -- returns previous SR; void irq_restore(uint16_t sr). */
 	.globl	irq_disable
 irq_disable:

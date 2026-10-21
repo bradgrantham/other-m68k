@@ -13,10 +13,10 @@ void putchar_both(int c)
 
 void print_banner(void)
 {
-    uint16_t stored = *(volatile uint16_t *)(ROM_END - 2);
+    uint16_t stored = *(volatile uint16_t *)(ROM_BASE + ROM_IMAGE_SIZE - 2);
     uint16_t id = IO_ID;
     kprintf("%s BIOS %s\n", BOARD_NAME, FW_VERSION);
-    kprintf("ROM %uK sum %04x (%s)  RAM %uK\n", (unsigned)(ROM_SIZE / 1024), stored,
+    kprintf("ROM %uK sum %04x (%s)  RAM %uK\n", (unsigned)(ROM_IMAGE_SIZE / 1024), stored,
             post_rom_sum == 0 ? "ok" : "BAD", (unsigned)(RAM_SIZE / 1024));
     kprintf("ID %04x  %s  DUART %u 8N1\n", id, video_standard == VIDEO_STD_PAL ? "PAL" : "NTSC",
             (unsigned)SERIAL_BAUD);

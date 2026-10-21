@@ -45,6 +45,18 @@ emulator commands and their output.
   `test_fs.c` (fd table + FatFs on a 64 MB image from `test/mkimage.sh`: read/seek/create/
   write across sectors/append/truncate/open-always, table limits, listing, remount).
 
+## Spec rev 3: flash ROM (2026-10-20)
+
+* `flash.c/h`, `flash_layout.h`, `flashram.S`: in-system update of the two SST39SF040
+  (`flashid`, `flash FILE`, `reboot`; `cpu_reboot` in crt0.S). The image is staged at
+  `USER_BASE` (128 KB, through FB page 1), size and word sum checked, chip IDs checked, then a
+  position-independent routine copied to `USER_BASE + ROM_IMAGE_SIZE` erases/programs/verifies
+  the 16 sectors with interrupts masked and jumps through the new reset vectors. Nothing may run
+  from the flash after the first erase (first attempt printed progress from C and read garbled
+  `.rodata` once the sector holding it had been rewritten: the emulator models this). The POST
+  checksum and the banner use `ROM_IMAGE_SIZE`; `mkrom.py` pads the chip images to
+  `FLASH_CHIP_SIZE` (sizes read from `generated/hw.h`).
+
 ## Verified in the emulator (revision-2 ROM, DUART emulator, `--sd` image)
 
 Commands are in README.md ("Run in the emulator"). Seen: `sd` -> SDHC, 131072 blocks,

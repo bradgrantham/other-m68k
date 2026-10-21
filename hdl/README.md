@@ -1,7 +1,7 @@
 # hdl/ -- glue logic for the other-m68k board
 
 Two ATF1508AS CPLDs (PLCC84, 5 V, 128 macrocells each) implement everything between the
-68000, the SRAMs, the EPROMs, the AD724 video encoder and the peripherals. The mechanism is
+68000, the SRAMs, the flash ROMs, the AD724 video encoder and the peripherals. The mechanism is
 specified in `docs/architecture.md`; every address, bit position and timing constant comes
 from `generated/board_params.vh` (generated from `spec/board.json`), which both modules
 `include`. Nothing from the spec is hard-coded here.
@@ -12,7 +12,7 @@ from `generated/board_params.vh` (generated from `spec/board.json`), which both 
 | `cpld2_io.v` | CPLD2 "I/O + shifter": pixel path, registers, interrupt controller, PS/2 receiver, serial receiver (+ optional transmitter) |
 | `tb/tb_m68k_bus.v` | behavioural 68000 bus master with datasheet delays |
 | `tb/tb_sram.v` | 70 ns SRAM model with read timing and write-timing checks |
-| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, EPROM, bus master, frame monitor, contention checker, 12 tests |
+| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, 2 flash, bus master, frame monitor, contention checker, 13 tests |
 | `Makefile` | `sim`, `wave`, `lint`, `synth`, `fit`, `clean` |
 | `fit.sh` | yosys -> EDIF -> Atmel fitter (wine); see "Synthesis and fitting" |
 | `pins.py` | harvest the fitter's pin choices into the sources' pin blocks / check them |
@@ -32,7 +32,7 @@ make -C hdl synth      # yosys generic synthesis + cell counts -> build/synth_*.
   flop (the ATF1508AS global clear). No latches, no inferred memories, no `initial` in the
   synthesisable sources.
 * Each module is a single `always` process plus continuous assigns. All outputs are
-  registered except where `architecture.md` says they are combinational: ROMCE, BERR, VPA,
+  registered except where `architecture.md` says they are combinational: ROMOE, ROMWE, BERR, VPA,
   the immediate (ROM/SWITCHES) half of DTACK, and the UDS/LDS gating inside WEU/WEL.
 * Tri-state only on CPLD2's data bus and the open-drain pins (`pin = drive_low ? 0 : z`).
 * Active-low pins carry a `_n` suffix. Internal copies are active-high.
@@ -84,7 +84,7 @@ ROM, SWITCHES and overlay accesses take 4 clocks at any alignment (immediate DTA
 ### Timing as simulated
 
 The testbench adds 7.5 ns to every CPLD1 output (including CPUCLK), 10 ns to the
-transceivers, and models the SRAM and EPROM access times. Observed: SRAM write pulse 83 ns
+transceivers, and models the SRAM and flash access times. Observed: SRAM write pulse 83 ns
 (>= 50), data valid to WE high 115 ns (>= 30), SRAM address stable across the whole WE pulse,
 no overlap of drivers on either bus at any time during 127 ms of simulation (including the
 SRAM -> transceiver hand-off at E4/E5 and the transceiver -> SRAM hand-off at E0/E2).
@@ -101,7 +101,8 @@ SRAM -> transceiver hand-off at E4/E5 and the transceiver -> SRAM hand-off at E0
 | `vpa_n` | out | combinational: AS & IACK (A23..A4 all ones) |
 | `ma[16:0]` | out | SRAM word address, VA during F1..F3, CPU A17..A1 during F4..F0 |
 | `ramoe_n`, `weu_n`, `wel_n` | out | SRAM strobes |
-| `romce_n` | out | combinational: AS & (ROM or overlaid RAM) & R/W |
+| `romoe_n` | out | combinational: AS & (ROM or overlaid RAM) & R/W; the flash chips' CE is tied low |
+| `romwe_n` | out | combinational: AS & real ROM region & !R/W & (UDS or LDS): flash write strobe, both chips |
 | `iocs_n` | out | to CPLD2, F5..F7 of a serviced I/O cycle |
 | `bufen_n` | out | 74AHCT245 enable, F5..F7 of a serviced RAM/IO cycle |
 | `latch` | out | F3 of every slot |
@@ -111,7 +112,7 @@ SRAM -> transceiver hand-off at E4/E5 and the transceiver -> SRAM hand-off at E0
 Decode (section 3 of the architecture doc) uses `*_DECODE_BITS` and `*_BASE` from the
 parameters file. `overlay` is set by reset and cleared on the first AS rising edge after an
 AS-low cycle whose address is in the real ROM region. While set, RAM-region accesses are
-treated as ROM (immediate DTACK, ROMCE on reads, writes ignored).
+treated as ROM (immediate DTACK, ROMOE on reads, writes get DTACK but no ROMWE).
 
 Video: `h` counts slots, advancing at E0; `v` counts lines, advancing at the slot where
 HSYNC begins; `vact` tracks `v < V_ACTIVE`; `de` is set at the slot wrap (if `vact`) and
@@ -165,8 +166,9 @@ as in the spec. Address bits A4..A15 are not decoded (the register block is mirr
 
 ## Testbench
 
-`tb_system` instantiates the two CPLDs, the bus master, the EPROM (64Kx16, 70 ns, floats
-30 ns after CE), two 128Kx8 SRAMs, and two 74AHCT245 (10 ns). CPLD1 outputs pass through
+`tb_system` instantiates the two CPLDs, the bus master, two SST39SF040 flash lanes (512Kx8,
+tACC 70, tOE 35, float 20 ns after OE; JEDEC program/erase/ID with datasheet busy times
+and write-timing checks), two 128Kx8 SRAMs, and two 74AHCT245 (10 ns). CPLD1 outputs pass through
 7.5 ns delays before reaching anything (including CPUCLK, so the CPU/CPLD skew matches the
 analysis in the architecture doc). The bus master samples DTACK/BERR/VPA through a 20 ns
 "setup" delay and read data through a 10 ns one, i.e. a signal has to be valid that long
@@ -174,7 +176,7 @@ before the sampling edge to count.
 
 Monitors running throughout:
 
-* **Contention**: driver counts for the CPU bus (68000 write data, EPROM, transceiver A side)
+* **Contention**: driver counts for the CPU bus (68000 write data, flash, transceiver A side)
   and the SRAM-side bus (SRAM, transceiver B side, CPLD2) using each model's drive flag; any
   overlap lasting >= 1 ns is an error. The byte halves are also required to agree.
 * **Phase lock**: `u1.ph == u2.ph2` on every clock after the first slot.
@@ -186,12 +188,17 @@ Monitors running throughout:
 
 Tests (all pass; the suite runs ~127 ms of board time in ~20 s):
 
-1. reset vector fetch through the overlay (4 clocks), write under overlay ignored, overlay
-   clears on the first E0xxxx access, RAM visible afterwards
+1. reset vector fetch through the overlay (4 clocks), write under overlay ignored (no ROMWE),
+   overlay clears on the first E0xxxx access, RAM visible afterwards
 2. RAM word/byte write/read at S0 = E0/E2/E4/E6 with write-data release 0 and 60 ns; cycle
    lengths 4/7/6/5; back-to-back 4-clock cycles
-3. ROM word/byte reads 4 clocks at every alignment; write to ROM gets DTACK
-4. BERR above RAM, above ROM, above SWITCHES, at 0x800000; VPA for IACK; edges of regions
+3. ROM word/byte reads 4 clocks at every alignment; a stray write to ROM gets DTACK in 4
+   clocks, one ROMWE pulse per lane (>= 40 ns), ROMOE high throughout, array unchanged
+   (3b) flash: software ID on both lanes, program a word (busy status seen, reads back,
+   neighbour untouched), sector erase (both lanes busy, 4 KB per chip erased, neighbours
+   and the vector sector untouched), program after erase; no flash timing violations
+4. BERR above RAM, below ROM, above SWITCHES, at 0x800000; VPA for IACK; edges of regions
+   (top of the 1 MB ROM window mapped)
 5. INTEN/GPIO/SDIO/USERIO/ID read/write and reset values, pins follow registers, INTSTAT
    live pins, IO mirror, IO cycle alignment, NMI button -> IPL 7
 6. PAGE1 soft switch: first fetch of the next frame from FB_PAGE1_WORD, back to PAGE0
@@ -202,9 +209,9 @@ Tests (all pass; the suite runs ~127 ms of board time in ~20 s):
 8. PS/2 frame -> PS2DATA, PS2RDY, IPL 2, cleared by the read; bad parity -> PS2ERR (W1C);
    truncated frame + silence -> watchdog resynchronises
 9. DUART cycles (stub 68681 with open-drain DTACK 2.5 X1 clocks after CS): DUARTCS, byte
-   read/write data and RS, CPLD1 releases DTACK, A5..A15 mirror, no IOCS/BUFEN/ROMCE
+   read/write data and RS, CPLD1 releases DTACK, A5..A15 mirror, no IOCS/BUFEN/ROMOE/ROMWE
 10. DUART IRQ pin -> INTSTAT.DUARTIRQ, IPL 3 gated by INTEN.DUART
-11. no contention events, no SRAM timing violations, phase lock, every driver exercised
+11. no contention events, no SRAM or flash timing violations, phase lock, every driver exercised
 
 ## Synthesis and fitting
 
@@ -226,13 +233,20 @@ what costs what on this part.
 
 ### Results
 
-Current design (spec rev 2: DUART board), `-preassign keep` with the pin blocks in the
-sources, JTAG on, power_reset on, TDI/TMS pull-ups on:
+Current design (spec rev 3: DUART board, flash ROM), `-preassign keep` with the pin blocks
+in the sources, JTAG on, power_reset on, TDI/TMS pull-ups on (CPLD1 also xor_synthesis):
 
 | chip | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in | I/O pins |
 |---|---|---|---|---|---|---|---|---|
-| `cpld1_mmu` | 1 | **103 / 128** | 70 | 21 | 112 | 371 | 27 / 40 | 63 / 64 (incl. 4 JTAG) |
+| `cpld1_mmu` | 2 | **111 / 128** | 70 | 13 | 124 | 400 | 37 / 40 | 64 / 64 (incl. 4 JTAG) |
 | `cpld2_io` | 1 | **104 / 128** | 71 | 8 | 105 | 309 | 27 / 40 | 56 / 64 (incl. 4 JTAG) |
+
+Spec rev 3 added ROMWE (flash write strobe) to CPLD1 on its last free I/O (pin 50) and
+widened the ROM window to 1 MB. The fitter now needs pass 2 (cascade logic) with the pin
+block kept, because pass 1 cannot place the new output in the LAB pin 50 belongs to; free
+placement fits the same netlist in pass 1 at 112 cells with fan-in 30. Without
+`xor_synthesis` the kept-pin fit is 112 cells, 409 PTs, fan-in 39/40. Rev 2 was 103 cells,
+fan-in 34, pass 1. CPLD1 is full: no I/O left, 124 of 128 nodes.
 
 (Free placement gives 99 and 104.)  The pin blocks were harvested from a free fit with
 `pins.py harvest` and are **proposed**: nothing on the board depends on them yet; re-harvest
@@ -261,7 +275,7 @@ above ~36 fan-in). Removing the small features buys 2 cells because the fitter s
 cells converting foldbacks into nodes. Only the frame engines matter; byte-wide registers
 made it worse (eight pins carrying six sources each exceed one LAB's fan-in).
 
-CPLD1 pins: 27 inputs + 32 outputs = 59 of the 60 regular I/O with JTAG on (1 spare), plus
+CPLD1 pins: 27 inputs + 33 outputs = 60 of the 60 regular I/O with JTAG on (none spare), plus
 `clk24` on GCLK1 and `sysreset_n` on GCLR. CPLD2: 13 inputs, 22 bidirectional, 17 outputs =
 52 (8 spare).
 

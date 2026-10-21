@@ -4,11 +4,18 @@
 
 * `cpld1_mmu.v`, `cpld2_io.v`: complete implementations of architecture.md sections 2-5,
   Verilog-2001, one clock, async reset, no inferred memories. Lint clean (`iverilog -Wall`).
-* `tb/`: 68000 bus master, 70 ns SRAM model with timing checks, EPROM and 74AHCT245 models,
-  whole-board testbench with 12 tests, a frame/pixel monitor and a bus-contention checker.
-  `make -C hdl sim` ends in `RESULT: PASS` (12 tests, 0 errors; ~20 s).
-* **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 103/128
-  and CPLD2 104/128, both pass 1 with the harvested pin blocks kept. JEDs in `build/fit/`.
+* `tb/`: 68000 bus master, 70 ns SRAM model with timing checks, SST39SF040 flash model
+  (JEDEC program/erase/ID, busy status, write-timing checks) and 74AHCT245 models,
+  whole-board testbench with 13 tests, a frame/pixel monitor and a bus-contention checker.
+  `make -C hdl sim` ends in `RESULT: PASS` (13 tests, 0 errors; ~30 s).
+* **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 111/128
+  (pass 2, fan-in 37/40, no I/O left) and CPLD2 104/128 (pass 1) with the harvested pin
+  blocks kept. JEDs in `build/fit/`.
+* **Spec rev 3 (2026-10-20)**: the EPROMs became two SST39SF040 flash chips (CE tied low).
+  CPLD1's ROMCE is now ROMOE (same logic) and a new combinational ROMWE (real ROM region,
+  write, UDS|LDS) on pin 50 lets the firmware program the flash in place; the ROM window is
+  1 MB (A23..A20). The bus-master model now honours the 68000's data hold after DS (#25),
+  which the flash's tDH needs and the earlier t_rel = 0 case violated.
 * **Spec rev 2 (2026-10-20)**: the user chose a 68681 DUART for serial after the fitter
   showed CPLD2 could not hold both frame engines. CPLD1 decodes DUARTCS and releases DTACK in
   the DUART region; CPLD2 lost the serial receiver and gained the DUART IRQ input; INTEN,
@@ -40,8 +47,9 @@
 4. **ROMCE glitch on writes.** `ROMCE = region & AS & R/W` is combinational; the 68000
    drives R/W low up to 20 ns *after* asserting AS on a write (spec #20A), so a write to a
    ROM-region address (or to RAM while the overlay is set) can produce a sub-20 ns ROMCE
-   pulse. Harmless for the EPROM, and such writes are software errors anyway, but the doc's
-   "the EPROM only ever drives the CPU bus" margin analysis assumes no such pulse. The
+   pulse. Harmless for the flash (OE pulses shorter than tOE produce no output, and the
+   write itself is only recognised through the WE strobe, which follows the data strobes),
+   but the doc's "the flash only ever drives the CPU bus" margin analysis assumes no such pulse. The
    simulation drives R/W and AS simultaneously and does not exercise this.
 5. **TAS / read-modify-write.** With `serviced` set until AS goes high, the second half of a
    TAS cycle (AS stays low) would never receive DTACK. The 68000 only emits RMW cycles for

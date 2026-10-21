@@ -30,7 +30,8 @@ module cpld1_mmu #(
     output wire        weu_n,         // write enable, upper byte (D15..D8)
     output wire        wel_n,         // write enable, lower byte (D7..D0)
     // other chip selects
-    output wire        romce_n,
+    output wire        romoe_n,       // flash output enable (reads; chips' CE is tied low)
+    output wire        romwe_n,       // flash write enable (writes to the real ROM region)
     output wire        iocs_n,
     output wire        bufen_n,       // 74AHCT245 enable
     output wire        duartcs_n,     // 68681 chip select (CPU bus, byte registers)
@@ -58,7 +59,7 @@ wire sw_region  = (a[23:24-SWITCHES_DECODE_BITS] == SWITCHES_BASE[23:24-SWITCHES
 wire du_region  = (a[23:24-DUART_DECODE_BITS]    == DUART_BASE[23:24-DUART_DECODE_BITS]);
 wire iack       = &a[23:4];
 
-reg  overlay;                          // set by reset; RAM region reads the EPROM while set
+reg  overlay;                          // set by reset; RAM region reads the flash while set
 wire rom_sel = rom_region | (ram_region & overlay);
 wire ram_sel = ram_region & ~overlay;
 wire mapped  = ram_region | rom_region | io_region | sw_region | du_region;
@@ -77,9 +78,12 @@ reg rom_cyc;      // an AS-low cycle in the real ROM region is in progress (over
 // Decision at E4: AS low, RAM or IO, not yet serviced.
 wire svc_now = as_low & (ram_sel | io_region) & ~serviced;
 
-// Combinational outputs (per architecture.md): ROMCE, BERR, VPA, immediate DTACK,
-// and the UDS/LDS gating inside WE.
-assign romce_n = ~(as_low & rom_sel & rw);
+// Combinational outputs (per architecture.md): ROMOE, ROMWE, BERR, VPA, immediate DTACK,
+// and the UDS/LDS gating inside WE.  ROMWE follows UDS/LDS (asserted at S4 of a write,
+// after the data is valid) and only the real ROM region: writes under the overlay are
+// ignored, as before.  Both flash chips see every write (word writes only, see the spec).
+assign romoe_n = ~(as_low & rom_sel & rw);
+assign romwe_n = ~(as_low & rom_region & ~rw & (~uds_n | ~lds_n));
 assign berr_n  = ~(as_low & ~mapped & ~iack);
 assign vpa_n   = ~(as_low & iack);
 // DTACK is an open-drain bus shared with the DUART: released while AS is low in its region.
@@ -259,7 +263,7 @@ endmodule
 //PIN: ramoe_n        : 33
 //PIN: iocs_n         : 34
 //PIN: bufen_n        : 35
-//PIN: romce_n        : 36
+//PIN: romoe_n        : 36
 //PIN: cpuclk         : 37
 //PIN: A_1            : 39
 //PIN: A_3            : 40
@@ -269,6 +273,7 @@ endmodule
 //PIN: A_2            : 46
 //PIN: lds_n          : 48
 //PIN: uds_n          : 49
+//PIN: romwe_n        : 50
 //PIN: hsync          : 51
 //PIN: de             : 52
 //PIN: ma_0           : 54

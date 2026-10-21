@@ -49,7 +49,7 @@ synth: | $(BUILD)
 # "//PIN:" lines in each source.  Serial: the fitter must not run twice at once.
 FITFLAGS ?= -preassign keep -strategy JTAG = on -strategy power_reset on -strategy TDI_pullup = on -strategy TMS_pullup = on
 fit:
-	./fit.sh cpld1_mmu cpld1_mmu.v cpld1_mmu -- $(FITFLAGS)
+	./fit.sh cpld1_mmu cpld1_mmu.v cpld1_mmu -- $(FITFLAGS) -strategy xor_synthesis = on
 	./fit.sh cpld2_io  cpld2_io.v  cpld2_io  -- $(FITFLAGS)
 
 pins-check:

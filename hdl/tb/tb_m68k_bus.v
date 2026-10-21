@@ -11,7 +11,8 @@
 //                        20 ns before the edge is not seen)
 //   read data            sampled at the falling edge ending S6 with 10 ns setup
 //   AS/DS high           50 ns after S7 (falling)
-//   write data released  t_rel ns after the rising edge ending S7 (0..60)
+//   write data released  t_rel ns after the rising edge ending S7 (0..60), but never
+//                        earlier than 20 ns after DS negates (#25, data hold)
 //   R/W high             55 ns after the rising edge ending S7
 //
 // A cycle can start on any CPU clock: a task waits for the next rising edge unless it
@@ -45,6 +46,7 @@ localparam real T_CLDO  = 50.0;   // clock to write data out
 localparam real T_CLSN  = 50.0;   // clock to AS/DS negated
 localparam real T_SETUP_DTACK = 20.0;
 localparam real T_SETUP_DATA  = 10.0;
+localparam real T_SHDOI = 20.0;   // DS negated to data out invalid (#25), minimum
 localparam integer MAX_WAIT = 40;
 
 reg  [15:0] dout = 16'h0000;
@@ -59,6 +61,7 @@ integer last_status = 0;
 reg  [15:0] last_data = 16'h0000;
 integer last_s0_fast = 0;
 integer cycles = 0;
+time    t_s7 = 0;
 
 // setup-time modelling: delayed copies show the value as it was t_setup ago
 wire        dtack_s, berr_s, vpa_s;
@@ -129,13 +132,16 @@ task cycle;
         // S5 begins at this falling edge
         @(posedge clk);                                    // S6
         @(negedge clk);                                    // S7: sample read data, negate strobes
+        t_s7 = $time;
         if (!is_write) last_data = d_s;
         as_n  <= #(T_CLSN) 1'b1;
         uds_n <= #(T_CLSN) 1'b1;
         lds_n <= #(T_CLSN) 1'b1;
         @(posedge clk);                                    // end of S7 (= next S0 edge)
         if (is_write) begin
-            drv <= #(t_rel) 1'b0;
+            // #25: data holds >= T_SHDOI after DS negated; DS negates T_CLSN after the S7
+            // (falling) edge, i.e. T_CLSN - half a clock after this edge
+            drv <= #((t_rel > T_CLSN - ($time - t_s7) + T_SHDOI) ? t_rel : T_CLSN - ($time - t_s7) + T_SHDOI) 1'b0;
             rw  <= #(T_CLAV) 1'b1;
         end
         last_clocks = 4 + waits;              // S0..S7 is 4 clocks plus one per wait

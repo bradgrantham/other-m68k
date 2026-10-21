@@ -1,6 +1,8 @@
 # other-m68k firmware (BIOS/monitor ROM) build.
-# Outputs: build/rom.elf, build/rom.bin (128 KB, 0xFF padded, checksum in last word),
-#          build/rom.lst, build/rom_even.bin (D15..D8), build/rom_odd.bin (D7..D0).
+# Outputs: build/rom.elf, build/rom.bin (128 KB, 0xFF padded, checksum in last word: the
+#          file for the monitor's `flash` command), build/rom.lst, build/rom_even.bin
+#          (U4, D15..D8) and build/rom_odd.bin (U5, D7..D0): 512 KB each, 0xFF padded, for
+#          programming the SST39SF040 chips in the TL866.
 # `make` builds everything; `make test` runs the host unit tests of the pure-C modules.
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
@@ -24,9 +26,9 @@ ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections -Wl,-Map=$(B)/rom.map
 
 # Planned source list (see STATUS.md); only files that exist are built.
-ASRCS = crt0.S post.S duart.S memops.S sdspi.S
+ASRCS = crt0.S post.S duart.S memops.S sdspi.S flashram.S
 CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c queue.c \
-        hexdump.c printf.c syscall.c string.c sd.c diskio.c fs.c elf.c exec.c
+        hexdump.c printf.c syscall.c string.c sd.c diskio.c fs.c elf.c exec.c flash.c
 FATFS = fatfs/ff.c
 OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS)) $(B)/ff.o
 
@@ -55,8 +57,9 @@ $(B)/rom.elf: $(OBJS) rom.ld $(GEN)/memory.ld
 	$(LD) $(LDFLAGS) -o $@ $(OBJS) -lgcc
 	$(SIZE) $@
 
-# 128 KB image, gaps 0xFF; mkrom.py patches the checksum word (last word) so that
-# the 16-bit sum of all 65536 big-endian words is 0, and writes the even/odd split.
+# 128 KB image (ROM_IMAGE_SIZE), gaps 0xFF; mkrom.py patches the checksum word (last word)
+# so that the 16-bit sum of all 65536 big-endian words is 0, and writes the even/odd split
+# padded to the flash chip size (sizes read from ../generated/hw.h).
 $(B)/rom.bin $(B)/rom_even.bin $(B)/rom_odd.bin: $(B)/rom.elf mkrom.py
 	$(OBJCOPY) -O binary --gap-fill=0xFF --pad-to=0xE20000 $< $(B)/rom.bin
 	$(PYTHON) mkrom.py $(B)/rom.bin $(B)/rom_even.bin $(B)/rom_odd.bin

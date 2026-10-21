@@ -21,6 +21,12 @@ localparam SWITCHES_DECODE_BITS = 8; // compare A23..A16 against SWITCHES_BASE
 localparam [23:0] DUART_BASE = 24'hF20000;
 localparam [23:0] DUART_SIZE = 24'h010000;
 localparam DUART_DECODE_BITS = 8; // compare A23..A16 against DUART_BASE
+// flash command addresses (CPU view, word writes) and JEDEC IDs
+localparam [23:0] FLASH_CMD1 = 24'hE0AAAA;
+localparam [23:0] FLASH_CMD2 = 24'hE05554;
+localparam [7:0]  FLASH_MFR_ID = 8'hBF;
+localparam [7:0]  FLASH_DEV_ID = 8'hB7;
+localparam [23:0] FLASH_SECTOR_BYTES = 24'h002000; // CPU view, both chips
 
 localparam [16:0] FB_PAGE0_WORD = 17'h16A00; // byte address 0x02D400 >> 1
 localparam [16:0] FB_PAGE1_WORD = 17'h0D400; // byte address 0x01A800 >> 1

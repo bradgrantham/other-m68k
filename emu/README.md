@@ -1,7 +1,8 @@
 # other-m68k emulator
 
 `m68k-emu` runs the board's ROM on a Musashi 68000 core with a model of the two CPLDs and the
-peripherals: 256 KB RAM, 128 KB ROM with the reset overlay, the CPLD2 registers, the soft
+peripherals: 256 KB RAM, the 1 MB ROM window (two SST39SF040 flash chips, in-system
+programmable) with the reset overlay, the CPLD2 registers, the soft
 switches, the 320x240 RGB332 framebuffer in an SDL2 window, the 68681 DUART (channel A is the
 serial console), the PS/2 keyboard, an SDHC card in SPI mode, 1-bit audio and the NMI/reset buttons.
 Addresses, bits and timing constants come from `generated/hw.h` / `generated/emu_map.h`; nothing
@@ -19,7 +20,8 @@ make emu / make run    # from the top level
 ```
 m68k-emu --rom fw/build/rom.bin [options]
 
-  --rom FILE          ROM image (<= 128 KB, padded with 0xFF)        --sd FILE        SD card image, any multiple of 512 bytes (read/write)
+  --rom FILE          ROM image (<= 1 MB, padded with 0xFF)          --sd FILE        SD card image, any multiple of 512 bytes (read/write)
+  --rom-save FILE     write the flash contents to FILE at exit if a program/erase changed them
   --scale N           window scale (default 3, nearest-neighbour)    --pal            fit the PAL jumper (INTSTAT.PALJMP = 1)
   --fast              no real-time pacing (audio off)                --headless       no window, no audio (works without a display)
   --frames N          exit after N frames                            --trace          disassemble each instruction to stderr
@@ -85,8 +87,18 @@ rate other than `SERIAL_BAUD` the emulator says so once on stderr (data still fl
 
 ## Memory and bus behaviour
 
-* RAM at `RAM_BASE`, ROM at `ROM_BASE` (padded to 128 KB with 0xFF; images larger than the ROM
-  are rejected). ROM writes are ignored with DTACK.
+* RAM at `RAM_BASE`, ROM at `ROM_BASE` (padded to the 1 MB window with 0xFF; images larger than
+  the window are rejected). The window is two SST39SF040 flash chips (`bus.c`, "flash"): a write
+  in the ROM region (ROMWE) is fed to a per-byte-lane JEDEC command decoder: unlock
+  (AA@5555, 55@2AAA in chip byte addresses, i.e. `FLASH_CMD1`/`FLASH_CMD2` as word writes), byte
+  program (A0; bits can only be cleared), sector erase (80 AA 55, 30@sector; 4 KB per chip =
+  `FLASH_SECTOR_BYTES` in the CPU view), chip erase (.. 10), software ID (90: `FLASH_MFR_ID`,
+  `FLASH_DEV_ID` at chip addresses 0/1) and F0 (exit ID mode). Writes outside a sequence are
+  ignored. After a program or erase the lane answers the next few reads with the status bits
+  (DQ7 inverted, DQ6 toggling) and then the array data, so the firmware's polling is exercised;
+  code fetched from a busy chip is garbage, as on hardware. `--rom-save FILE` writes the window
+  back at exit when it was changed (the firmware's `flash` command is tested this way, see
+  `fw/README.md`).
 * Overlay: set at reset; while set, reads in the RAM region return ROM and writes are dropped.
   It clears at the end of any access whose address is in the ROM region, so the fetch of the
   first instruction at the reset PC clears it.

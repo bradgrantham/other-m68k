@@ -4,6 +4,7 @@
 #include "sd.h"
 #include "fs.h"
 #include "exec.h"
+#include "flash.h"
 
 #define LINE_MAX 96
 #define SREC_LINE_MAX 520
@@ -192,7 +193,9 @@ static void cmd_help(void)
             "sd [rd lba]    card info / dump block\n"
             "dir [path]     list directory\n"
             "cat file       print a file\n"
-            "run file [args] load ELF and run\n");
+            "run file [args] load ELF and run\n"
+            "flashid        flash chip IDs\n"
+            "flash file     reprogram the ROM from an image file, then `reboot`\n");
 }
 
 static void cmd_md(int argc, char **argv)
@@ -381,6 +384,21 @@ static void cmd_cat(int argc, char **argv)
     fs_close(fd);
 }
 
+static void cmd_flashid(void)
+{
+    uint16_t mfr, dev;
+    int ok = flash_read_id(&mfr, &dev);
+    kprintf("flash ID %04x/%04x (even chip %02x %02x, odd chip %02x %02x): %s\n", mfr, dev,
+            mfr >> 8, dev >> 8, mfr & 0xFF, dev & 0xFF,
+            ok ? "SST39SF040 x2" : "not the expected SST39SF040 pair");
+}
+
+static void cmd_flash(int argc, char **argv)
+{
+    if (argc < 2) { kprintf("flash file   (a %uK rom.bin from fw/mkrom.py on the SD card)\n", (unsigned)(ROM_IMAGE_SIZE / 1024)); return; }
+    flash_update(argv[1]);
+}
+
 /* `run file [args...]`: rest is the raw remainder of the line after the command word. */
 static void cmd_run(char *rest)
 {
@@ -430,6 +448,9 @@ static void execute(char *line)
     else if (!strcmp(c, "sd")) cmd_sd(argc, argv);
     else if (!strcmp(c, "dir") || !strcmp(c, "ls")) cmd_dir(argc, argv);
     else if (!strcmp(c, "cat") || !strcmp(c, "type")) cmd_cat(argc, argv);
+    else if (!strcmp(c, "flashid")) cmd_flashid();
+    else if (!strcmp(c, "flash")) cmd_flash(argc, argv);
+    else if (!strcmp(c, "reboot")) cpu_reboot();
     else kprintf("unknown command '%s' (try help)\n", c);
 }
 

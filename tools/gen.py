@@ -242,6 +242,15 @@ def gen_vh(d):
         # number of high address bits that must match (A23 down)
         bits = 24 - (size.bit_length() - 1)
         A("localparam %s_DECODE_BITS = %d; // compare A23..A%d against %s_BASE" % (nm, bits, 24 - bits, nm))
+    if "flash" in d:
+        f = d["flash"]
+        rom_base = n(next(r for r in d["memory_map"] if r["name"] == "ROM")["base"])
+        A("// flash command addresses (CPU view, word writes) and JEDEC IDs")
+        A("localparam [23:0] FLASH_CMD1 = 24'h%06X;" % (rom_base + 2 * n(f["cmd_addr1"])))
+        A("localparam [23:0] FLASH_CMD2 = 24'h%06X;" % (rom_base + 2 * n(f["cmd_addr2"])))
+        A("localparam [7:0]  FLASH_MFR_ID = 8'h%02X;" % n(f["mfr_id"]))
+        A("localparam [7:0]  FLASH_DEV_ID = 8'h%02X;" % n(f["dev_id"]))
+        A("localparam [23:0] FLASH_SECTOR_BYTES = 24'h%06X; // CPU view, both chips" % (2 * n(f["sector_size"])))
     A("")
     v = d["video"]
     for i, p in enumerate(v["pages"]):

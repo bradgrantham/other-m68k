@@ -15,7 +15,7 @@ assumes the previous ones pass.
   syncs to.
 
 ## 2. Free-running CPU
-* Fit the 68000 and the EPROMs with `fw/test/freerun` (a ROM of NOPs / `bra` loop that never
+* Fit the 68000 and the flash chips (programmed in the TL866) with `fw/test/freerun` (a ROM of NOPs / `bra` loop that never
   touches RAM). Address lines toggle; AS pulses; no BERR. A ROM that only blinks LED0 via the
   GPIO register proves the I/O path through the transceivers.
 
@@ -34,8 +34,10 @@ assumes the previous ones pass.
 * `run hello.elf` from the SD card, or upload an S-record over serial and `go`.
 
 ## Programming
-* EPROMs: TL866 with `rom_even.bin` into the D15..D8 chip and `rom_odd.bin` into D7..D0.
-  During development fit pin-compatible electrically erasable parts (W27C512 or 28C256-class
-  with the jumper) so the UV eraser is not in the loop.
+* ROM: the two SST39SF040 flash chips are programmed once in the TL866 (minipro device
+  `SST39SF040`): `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0).
+  Every later update is done in system: `rom.bin` on the SD card, `flashid`, `flash ROM.BIN`,
+  answer `y`, watch the 16 dots on the serial port and the new banner (see `fw/README.md`).
+  Do not press NMI or reset while it runs; a failed update is recovered with the TL866.
 * CPLDs: FT232H as JTAG adapter; `openocd -f interface/ftdi/um232h.cfg` with the SVF produced
   from the JED.
