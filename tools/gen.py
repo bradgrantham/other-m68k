@@ -253,8 +253,12 @@ def gen_vh(d):
         A("localparam [23:0] FLASH_SECTOR_BYTES = 24'h%06X; // CPU view, both chips" % (2 * n(f["sector_size"])))
     A("")
     v = d["video"]
-    for i, p in enumerate(v["pages"]):
-        A("localparam [16:0] FB_PAGE%d_WORD = 17'h%05X; // byte address %s >> 1" % (i, n(p) >> 1, hx(p)))
+    pages = [n(p) for p in v["pages"]]
+    his = {p >> 18 for p in pages}
+    assert len(his) == 1, "framebuffer pages must share byte address bits 19..18 (CPLD2 drives them as a constant during the video fetch)"
+    A("localparam [1:0] FB_PAGE_HI = 2'd%d; // byte address bits 19..18 of every framebuffer page: MA18..MA17 during the video fetch" % his.pop())
+    for i, p in enumerate(pages):
+        A("localparam [16:0] FB_PAGE%d_WORD = 17'h%05X; // (byte address %s >> 1) & 0x1FFFF: MA16..MA0 at the frame start" % (i, (p >> 1) & 0x1FFFF, hx(p)))
     sc = v["slot_clocks"]
     for std, t in v["timing"].items():
         S = std.upper()

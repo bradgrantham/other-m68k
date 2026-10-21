@@ -290,6 +290,10 @@ endmodule
 //PIN: rgb_7          : 50
 //PIN: rgb_3          : 51
 //PIN: rgb_2          : 52
+//PIN: a18            : 54
+//PIN: a19            : 55
+//PIN: ma17           : 56
+//PIN: ma18           : 57
 //PIN: D_6            : 63
 //PIN: D_12           : 64
 //PIN: D_11           : 65

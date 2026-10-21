@@ -1,23 +1,23 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 3,
+    "revision": 4,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
     "cpu_clock_div": 2,
     "slot_fast_clocks": 8,
     "slot_cpu_clocks": 4,
-    "desc": "68000 SBC: 256K SRAM, 128K EPROM, memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 1-bit audio."
+    "desc": "68000 SBC: 1 MB SRAM, 1 MB flash ROM window (128 KB BIOS image), memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 1-bit audio."
   },
   "memory_map": [
     {
       "name": "RAM",
       "base": "0x000000",
-      "size": "0x040000",
+      "size": "0x100000",
       "kind": "ram",
-      "device": "2x KM681000BLP-7 (128Kx8, 70ns), word wide",
-      "desc": "256 KB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). At reset the ROM is overlaid here until the first access to the ROM region."
+      "device": "2x AS6C4008-55PCN (512Kx8, 55ns), word wide",
+      "desc": "1 MB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). CPLD1 drives MA0..MA16 (CPU A1..A17 or the video counter); CPLD2 drives MA17..MA18 (CPU A18..A19 in the CPU half of a slot, the framebuffer pages' fixed bits 19..18 during the video fetch). At reset the ROM is overlaid here until the first access to the ROM region."
     },
     {
       "name": "ROM",
@@ -84,18 +84,18 @@
     {
       "name": "USER",
       "base": "0x004000",
-      "size": "0x016800",
-      "desc": "User program load region (ELF link address 0x004000). User stack grows down from the top (0x01A800). Extends to 0x02D400 if page 1 of the framebuffer is not used."
+      "size": "0x0D6800",
+      "desc": "User program load region (ELF link address 0x004000). User stack grows down from the top (0x0DA800). Extends to 0x0ED400 if page 1 of the framebuffer is not used."
     },
     {
       "name": "FB1",
-      "base": "0x01A800",
+      "base": "0x0DA800",
       "size": "0x012C00",
       "desc": "Framebuffer page 1 (optional double buffer)."
     },
     {
       "name": "FB0",
-      "base": "0x02D400",
+      "base": "0x0ED400",
       "size": "0x012C00",
       "desc": "Framebuffer page 0 (default, displayed after reset)."
     }
@@ -108,8 +108,8 @@
     "pixel_desc": "bits 7..5 red, 4..2 green, 1..0 blue. Byte at the even (upper, D15..D8) address is the left pixel of the word.",
     "bytes_per_line": 320,
     "pages": [
-      "0x02D400",
-      "0x01A800"
+      "0x0ED400",
+      "0x0DA800"
     ],
     "pixel_clocks": 2,
     "progressive": true,
@@ -382,13 +382,13 @@
           "name": "PAGE0",
           "offset": 0,
           "access": "w",
-          "desc": "Display framebuffer page 0 (0x02D400) starting next frame."
+          "desc": "Display framebuffer page 0 (0x0ED400) starting next frame."
         },
         {
           "name": "PAGE1",
           "offset": 2,
           "access": "w",
-          "desc": "Display framebuffer page 1 (0x01A800) starting next frame."
+          "desc": "Display framebuffer page 1 (0x0DA800) starting next frame."
         },
         {
           "name": "NTSC",
@@ -1366,12 +1366,14 @@
     },
     "cpld2": {
       "part": "ATF1508AS-7JX84",
-      "role": "I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers",
+      "role": "I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)",
       "signals": {
         "inputs": [
           "CLK24",
           "SYSRESET",
           "A1..A3",
+          "A18",
+          "A19",
           "IOCS",
           "RW",
           "LATCH",
@@ -1406,11 +1408,13 @@
           "SD_MOSI",
           "AUDIO",
           "LED0",
-          "LED1"
+          "LED1",
+          "MA17",
+          "MA18"
         ]
       }
     },
-    "bus_buffers": "2x 74AHCT245 between the CPU data bus (CPU, EPROMs, DUART on D0..D7) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.",
+    "bus_buffers": "2x 74AHCT245 between the CPU data bus (CPU, flash, DUART on D0..D7) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.",
     "dtack": "DTACK is an open-drain bus with a 4.7k pull-up: CPLD1 drives it low (and high again) for RAM, ROM, IO and SWITCHES cycles and releases it (high-Z) whenever AS is low in the DUART region; the DUART's open-drain DTACK answers those cycles. The DUART IRQ (open drain, pull-up) is an input of CPLD2; its IACK pin is tied high."
   }
 }

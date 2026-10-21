@@ -1,7 +1,7 @@
 <!-- Generated from spec/board.json by tools/gen.py -- DO NOT EDIT; edit the spec and run `make gen`. -->
 # other-m68k hardware reference
 
-68000 SBC: 256K SRAM, 128K EPROM, memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 1-bit audio.
+68000 SBC: 1 MB SRAM, 1 MB flash ROM window (128 KB BIOS image), memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 1-bit audio.
 
 CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 
@@ -9,7 +9,7 @@ CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 
 | Region | Start | End | Size | Kind | Notes |
 |---|---|---|---|---|---|
-| RAM | 0x000000 | 0x03FFFF | 256 KB | ram | 256 KB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). At reset the ROM is overlaid here until the first access to the ROM region. |
+| RAM | 0x000000 | 0x0FFFFF | 1024 KB | ram | 1 MB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). CPLD1 drives MA0..MA16 (CPU A1..A17 or the video counter); CPLD2 drives MA17..MA18 (CPU A18..A19 in the CPU half of a slot, the framebuffer pages' fixed bits 19..18 during the video fetch). At reset the ROM is overlaid here until the first access to the ROM region. |
 | ROM | 0xE00000 | 0xEFFFFF | 1024 KB | rom | 1 MB flash window; the BIOS image occupies the first 128 KB (ROM_IMAGE_SIZE, checksum in its last word), the rest is free (erased 0xFF). Reads: zero wait states, not subject to slot alignment. Writes get DTACK and reach the chips (ROMWE), so the firmware can reprogram itself in place with the JEDEC command sequence (see "flash"). Vectors at offset 0 (overlaid at 0x000000 at reset). |
 | IO | 0xF00000 | 0xF0FFFF | 64 KB | io | CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). INTEN, SDIO, GPIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. |
 | SWITCHES | 0xF10000 | 0xF1FFFF | 64 KB | io | CPLD1 soft switches. Write-only; writing any value to the address performs the action. Reads return garbage. |
@@ -41,15 +41,15 @@ Both chips see the same command sequence because every command is issued as a WO
 |---|---|---|---|---|
 | VECTORS | 0x000000 | 0x0003FF | 1024 bytes | Exception vector table (RAM after overlay clears). |
 | SYSDATA | 0x000400 | 0x003FFF | 15360 bytes | BIOS .data/.bss; supervisor stack grows down from the top (0x004000). |
-| USER | 0x004000 | 0x01A7FF | 92160 bytes | User program load region (ELF link address 0x004000). User stack grows down from the top (0x01A800). Extends to 0x02D400 if page 1 of the framebuffer is not used. |
-| FB1 | 0x01A800 | 0x02D3FF | 76800 bytes | Framebuffer page 1 (optional double buffer). |
-| FB0 | 0x02D400 | 0x03FFFF | 76800 bytes | Framebuffer page 0 (default, displayed after reset). |
+| USER | 0x004000 | 0x0DA7FF | 878592 bytes | User program load region (ELF link address 0x004000). User stack grows down from the top (0x0DA800). Extends to 0x0ED400 if page 1 of the framebuffer is not used. |
+| FB1 | 0x0DA800 | 0x0ED3FF | 76800 bytes | Framebuffer page 1 (optional double buffer). |
+| FB0 | 0x0ED400 | 0x0FFFFF | 76800 bytes | Framebuffer page 0 (default, displayed after reset). |
 
 ## Video
 
 320x240, 8 bpp RGB332. bits 7..5 red, 4..2 green, 1..0 blue. Byte at the even (upper, D15..D8) address is the left pixel of the word.
 
-Pages: page 0 at 0x02D400, page 1 at 0x01A800
+Pages: page 0 at 0x0ED400, page 1 at 0x0DA800
 
 Encoder: AD724 (RGB in, composite out). Standard (NTSC/PAL) fixed by two pull resistors (STND, PALJMP) plus the matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP.
 
@@ -147,11 +147,11 @@ Board/glue identification: 0x68 in the upper byte, CPLD2 logic revision in the l
 
 ### PAGE0 @ 0xF10000 (W)
 
-Display framebuffer page 0 (0x02D400) starting next frame.
+Display framebuffer page 0 (0x0ED400) starting next frame.
 
 ### PAGE1 @ 0xF10002 (W)
 
-Display framebuffer page 1 (0x01A800) starting next frame.
+Display framebuffer page 1 (0x0DA800) starting next frame.
 
 ### NTSC @ 0xF10004 (W)
 
@@ -435,12 +435,12 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 * inputs: CLK24, SYSRESET, A1..A23, AS, UDS, LDS, RW
 * outputs: CPUCLK, MA0..MA16, DTACK, BERR, VPA, RAMOE, WEU, WEL, ROMOE, ROMWE, IOCS, BUFEN, LATCH, DE, HSYNC, VSYNC, DUARTCS
 
-**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers
+**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)
 
-* inputs: CLK24, SYSRESET, A1..A3, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, PALJMP, NMIBTN, DUART_IRQ
+* inputs: CLK24, SYSRESET, A1..A3, A18, A19, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, PALJMP, NMIBTN, DUART_IRQ
 * bidir: D0..D15 (SRAM-side bus), PS2_CLK, PS2_DAT, UIO0..UIO3
-* outputs: IPL0, IPL1, IPL2, R2, R1, R0, G2, G1, G0, B1, B0, SD_CS, SD_CLK, SD_MOSI, AUDIO, LED0, LED1
+* outputs: IPL0, IPL1, IPL2, R2, R1, R0, G2, G1, G0, B1, B0, SD_CS, SD_CLK, SD_MOSI, AUDIO, LED0, LED1, MA17, MA18
 
-2x 74AHCT245 between the CPU data bus (CPU, EPROMs, DUART on D0..D7) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.
+2x 74AHCT245 between the CPU data bus (CPU, flash, DUART on D0..D7) and the SRAM-side data bus (SRAMs, CPLD2). Enabled only during the CPU half of each slot for RAM and IO cycles; direction from R/W.
 
 DTACK is an open-drain bus with a 4.7k pull-up: CPLD1 drives it low (and high again) for RAM, ROM, IO and SWITCHES cycles and releases it (high-Z) whenever AS is low in the DUART region; the DUART's open-drain DTACK answers those cycles. The DUART IRQ (open drain, pull-up) is an input of CPLD2; its IACK pin is tied high.

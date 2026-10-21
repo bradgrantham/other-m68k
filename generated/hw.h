@@ -4,14 +4,14 @@
 #include <stdint.h>
 
 #define BOARD_NAME "other-m68k"
-#define BOARD_REVISION 3
+#define BOARD_REVISION 4
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL
 #define SLOT_CPU_CLOCKS 4
 
 /* ---- memory regions ---- */
 #define RAM_BASE 0x000000UL
-#define RAM_SIZE 0x040000UL
+#define RAM_SIZE 0x100000UL
 #define RAM_END  (RAM_BASE + RAM_SIZE)
 #define ROM_BASE 0xE00000UL
 #define ROM_SIZE 0x100000UL
@@ -46,12 +46,12 @@
 #define SYSDATA_SIZE 0x003C00UL
 #define SYSDATA_END  (SYSDATA_BASE + SYSDATA_SIZE)
 #define USER_BASE 0x004000UL
-#define USER_SIZE 0x016800UL
+#define USER_SIZE 0x0D6800UL
 #define USER_END  (USER_BASE + USER_SIZE)
-#define FB1_BASE 0x01A800UL
+#define FB1_BASE 0x0DA800UL
 #define FB1_SIZE 0x012C00UL
 #define FB1_END  (FB1_BASE + FB1_SIZE)
-#define FB0_BASE 0x02D400UL
+#define FB0_BASE 0x0ED400UL
 #define FB0_SIZE 0x012C00UL
 #define FB0_END  (FB0_BASE + FB0_SIZE)
 #define SYS_STACK_TOP SYSDATA_END
@@ -63,8 +63,8 @@
 #define VIDEO_BPP 8
 #define VIDEO_BYTES_PER_LINE 320
 #define VIDEO_PAGE_COUNT 2
-#define FB_PAGE0_ADDR 0x02D400UL
-#define FB_PAGE1_ADDR 0x01A800UL
+#define FB_PAGE0_ADDR 0x0ED400UL
+#define FB_PAGE1_ADDR 0x0DA800UL
 #define FB_SIZE (VIDEO_BYTES_PER_LINE * VIDEO_HEIGHT)
 #define RGB332(r, g, b) ((uint8_t)((((r) >> 5) << 5) | (((g) >> 5) << 2) | ((b) >> 6)))
 #define VIDEO_NTSC_LINE_CLOCKS 764

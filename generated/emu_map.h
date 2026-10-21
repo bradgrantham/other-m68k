@@ -7,7 +7,7 @@
 enum emu_region_kind { EMU_RAM, EMU_ROM, EMU_IO, EMU_SWITCHES, EMU_DUART };
 struct emu_region { const char *name; uint32_t base, size; enum emu_region_kind kind; };
 static const struct emu_region emu_regions[] = {
-    { "RAM", 0x000000, 0x040000, EMU_RAM },
+    { "RAM", 0x000000, 0x100000, EMU_RAM },
     { "ROM", 0xE00000, 0x100000, EMU_ROM },
     { "IO", 0xF00000, 0x010000, EMU_IO },
     { "SWITCHES", 0xF10000, 0x010000, EMU_SWITCHES },

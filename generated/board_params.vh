@@ -7,8 +7,8 @@ localparam CPU_CLOCK_HZ = 12000000;
 localparam SLOT_FAST_CLOCKS = 8;
 
 localparam [23:0] RAM_BASE = 24'h000000;
-localparam [23:0] RAM_SIZE = 24'h040000;
-localparam RAM_DECODE_BITS = 6; // compare A23..A18 against RAM_BASE
+localparam [23:0] RAM_SIZE = 24'h100000;
+localparam RAM_DECODE_BITS = 4; // compare A23..A20 against RAM_BASE
 localparam [23:0] ROM_BASE = 24'hE00000;
 localparam [23:0] ROM_SIZE = 24'h100000;
 localparam ROM_DECODE_BITS = 4; // compare A23..A20 against ROM_BASE
@@ -28,8 +28,9 @@ localparam [7:0]  FLASH_MFR_ID = 8'hBF;
 localparam [7:0]  FLASH_DEV_ID = 8'hB7;
 localparam [23:0] FLASH_SECTOR_BYTES = 24'h002000; // CPU view, both chips
 
-localparam [16:0] FB_PAGE0_WORD = 17'h16A00; // byte address 0x02D400 >> 1
-localparam [16:0] FB_PAGE1_WORD = 17'h0D400; // byte address 0x01A800 >> 1
+localparam [1:0] FB_PAGE_HI = 2'd3; // byte address bits 19..18 of every framebuffer page: MA18..MA17 during the video fetch
+localparam [16:0] FB_PAGE0_WORD = 17'h16A00; // (byte address 0x0ED400 >> 1) & 0x1FFFF: MA16..MA0 at the frame start
+localparam [16:0] FB_PAGE1_WORD = 17'h0D400; // (byte address 0x0DA800 >> 1) & 0x1FFFF: MA16..MA0 at the frame start
 // NTSC horizontal values in slots (4 CPU clocks each), vertical in lines
 localparam NTSC_H_TOTAL  = 191;
 localparam NTSC_H_ACTIVE = 160;
