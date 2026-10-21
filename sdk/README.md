@@ -98,7 +98,9 @@ vertically, with 8.8 fixed-point weight plans computed once per image (exact box
 up to rounding, any ratio up or down), and every finished screen row is Floyd-Steinberg
 dithered (serpentine, 7/16 3/16 5/16 1/16) to 3-3-2. It prints a time breakdown when done.
 
-Speed on the board (12 MHz 68000, bit-banged SD at roughly 24 KB/s through FatFs):
+Speed measured on the rev B4 design (12 MHz 68000, SPI-mode SD at roughly 24 KB/s through FatFs);
+with the rev 7 native 4-bit bus (about 85 KB/s through FatFs) the reading parts are about 3.5x
+faster: the raw screen loads in 0.9 s in the emulator, the scale and dither times are unchanged.
 
 | input | time |
 |---|---|

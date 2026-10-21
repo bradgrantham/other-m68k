@@ -246,7 +246,7 @@ fitter budget (section 7) does not allow them. SDIO reads back the six card line
 Open-drain supervisor (plus pushbutton) -> SYSRESET, held >= 150 ms at power-up. Diodes
 from SYSRESET to the 68000's RESET and HALT (both pulled up separately, so the RESET
 instruction cannot pull HALT). SYSRESET is also the asynchronous reset of both CPLDs
-(overlay set, PAGE 0, NTSC, INTEN 0, GPIO released/idle, SDIO CS high).
+(overlay set, PAGE 0, NTSC, INTEN 0, GPIO released/idle, SDIO 0x3F = all six card lines released).
 
 ## 7. Pin and macrocell budget (ATF1508AS PLCC84: 60 I/O with JTAG kept, plus 4 input-only)
 
@@ -254,9 +254,11 @@ Measured with the Atmel fitter (hdl/README.md has the full ladder):
 
 * CPLD1: 27 inputs (A1..A23, AS, UDS, LDS, RW) + 32 outputs (incl. DUARTCS) = 59 regular
   I/O of 60, plus CLK24 on GCLK1 and SYSRESET on GCLR. 98 of 128 macrocells before DUARTCS.
-* CPLD2: 15 inputs (incl. A18, A19), 22 bidirectional, 19 outputs (incl. MA17, MA18) = 56
-  regular I/O. 107 of 128 macrocells with the PS/2 receiver, no serial engine and the two
-  upper SRAM address bits (spec rev 4).
+* CPLD2: 14 inputs (incl. A18, A19), 24 bidirectional (D0..D15, PS/2, six SD lines), 16
+  outputs (incl. MA17, MA18) = 54 regular I/O. 107 of 128 macrocells at spec rev 4 (PS/2
+  receiver, no serial engine, the two upper SRAM address bits); 119/128 with the PDM audio
+  shifter (rev 5); 123/128 macrocells and 126/128 logic nodes with the six open-drain SD
+  lines read back and USERIO removed (rev 7). CPLD2 is full.
 
 History: the original plan (serial RX and PS/2 RX both in CPLD2, hardware serial TX
 optional) does not fit. The fitter refuses the transmitter outright and lands at 127/128

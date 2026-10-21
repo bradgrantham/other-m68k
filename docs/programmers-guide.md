@@ -2511,19 +2511,6 @@ on PAL).
 
 ## Known discrepancies
 
-Places where the repository disagrees with itself, found while writing this guide. The guide
-follows the code. (The eleven items listed for spec revision 4 have all been fixed.)
-
-1. `hdl/README.md`'s note on the PDM shifter says the last bit period of an NTSC line "is 7
-   slots short". In `hdl/cpld2_io.v` the slot counter restarts at the HSYNC edge and rotates on
-   every 24th slot, so the seven timed rotations come at slots 24..168 of the 191-slot line and
-   the eighth bit lasts 23 slots: one slot (4 clocks) short, as the emulator's model
-   (`emu/README.md`) and [2.8](#the-shifter) say.
-2. Left over from the SPI wiring (spec revision 6 and earlier): `docs/architecture.md`
-   section 6 lists "SDIO CS high" among the reset states (SDIO resets to 0x3F, everything
-   released) and section 7 still gives CPLD2 as 107 of 128 macrocells (rev 7 fits at 123/128,
-   `hdl/README.md`); `sdk/README.md` quotes bmpview timings for SD "at roughly 24 KB/s" (a raw
-   76,800-byte screen in 3 s; *measured* now 0.9 s, [1.7](#17-files-and-directories)).
-3. The `AUDIO` register's description in `spec/board.json` still says the BIOS encodes samples
-   "with a first-order sigma-delta table (see audio_write)"; since revision 6 there is no
-   `audio_write`, and the encoder is the SDK's `pdm_encode` ([2.8](#the-sdks-encoder)).
+Places where the repository disagrees with itself, found while writing this guide. Every item
+found so far (eleven for spec revision 4, one each for revisions 5 and 6, three for revision 7)
+has been fixed in the repository; nothing is open at the time of writing.
