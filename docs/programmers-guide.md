@@ -1,11 +1,14 @@
 # other-m68k Programmer's Guide
 
-This guide describes **board rev B4, spec revision 4** (`"revision": 4` in `spec/board.json`,
-`BOARD_REVISION` in `generated/hw.h`) and the BIOS/monitor in `fw/` as it stands in this
-repository. Every address, bit and syscall name below comes from `spec/board.json` or from the
-headers generated from it (`generated/hw.h`, `generated/syscalls.h`, `generated/hw.inc`).
-Where the spec, the firmware and the other documents disagree, the text says so; the list is
-collected in [Known discrepancies](#known-discrepancies) at the end.
+This guide describes **board rev B4 with the spec revision 5 CPLD2 image, spec revision 5**
+(`"revision": 5` in `spec/board.json`, `BOARD_REVISION` in `generated/hw.h`) and the
+BIOS/monitor in `fw/` as it stands in this repository. Revision 5 changed only the audio
+hardware (an 8-bit PDM shifter behind a new `AUDIO` register instead of a GPIO bit, a JED-only
+change for B4 boards) and added the `audio_write` system call. Every address, bit and syscall
+name below comes from `spec/board.json` or from the headers generated from it
+(`generated/hw.h`, `generated/syscalls.h`, `generated/hw.inc`). Where the spec, the firmware and
+the other documents disagree, the text says so; the list is collected in
+[Known discrepancies](#known-discrepancies) at the end.
 
 ## Preface
 
@@ -17,8 +20,8 @@ collected in [Known discrepancies](#known-discrepancies) at the end.
 | RAM | 1 MB SRAM at 0x000000 (2x AS6C4008, word wide), shared with the video fetch |
 | ROM | 1 MB flash window at 0xE00000 (2x SST39SF040); the BIOS image is the first 128 KB, the rest is erased and free |
 | Video | 320x240, one byte per pixel (RGB332), two pages in RAM, composite out through an AD724 (NTSC on rev B4) |
-| Glue | two ATF1508AS CPLDs: CPLD1 = decode, DTACK, SRAM address mux, video timing, soft switches; CPLD2 = I/O registers, pixel shifter, interrupt encoder, PS/2 receiver, SD/GPIO pins |
-| I/O | 68681 DUART (channel A = console, 38400 8N1; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (SPI mode, FAT via FatFs in the BIOS), 1-bit audio, two LEDs, four open-drain user pins, NMI button |
+| Glue | two ATF1508AS CPLDs: CPLD1 = decode, DTACK, SRAM address mux, video timing, soft switches; CPLD2 = I/O registers, pixel shifter, interrupt encoder, PS/2 receiver, PDM audio shifter, SD/GPIO pins |
+| I/O | 68681 DUART (channel A = console, 38400 8N1; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (SPI mode, FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS plays 8-bit samples at the line rate, 15.7 kHz), two LEDs, four open-drain user pins, NMI button |
 | Interrupts | autovectored, vector = 24 + level: VBLANK 1, PS/2 2, DUART 3, HSYNC 4, NMI button 7 |
 
 Programs are ELF files on the SD card. The monitor loads one into the user region of RAM
@@ -94,7 +97,7 @@ already built:
 ```
 X=~/x-tools/m68k-unknown-elf/bin/m68k-unknown-elf-
 ${X}gcc -m68000 -Os -Wall -I$R/generated -nostartfiles -T $R/sdk/user.ld \
-    -L$R/sdk -L$R/sdk/build -Wl,--gc-sections -o foo.elf \
+    -L$R/sdk -L$R/sdk/build -Wl,--gc-sections -Wl,--no-warn-rwx-segments -o foo.elf \
     $R/sdk/build/crt0.o foo.c -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 ```
 
@@ -136,7 +139,10 @@ also on stdout and in the serial log. `--frames N` stops after N frames (60 per 
 Use `--type "foo\n"` for the command and `--serial-type` for later input if you need two
 inputs at different times (there is one of each). Useful debugging options: `--exit-on-berr`,
 `--break ADDR`, `--trace`, `--io-trace` (every register access with a cycle stamp),
-`--dump-mem ADDR LEN`. See `emu/README.md` for the full list.
+`--dump-mem ADDR LEN`, `--audio-wav FILE` (the audio output rendered to a 48 kHz mono WAV from
+cycle 0; works headless and with `--fast`, so you can check sound without a sound card) and
+`--audio-edge-log FILE` (every edge of the audio pin with its cycle stamp). See
+`emu/README.md` for the full list.
 
 Make images and cards 64 MB or larger for FAT32 (a FAT32 volume needs at least 65,525
 clusters); smaller ones come out as FAT16, which also works.
@@ -188,9 +194,12 @@ graphics; the loader will not put ELF segments there, but you can point at it:
 * `malloc`/`free`/`realloc`/`calloc`: newlib's allocator on top of `sbrk`.
 * `fopen`/`fread`/`fwrite`/`fseek`/`fclose`, `open`/`read`/`write`/`lseek`/`close`,
   `stat`/`fstat`: files on the SD card (see [Files](#17-files-and-directories)).
-* `time()`, `gettimeofday()`, `clock()`, `times()`: count from boot, using the VBLANK tick
-  counter. Beware: `clock()` returns 60 Hz ticks while newlib's `CLOCKS_PER_SEC` is 1000, so
-  `clock() / CLOCKS_PER_SEC` is wrong; use `sys_ticks()`.
+* `time()`, `gettimeofday()`, `clock()`, `times()`: count from boot, derived from the VBLANK
+  tick counter and the real frame length of the current video standard (764 x 262 clocks,
+  59.95 Hz, on NTSC; 768 x 312, 50.08 Hz, on PAL). `clock()` and `times()` count milliseconds,
+  matching newlib's `CLOCKS_PER_SEC` of 1000, so `clock() / CLOCKS_PER_SEC` is seconds;
+  `gettimeofday()` gives seconds and microseconds. All of them advance in whole frames
+  (16.7 ms or 20 ms steps), so for game timing `sys_ticks()` is just as good and cheaper.
 * Floating point works but is **software emulated** (libgcc soft-float): *measured* about
   3,400 clocks (0.28 ms) for a single-precision multiply-add and about 8,000 clocks (0.67 ms)
   for double precision. Use fixed point in anything that has to be fast. `printf("%f")` and
@@ -417,10 +426,11 @@ luminance edges look best.
 | `sys_wait_vblank()` | wait until `sys_ticks()` changes |
 | `sys_sleep_ms(ms)` | busy-wait about `ms` milliseconds: whole frames by the tick counter, the rest with a calibrated loop |
 
-`sys_sleep_ms` counts a frame as `1000 / 60` = 16 ms (integer), so on NTSC it runs about 3 %
-long: `sys_sleep_ms(1000)` waits 62 frames, 1.03 s. For game timing, count frames with
-`sys_ticks()` or `sys_wait_vblank()`; for elapsed seconds divide ticks by 60 (50 on PAL,
-`vi.standard` tells you which). Everything keeps running during these calls: interrupts are
+`sys_sleep_ms(ms)` waits `ms * 60 / 1000` whole frames (`ms * 50 / 1000` on PAL), rounded
+down, then the remaining fraction of a frame with the loop: `sys_sleep_ms(1000)` waits 60
+frames on NTSC, 1.0008 s (the nominal 60 Hz against the real 59.95 Hz is the only error).
+For game timing, count frames with `sys_ticks()` or `sys_wait_vblank()`; for elapsed seconds
+divide ticks by 60 (50 on PAL, `vi.standard` tells you which). Everything keeps running during these calls: interrupts are
 enabled, and your interrupt hooks are called.
 
 ## 1.7 Files and directories
@@ -500,9 +510,9 @@ chunks rather than byte by byte through `fgetc`. Buffers passed to system calls 
 user RAM (0x004000-0x0FFFFF, both framebuffer pages included, so you can read a picture
 straight into a page); otherwise the call fails with `E_FAULT`.
 
-`errno` caveat: the SDK shim maps most ABI errors to `errno`, but not `E_NAMETOOLONG`,
-`E_FAULT` or `E_NODEV` (no card or no FAT volume); those come back as `ENOSYS`
-("Function not implemented"). If you need to tell them apart, call `sys_open` directly.
+`errno`: the SDK shim maps every ABI error to the newlib `errno` of the same name, so a name
+that is not 8.3 gives `ENAMETOOLONG`, a buffer outside user RAM `EFAULT`, no card or no FAT
+volume `ENODEV`, a card error `EIO`, and `strerror(errno)` says which.
 
 Raw blocks: `sys_sd_read_block(lba, buf)` and `sys_sd_write_block(lba, buf)` transfer one
 512-byte block at an absolute card address. They bypass the filesystem; do not write blocks
@@ -510,117 +520,112 @@ that belong to the FAT volume while files are in use.
 
 ## 1.8 Sound the easy way
 
-The board has a 1-bit audio output: one GPIO bit (`GPIO_AUDIO`) drives the 3.5 mm jack
-through a filter. You make sound by flipping that bit at audio rates.
+The board plays **unsigned 8-bit samples at the video line rate**: 15,707 samples a second
+on NTSC (12 MHz / 764 clocks per line), 15,625 on PAL. You hand samples to the BIOS with
+`sys_audio_write(samples, n)`; it queues them and its line (HSYNC) interrupt plays one per
+line. Sample 128 is silence (the resting level), 0 and 255 the extremes; only the top 7 bits
+are used. Nothing above about 7.8 kHz (half the sample rate) can be reproduced.
 
-`sys_set_audio_cb(fn)` installs a function that the BIOS calls on every horizontal sync
-interrupt: 15,707 times a second on NTSC (12 MHz / 764 clocks per line), 15,625 on PAL.
-`sys_set_audio_cb(NULL)` removes it (exiting does too). The callback must write the GPIO
-register itself:
-
-```c
-IO_GPIO = GPIO_PS2CLK | GPIO_PS2DAT | (on ? GPIO_AUDIO : 0);
-```
-
-`IO_GPIO` is write-only and also holds the keyboard lines and the LEDs, so always write
-`GPIO_PS2CLK | GPIO_PS2DAT` (keyboard lines released; writing 0 there blocks the keyboard)
-plus the LED bits you want. The BIOS's own copy of the register is restored when the program
-exits.
-
-**The callback must be short.** It runs in supervisor mode at interrupt level 4, the highest
-maskable level, so while it runs the keyboard, serial and VBLANK interrupts wait. It runs on
-every one of the 764-clock NTSC lines, so every clock it takes is taken 15,707 times a second:
-
-* The BIOS interrupt routine around an *empty* callback costs about 278 of the 764 clocks in
-  each line: 36 % of the CPU, before your callback does anything. (This figure is the 68000's
-  nominal timing of `irq_hsync` and `jsr`/`rts`, and is what the emulator *measures*.)
-* With a C callback that takes a byte from a ring buffer and writes the audio bit, the total is
-  about 470 clocks per line, leaving about 38 % of the CPU for the program.
-
-So sampled audio is expensive on this machine. Keep the callback to "load one prepared value,
-write it": precompute in the main loop, never compute in the callback, and remove the callback
-when nothing is playing. Do not make system calls from it. Part 2 shows how to cut the cost to
-about 170 clocks by replacing the interrupt vector.
+* `sys_audio_write` **does not block**: it takes as many samples as fit into the 4,096-byte
+  queue (about a quarter of a second) and returns that count, 0 when the queue is full. Call it
+  again later with the rest; one frame plays 262 samples (312 on PAL), so `sys_wait_vblank()`
+  between attempts is the natural rhythm.
+* The samples are copied (encoded, in fact; see Part 2) during the call, so the buffer can be
+  reused as soon as the call returns.
+* `sys_audio_write(buf, 0)` returns the free space: 4096 means everything has been played.
+* `E_FAULT` if the buffer is not in user RAM.
+* When the queue runs dry the output goes back to the silence level and the BIOS switches the
+  line interrupt off, so **silence costs no CPU**. A queue that runs dry in the middle of a
+  sound leaves a gap (heard as a click), so keep it ahead: push a few hundred samples at a time.
+* While sound plays the interrupt takes **about a third of the CPU** (254 of the 764 clocks in
+  every line), and `sys_audio_write` costs about 175 clocks per sample to encode plus about
+  2,300 per call (*measured*). Streaming sound therefore uses roughly 56 % of the CPU before
+  your program computes a single sample: about 330 clocks per sample are left. Synthesise
+  with integer arithmetic (soft float costs thousands of clocks per operation), or render
+  sounds once into a buffer and replay it.
+* Exiting (or `sys_exec`) drops whatever is still queued. Wait for the queue to drain, as
+  below, if the end of the sound matters.
 
 ```c
-/* tone.c: a square wave from the audio callback, then a 1-bit sigma-delta sine fed
- * through a ring buffer. */
+/* arp.c: a C major arpeggio, up and down twice, played through the BIOS sample queue. */
 #include <stdint.h>
 #include <stdio.h>
 #include "hw.h"
 #include "syscalls.h"
 
-#define GPIO_IDLE (GPIO_PS2CLK | GPIO_PS2DAT)  /* keyboard lines released, LEDs off */
+#define CHUNK 256
 
-static uint32_t line_hz;                        /* audio callback rate */
+static uint8_t buf[CHUNK];
 
-/* ---- 1: square wave by phase accumulator ---------------------------------------- */
-static volatile uint16_t phase, step;
-
-static void square_cb(void)
+static void play(const uint8_t *p, unsigned n)  /* hand over all n samples */
 {
-    phase += step;
-    IO_GPIO = (phase & 0x8000) ? (GPIO_IDLE | GPIO_AUDIO) : GPIO_IDLE;
-}
-
-static void play_note(unsigned hz, unsigned ms)
-{
-    step = (uint16_t)((hz * 65536UL) / line_hz);
-    sys_sleep_ms(ms);
-}
-
-/* ---- 2: ring buffer of ready-made GPIO values ------------------------------------- */
-static volatile uint8_t ring[256];
-static volatile uint8_t head, tail;             /* uint8_t: wraps at 256 by itself */
-
-static void ring_cb(void)
-{
-    uint8_t t = tail;
-    if (t != head) {                            /* underrun: leave the pin alone */
-        IO_GPIO = ring[t];
-        tail = t + 1;
+    while (n) {
+        int r = sys_audio_write(p, n);          /* takes what fits, returns at once */
+        if (r < 0) { printf("sys_audio_write: %d\n", r); return; }
+        p += r;
+        n -= (unsigned)r;
+        if (n) sys_wait_vblank();               /* full: a frame drains 262 samples */
     }
 }
-
-static const int8_t sine16[16] = { 0, 48, 89, 117, 127, 117, 89, 48,
-                                   0, -48, -89, -117, -127, -117, -89, -48 };
 
 int main(void)
 {
     struct video_info vi;
     sys_video_info(&vi);
-    line_hz = vi.standard == VIDEO_STD_PAL ? CPU_CLOCK_HZ / VIDEO_PAL_LINE_CLOCKS
-                                           : CPU_CLOCK_HZ / VIDEO_NTSC_LINE_CLOCKS;
+    uint32_t rate = vi.standard == VIDEO_STD_PAL ? CPU_CLOCK_HZ / VIDEO_PAL_LINE_CLOCKS
+                                                 : CPU_CLOCK_HZ / VIDEO_NTSC_LINE_CLOCKS;
+    static const uint16_t hz[] = { 262, 330, 392, 523, 659, 523, 392, 330 };
 
-    printf("scale\n");
-    sys_set_audio_cb(square_cb);
-    static const uint16_t notes[] = { 262, 294, 330, 349, 392, 440, 494, 523 };
-    for (unsigned i = 0; i < 8; i++) play_note(notes[i], 250);
-    sys_set_audio_cb(0);
-
-    printf("sigma-delta sine, ~980 Hz\n");
-    sys_set_audio_cb(ring_cb);
-    int err = 0;
-    uint32_t end = sys_ticks() + 60, n = 0;
-    while (sys_ticks() < end) {
-        while ((uint8_t)(head + 1) != tail) {   /* fill until full */
-            int s = sine16[n++ & 15];           /* -127..127 */
-            err += s;                           /* first-order sigma-delta */
-            uint8_t bit = err >= 0;
-            err -= bit ? 127 : -127;
-            ring[head] = bit ? (GPIO_IDLE | GPIO_AUDIO) : GPIO_IDLE;
-            head++;
+    printf("arpeggio at %lu samples/s\n", (unsigned long)rate);
+    for (unsigned rep = 0; rep < 2; rep++) {
+        for (unsigned i = 0; i < 8; i++) {
+            uint16_t phase = 0, step = (uint16_t)(hz[i] * 65536UL / rate);
+            for (int c = 0; c < 10; c++) {      /* 10 chunks per note: 0.16 s */
+                int amp = 100 - 9 * c;          /* decay, a step per chunk */
+                for (unsigned k = 0; k < CHUNK; k++) {
+                    phase += step;              /* square wave */
+                    buf[k] = (uint8_t)(128 + ((phase & 0x8000) ? amp : -amp));
+                }
+                play(buf, CHUNK);
+            }
         }
     }
-    sys_set_audio_cb(0);                        /* sys_exit would also do this */
+    while (sys_audio_write(buf, 0) < 4096)      /* n == 0: free space; wait for empty */
+        sys_wait_vblank();
+    printf("done\n");
     return 0;
 }
 ```
 
-The ring buffer needs no locking because the main program only writes `head` and the callback
-only writes `tail`, and each is a single byte. What to expect: square-wave tones and
-chip-music are clean; sampled sound through 1 bit at 15.7 kHz is noisy and band-limited
-(nothing above about 7.8 kHz), good enough for effects and speech.
+Build it like any other program (1.1) and try it in the emulator without a sound card by
+writing the output to a WAV file:
+
+```
+cp sdk/build/arp.elf /tmp/card/ARP.ELF                  # after adding arp to EXAMPLES
+sh fw/test/mkimage.sh /tmp/card/sd.img 64 /tmp/card/ARP.ELF
+emu/build/m68k-emu --rom fw/build/rom.bin --sd /tmp/card/sd.img --headless --frames 700 \
+    --type "arp\n" --type-delay 350 --no-stdin --audio-wav /tmp/card/arp.wav
+```
+
+It prints `arpeggio at 15706 samples/s`, then `done` and `[exit 0]` about 2.6 s later
+(16 notes of 2,560 samples), and `arp.wav` holds the notes at their pitches (262 to 659 Hz).
+With `--io-trace` added you can see that the line interrupt was switched on once, for exactly
+40,960 lines, so the queue never ran dry between chunks. In a window (without `--headless`)
+you hear it.
+`sdk/examples/tune.c` (`tune` at the prompt) is a longer example: "Ode to Joy" in two voices,
+a square-wave melody with a decaying envelope over a triangle bass, synthesised at the line
+rate in 512-sample chunks.
+
+What to expect: square and triangle tones and chip music are clean; sampled sound is
+band-limited to about 7.8 kHz, has 7-bit resolution and some hiss, good enough for effects,
+speech and music. Part 2 ([2.8](#28-audio)) explains why.
+
+For per-line code of your own there is still `sys_set_audio_cb(fn)`: the BIOS calls
+`void fn(void)` from the line interrupt (supervisor mode, level 4, so keyboard, serial and
+VBLANK interrupts wait while it runs) and the callback writes the audio register itself; the
+sample queue is not played while a callback is installed, and `sys_set_audio_cb(NULL)` (or
+exiting) gives the output back to it. It is dearer than the queue (an empty callback already
+costs 337 clocks per line, 44 % of the CPU); see [2.8](#28-audio) before using it.
 
 ## 1.9 Interrupt hooks
 
@@ -633,14 +638,14 @@ hook, and `NULL` removes it. Hooks are removed when the program exits.
 | 1 | VBLANK | once per frame | acknowledge, `ticks++` |
 | 2 | PS/2 byte received | per keyboard byte | read the byte, decode it into the queues |
 | 3 | DUART | per serial event | drain the serial receive FIFO |
-| 4 | HSYNC | 15.7 kHz | acknowledge, call the audio callback; installing a level-4 hook also turns the interrupt on |
+| 4 | HSYNC | 15.7 kHz | acknowledge, play one queued sample (or call the audio callback instead); installing a level-4 hook also turns the interrupt on, and keeps it on while the queue is empty |
 
 Any other level gives `E_INVAL` (returned as the pointer value). The hook runs in
 supervisor mode on the BIOS's stack, with the processor's interrupt mask at the hook's level:
 higher levels can still interrupt it (a VBLANK hook can be interrupted by the keyboard, the
 serial port and HSYNC), lower levels wait. Rules for hooks: keep them short, use `volatile`
 variables to share data with the program, do not call `sys_*` functions (the BIOS is not
-re-entrant), and do not use much stack (the supervisor stack is about 9.8 KB, shared with the
+re-entrant), and do not use much stack (the supervisor stack is about 5.4 KB, shared with the
 BIOS).
 
 ```c
@@ -693,8 +698,9 @@ avoid the problem.
 ## 1.10 Exiting and chaining
 
 * Returning from `main(argc, argv)` or calling `exit(n)` flushes stdio and calls
-  `sys_exit(n)`. The BIOS closes the program's files, removes its hooks and audio callback,
-  restores its interrupt enables, turns off the audio bit and the LEDs, selects page 0, prints
+  `sys_exit(n)`. The BIOS closes the program's files, drops any queued samples and puts the
+  audio output back to the silence level, removes its hooks and audio callback, restores its
+  interrupt enables, turns off the LEDs, selects page 0, prints
   `[exit n]` and returns to the monitor prompt.
 * `sys_exec(path, args)` loads another ELF in place of the running program and starts it with
   `argv[0]` = `path` and `args` split on blanks (at most 16 words, 255 bytes; `NULL` for none).
@@ -713,21 +719,22 @@ All calls are `TRAP #15` with the number in D0.W, integer arguments in D1, D2, D
 arguments in A0, A1 (in the order listed), the result in D0.L; all other registers are
 preserved. The `sys_*` C functions in `libsys.a` do the register shuffling. A trivial call such
 as `sys_ticks()` costs about 450 clocks (*measured*), so do not make system calls in inner
-loops. Errors are negative `E_*` values from `syscalls.h`. Every pointer argument checked by the
-BIOS must point into 0x004000-0x0FFFFF, otherwise `E_FAULT`.
+loops. Errors are negative `E_*` values from `syscalls.h`. Every pointer argument (buffers,
+structures, strings) must point into user RAM, 0x004000-0x0FFFFF, and a buffer must fit there
+entirely, otherwise `E_FAULT`.
 
 | # | prototype | description, results and errors |
 |---|---|---|
-| 0 | `void sys_exit(int code)` | End the program: close its files, drop hooks and audio callback, restore interrupt enables, audio and LEDs off, select page 0, print `[exit code]`, return to the monitor. Does not return. |
+| 0 | `void sys_exit(int code)` | End the program: close its files, drop queued samples, drop hooks and audio callback, restore interrupt enables, audio to the silence level, LEDs off, select page 0, print `[exit code]`, return to the monitor. Does not return. |
 | 1 | `int sys_putchar(int c)` | Write a character to the console (video page 0 and serial). Returns `c & 0xFF`. Blocks while the serial transmitter is busy. |
 | 2 | `int sys_getchar(void)` | Wait for a character from the keyboard (first) or serial port; returns it (0..255). |
 | 3 | `int sys_pollchar(void)` | Next character, or -1 if none. |
-| 4 | `int sys_puts(const char *s)` | Write a NUL-terminated string to the console, no newline added. Returns the number of characters. (The pointer is not range-checked.) |
+| 4 | `int sys_puts(const char *s)` | Write a NUL-terminated string to the console, no newline added. Returns the number of characters, or `E_FAULT` if `s` does not start in user RAM (an unterminated string stops at the end of RAM). |
 | 5 | `int sys_serial_putc(int c)` | Write a raw byte to the serial port only (no `\n` translation). Returns `c & 0xFF`. |
 | 6 | `int sys_serial_getc(void)` | Next byte from the serial receive buffer (512 bytes, filled by interrupt), or -1. |
 | 7 | `uint32_t sys_ticks(void)` | Frames since boot (VBLANK count; 59.95 Hz NTSC, 50.08 Hz PAL). |
 | 8 | `void sys_wait_vblank(void)` | Wait until the tick count changes (the next VBLANK interrupt, at the start of vertical sync). |
-| 9 | `int sys_video_info(struct video_info *info)` | Fill in width, height, bpp, bytes per line, both page addresses, the current page and the video standard. 0, or `E_INVAL` for `NULL`. |
+| 9 | `int sys_video_info(struct video_info *info)` | Fill in width, height, bpp, bytes per line, both page addresses, the current page and the video standard. 0, or `E_FAULT` if the structure is not in user RAM (`NULL` included). |
 | 10 | `int sys_video_set_page(int page)` | Display page 0 or 1 from the next frame on. 0, or `E_INVAL`. |
 | 11 | `int sys_open(int flags, const char *path)` | Open a file. `flags`: `O_RDONLY`, `O_WRONLY` or `O_RDWR`, plus `O_CREAT` (create if missing), `O_TRUNC`, `O_APPEND` (every write goes to the end); the last three need write access, else `E_INVAL`. Returns a descriptor 3..10, or `E_NOENT`, `E_NAMETOOLONG` (not 8.3), `E_NFILE` (8 open), `E_NOSPC` (directory full, or the file is read-only), `E_NODEV` (no card / no FAT), `E_IO`, `E_FAULT`, `E_INVAL`. |
 | 12 | `int sys_close(int fd)` | Close a file; 0 (also for 0..2), or `E_BADF`. |
@@ -740,14 +747,15 @@ BIOS must point into 0x004000-0x0FFFFF, otherwise `E_FAULT`.
 | 19 | `int sys_sd_read_block(uint32_t lba, void *buf)` | Read one 512-byte block at absolute card address `lba` (initialises the card if needed). 0, or `E_INVAL` (beyond the card), `E_IO`, `E_FAULT`. |
 | 20 | `int sys_sd_write_block(uint32_t lba, const void *buf)` | Write one 512-byte block. Same results. Bypasses the filesystem. |
 | 21 | `void *sys_set_irq_handler(int level, void *handler)` | Install `void handler(void)` for level 1..4, called from the BIOS interrupt routine in supervisor mode; returns the previous handler; `NULL` removes it. Level 4 also enables the HSYNC interrupt. `(void *)E_INVAL` for another level. |
-| 22 | `int sys_mem_info(struct mem_info *info)` | `user_start` 0x004000, `user_end` 0x0DA800, `user_end_without_fb1` 0x0ED400. 0, or `E_INVAL` for `NULL`. |
+| 22 | `int sys_mem_info(struct mem_info *info)` | `user_start` 0x004000, `user_end` 0x0DA800, `user_end_without_fb1` 0x0ED400. 0, or `E_FAULT` (structure not in user RAM). |
 | 23 | `int sys_con_set_cursor(int x, int y)` | Move the console cursor; 0, or `E_INVAL` outside 40x30. |
 | 24 | `int sys_con_clear(void)` | Clear the console (page 0); 0. |
-| 25 | `int sys_con_info(struct con_info *info)` | Columns, rows, cursor position; 0, or `E_INVAL` for `NULL`. |
+| 25 | `int sys_con_info(struct con_info *info)` | Columns, rows, cursor position; 0, or `E_FAULT` (structure not in user RAM). |
 | 26 | `int sys_exec(const char *path, const char *args)` | Replace the program with another ELF (see 1.10). Returns only on failure: `E_NOENT`, `E_NOEXEC`, `E_NOMEM`, `E_NAMETOOLONG`, `E_NODEV`, `E_IO`, `E_FAULT`, `E_INVAL`. |
 | 27 | `int sys_key_event(void)` | Next raw key event (bits 7..0 set-2 scan code, `KEY_RELEASE` bit 8, `KEY_EXTENDED` bit 9), or -1. |
-| 28 | `void sys_sleep_ms(uint32_t ms)` | Busy-wait about `ms` milliseconds (frames, then a loop; ~3 % long on NTSC). |
-| 29 | `int sys_set_audio_cb(void *cb)` | Install `void cb(void)` to be called at the line rate (15.7 kHz) from the HSYNC interrupt, in supervisor mode at level 4; `NULL` removes it. Returns 0. |
+| 28 | `void sys_sleep_ms(uint32_t ms)` | Busy-wait `ms` milliseconds: `ms * 60 / 1000` whole frames (50 on PAL), then a calibrated loop for the rest. |
+| 29 | `int sys_set_audio_cb(void *cb)` | Install `void cb(void)` to be called once per video line (15.7 kHz) from the HSYNC interrupt, in supervisor mode at level 4. The callback owns `IO_AUDIO` (it should write one pattern per call) and the sample queue is not played while it is installed; `NULL` removes it and gives the register back to the queue player. Returns 0. |
+| 30 | `int sys_audio_write(const uint8_t *samples, unsigned n)` | Queue `n` unsigned 8-bit samples (128 = silence, 7 bits used), played one per video line (15,707 Hz NTSC, 15,625 PAL) by the HSYNC interrupt. Non-blocking: returns the number accepted (0..`n`; the queue holds 4,096). `n` = 0 returns the free space. Turns the line interrupt on; the BIOS turns it off when the queue runs dry. `E_FAULT` if the buffer is not in user RAM. |
 
 Any other number returns `E_NOSYS`. The constants and structures (`O_*`, `SEEK_*`, `ATTR_*`,
 `VIDEO_STD_*`, `KEY_*`, `E_*`, `struct video_info`, `struct mem_info`, `struct con_info`,
@@ -820,21 +828,22 @@ __asm__(
  *           old = *vec; *vec = trap0_handler;      ... and put `old` back before exiting */
 ```
 
-`fn` runs on the BIOS's supervisor stack (about 9.8 KB below 0x004000), so keep it small. GCC
+`fn` runs on the BIOS's supervisor stack (about 5.4 KB below 0x004000), so keep it small. GCC
 warns ("array subscript 0 is outside array bounds") about pointers to addresses this close to
 zero; `--param=min-pagesize=0` in `CFLAGS` silences it.
 
 ### Write-only registers and the BIOS's shadows
 
-INTEN, SDIO, GPIO and the output half of USERIO cannot be read back (they read as 0: the CPLD
-had no room for the read path). The BIOS keeps private copies (`inten_shadow`,
+INTEN, SDIO, GPIO, AUDIO and the output half of USERIO cannot be read back (they read as 0:
+the CPLD had no room for the read path). The BIOS keeps private copies (`inten_shadow`,
 `gpio_shadow`, `sdio_shadow` in `fw/`; they are not part of the ABI) and rewrites the
 registers from them:
 
 | register | when the BIOS writes it while your program runs | value |
 |---|---|---|
-| INTEN | `sys_set_irq_handler`, `sys_set_audio_cb`, `sys_exit`, `sys_exec` | `INTEN_VBLANK \| INTEN_PS2 \| INTEN_DUART` (0x000D), plus `INTEN_HSYNC` while an audio callback or level-4 hook is installed |
-| GPIO | `sys_exit`/`sys_exec` (and the monitor's `beep`, `led`) | its shadow with AUDIO, LED0, LED1 cleared: normally `GPIO_PS2CLK \| GPIO_PS2DAT` (0x0003) |
+| INTEN | `sys_set_irq_handler`, `sys_set_audio_cb`, `sys_audio_write` (when the queue was empty), `sys_exit`, `sys_exec`; and the level-4 handler itself when the sample queue runs dry | `INTEN_VBLANK \| INTEN_PS2 \| INTEN_DUART` (0x000D), plus `INTEN_HSYNC` while an audio callback or level-4 hook is installed or samples are queued; the level-4 handler writes `inten_shadow` without `INTEN_HSYNC` |
+| GPIO | `sys_exit`/`sys_exec` (and the monitor's `led`) | its shadow with LED0, LED1 cleared: normally `GPIO_PS2CLK \| GPIO_PS2DAT` (0x0003) |
+| AUDIO | the level-4 handler once per line while samples are queued; `sys_exit`/`sys_exec` (and the monitor's `beep`) | a queued pattern; the idle pattern 0xAA when the queue runs dry and at exit. No shadow is kept |
 | SDIO | every card access (file, directory, raw block and exec calls) | its shadow: CS high (deselected), CLK low between transfers |
 | USERIO | never | reset value 0x000F |
 
@@ -842,12 +851,20 @@ So: keep your own copy of anything you write, always write the whole register, a
 BIOS's next write replaces yours, and restore INTEN through the BIOS when you are done (any
 `sys_set_irq_handler` call recomputes and rewrites it). In GPIO always keep `GPIO_PS2CLK` and
 `GPIO_PS2DAT` set unless you are deliberately driving the keyboard lines: a 0 there pulls the
-line low and stops the keyboard.
+line low and stops the keyboard; write bit 2 (the audio bit before revision 5) as 0.
+
+The level-4 handler's INTEN write deserves care: it rebuilds the register from the BIOS's
+shadow, so if you have written INTEN directly (to mask the keyboard during a transfer, say)
+while samples are playing, the end of the queue silently undoes your write. Conversely, if
+you clear `INTEN_HSYNC` yourself while samples are queued, the BIOS still believes it is on
+and the queue stalls until the next `sys_set_irq_handler` or `sys_set_audio_cb` call
+recomputes INTEN. Change INTEN through the BIOS, or only while nothing is queued.
 
 ### What `sys_exit` restores, and what it does not
 
-`sys_exit` (and `sys_exec`, before loading) closes files, removes hooks and the audio callback,
-rewrites INTEN, clears AUDIO and the LEDs, and selects display page 0. It does **not**
+`sys_exit` (and `sys_exec`, before loading) closes files, drops queued samples and writes the
+idle pattern 0xAA to AUDIO, removes hooks and the audio callback, rewrites INTEN, clears the
+LEDs, and selects display page 0. It does **not**
 restore: exception vectors you replaced, DUART registers (IMR, ACR, the counter/timer, channel
 B), the NTSC/PAL soft switch, USERIO, or the flash. A replaced vector that points into your
 program becomes a pointer into whatever is loaded next; a DUART interrupt source you enabled
@@ -885,7 +902,7 @@ so software cannot bring the overlay back.
 | range | name | contents |
 |---|---|---|
 | 0x000000-0x0003FF | `VECTORS` | exception vectors, copied from ROM at boot |
-| 0x000400-0x003FFF | `SYSDATA` | BIOS `.data`/`.bss` (to about 0x001994), supervisor stack down from `SYS_STACK_TOP` 0x004000 |
+| 0x000400-0x003FFF | `SYSDATA` | BIOS `.data`/`.bss` (to about 0x002A60, including the 4 KB sample queue), supervisor stack (about 5.4 KB) down from `SYS_STACK_TOP` 0x004000 |
 | 0x004000-0x0DA7FF | `USER` | program load region (858 KB); user stack down from `USER_STACK_TOP` 0x0DA800 |
 | 0x0DA800-0x0ED3FF | `FB1` | framebuffer page 1 (75 KB), free RAM if unused |
 | 0x0ED400-0x0FFFFF | `FB0` | framebuffer page 0, the console |
@@ -1075,11 +1092,11 @@ Progressive ("240p"): every frame is the same field.
 There is **no line-counter register**. To know where the beam is, count HSYNC flags from a
 known point. The falling edge of VSYNCPIN is the start of line 246 (NTSC), `V_TOP` = 16 lines
 before line 0. With the HSYNC interrupt off (the BIOS enables it only while an audio callback or
-level-4 hook is installed), a program can poll:
+level-4 hook is installed or samples are queued), a program can poll:
 
 ```c
 /* raster.c: find the beam with INTSTAT polling. Needs INTEN.HSYNC off (the BIOS leaves it
- * off unless an audio callback or level-4 hook is installed). */
+ * off unless an audio callback or level-4 hook is installed or sound is playing). */
 #include <stdint.h>
 #include <stdio.h>
 #include "hw.h"
@@ -1152,9 +1169,9 @@ Eight 16-bit registers selected by A1..A3; A4..A15 are not decoded, so the block
 | 0x0 | 0xF00000 | `IO_INTSTAT` | read; write 1 to clear flags | flags 0 | interrupt flags and live pin levels |
 | 0x2 | 0xF00002 | `IO_INTEN` | write only (reads 0) | 0x0000 | interrupt enables |
 | 0x4 | 0xF00004 | `IO_SDIO` | write only (reads 0) | 0x0001 | SD card pins |
-| 0x6 | 0xF00006 | `IO_GPIO` | write only (reads 0) | 0x0003 | PS/2 drive, audio, LEDs |
+| 0x6 | 0xF00006 | `IO_GPIO` | write only (reads 0) | 0x0003 | PS/2 drive, LEDs |
 | 0x8 | 0xF00008 | `IO_PS2DATA` | read | 0x0000 | last PS/2 byte |
-| 0xA | 0xF0000A | none | | | reads 0, writes ignored |
+| 0xA | 0xF0000A | `IO_AUDIO` | write only (reads 0) | 0x0000 | PDM audio shifter (spec rev 5) |
 | 0xC | 0xF0000C | `IO_USERIO` | bits 3..0 write only, 11..8 read | 0x000F | user pins |
 | 0xE | 0xF0000E | `IO_ID` | read | 0x6802 | identification |
 
@@ -1204,12 +1221,20 @@ idle). The bits are the pin levels.
 |---|---|---|
 | 0 | `GPIO_PS2CLK` | PS/2 clock drive: 1 releases the line (pulled up; read it in INTSTAT), 0 pulls it low |
 | 1 | `GPIO_PS2DAT` | PS/2 data drive, same convention |
-| 2 | `GPIO_AUDIO` | 1-bit audio output |
+| 2 | none | unused since revision 5 (it was `GPIO_AUDIO`); stored but drives nothing; write 0 |
 | 3 | `GPIO_LED0` | LED 0, 1 = on |
 | 4 | `GPIO_LED1` | LED 1, 1 = on |
 
 **PS2DATA** (0xF00008), read: bits 7..0 (`PS2DATA_DATA_MASK`) are the last byte received.
 Reading clears `INTSTAT_PS2RDY`; the byte itself stays until the next frame completes.
+
+**AUDIO** (0xF0000A), write only, reset 0x0000. Bits 7..0 (`AUDIO_PATTERN_MASK`) load an 8-bit
+rotating shift register whose bit 7 drives the audio pin; bits 15..8 are ignored. CPLD2 rotates
+it left one place at the leading edge of HSYNC and then every 24 slots (96 CPU clocks), so a
+line carries eight bits, about 126 kHz. A write replaces the register at once and wins over a
+rotation in the same clock; a line without a write repeats the previous byte (rotated, not
+shifted, so nothing is lost). The fraction of 1 bits sets the output level. Details, timing and
+use in [2.8](#28-audio).
 
 **USERIO** (0xF0000C), reset 0x000F: four open-drain pins with pull-ups on the expansion
 header. Bits 3..0 (`USERIO_OUT_MASK`, write only): 1 releases the pin, 0 pulls it low. Bits
@@ -1252,15 +1277,25 @@ At boot the BIOS copies its vector table from the ROM to 0x000000. Vectors 25-28
 BIOS handlers in ROM, vector 47 (TRAP #15, `SYSCALL_VECTOR`) at the system-call dispatcher,
 and every other vector at a stub that reports the exception and enters the monitor. INTEN is
 `INTEN_VBLANK | INTEN_PS2 | INTEN_DUART`; HSYNC is enabled only while an audio callback or a
-level-4 hook is installed. The handlers:
+level-4 hook is installed or the sample queue holds data. The handlers:
 
 | level | BIOS handler |
 |---|---|
 | 1 | clear VBLANK, `ticks++`, call the level-1 hook |
 | 2 | read INTSTAT and PS2DATA; on PS2ERR clear it and count an error, else decode the byte into the character and key-event queues; call the level-2 hook |
 | 3 | read the DUART ISR; if RXRDYA, pop RBA into the 512-byte serial ring while SRA.RXRDY (counting overruns, clearing OE); call the level-3 hook |
-| 4 | clear HSYNC, call the audio callback, call the level-4 hook |
+| 4 | `irq_hsync.S`, assembler. Fast path (no callback, no level-4 hook): clear HSYNC, pop one pattern from the sample queue and write it to AUDIO; on an empty queue write the idle pattern 0xAA and clear `INTEN_HSYNC` (through `inten_shadow`). Slow path: clear HSYNC, call the audio callback if one is installed, otherwise service the queue (leaving the interrupt on), then call the level-4 hook |
 | 7 | through the exception path: print registers, enter the monitor |
+
+The fast path is the BIOS's sample player and is hand-counted in the source: 44 for the
+exception entry, 24 for `movem.l d0/a0,-(sp)`, 20 for the W1C, 102 for testing the slow flag,
+comparing head and tail, bumping the tail and fetching the byte, 16 for the AUDIO write, 28 for
+the `movem` back and 20 for `rte`: **254 clocks per 764-clock line**, a third of the CPU, which
+`sdk/examples/abench.c` confirms in the emulator. The empty-queue exit, taken once per drain,
+costs about 70 more. Because the handler switches its own interrupt off when the queue runs
+dry and `sys_audio_write` switches it back on, a program that is not making sound pays
+nothing for audio. The slow path saves two more registers and makes C-ABI calls, so a
+callback or a level-4 hook costs more (see [What an interrupt costs](#what-an-interrupt-costs)).
 
 User code (main program) always runs at mask 0, so any enabled interrupt is taken between its
 instructions; system calls also run at the caller's mask, so interrupts continue during file
@@ -1282,17 +1317,23 @@ I/O and waits.
 For HSYNC, the tidy way to get the enable bit set and kept consistent with the BIOS is to
 install your vector first and then a dummy level-4 hook: the BIOS sets `INTEN_HSYNC` and will
 never call the hook, because your vector bypasses its handler. Removing the hook clears the
-enable again.
+enable again (unless samples are still queued for the BIOS player; do not mix the two).
+
+Since revision 5 the BIOS's own fast path *is* a lean sample player, so taking over the
+vector for audio saves little: 28 clocks per line for the C handler below, 86 for the
+assembler one. It is worth it for a different data format (16-bit words, a pointer instead
+of a ring, several channels interleaved) or to combine the sample write with other per-line
+work. The example plays a triangle wave encoded with the BIOS's sigma-delta rule
+(`pdm_encode`, explained in [2.8](#28-audio)).
 
 ```c
-/* lean.c: take over the HSYNC autovector with a C interrupt handler and play
- * pre-rendered GPIO words; measure what is left of the CPU. */
+/* lean.c: take over the HSYNC autovector with a C interrupt handler that plays
+ * pre-encoded PDM patterns; measure what is left of the CPU. */
 #include <stdint.h>
 #include <stdio.h>
 #include "hw.h"
 #include "syscalls.h"
 
-#define GPIO_IDLE (GPIO_PS2CLK | GPIO_PS2DAT)
 #define NWORDS 32768                            /* ~2 s at 15.7 kHz */
 
 static uint16_t snd[NWORDS];
@@ -1304,9 +1345,23 @@ __attribute__((interrupt_handler)) static void hsync_isr(void)
     const uint16_t *p = snd_ptr;
     IO_INTSTAT = INTSTAT_HSYNC;                 /* acknowledge first (W1C) */
     if (p != snd_end) {
-        IO_GPIO = *p++;
+        IO_AUDIO = *p++;
         snd_ptr = p;
     }
+}
+
+/* One line's pattern for sample s (0..255), the BIOS's encoder (fw/tools/pdmtab.py):
+ * first-order sigma-delta, 8 steps per line, accumulator carried from line to line. */
+static uint8_t pdm_encode(uint8_t s, uint8_t *acc)
+{
+    unsigned a = *acc, v = s & 0xFE, p = 0;     /* 2 * (top 7 bits of s) */
+    for (int i = 0; i < 8; i++) {
+        a += v;
+        p = (p << 1) | (a >> 8);                /* carry out = the bit */
+        a &= 0xFF;
+    }
+    *acc = (uint8_t)a;
+    return (uint8_t)p;
 }
 
 static void ignore(void) {}
@@ -1325,8 +1380,11 @@ static uint32_t spin_one_second(void)
 
 int main(void)
 {
-    for (unsigned i = 0; i < NWORDS; i++)       /* 491 Hz square wave */
-        snd[i] = GPIO_IDLE | ((i & 16) ? GPIO_AUDIO : 0);
+    static const uint8_t tri[32] = { 128, 144, 160, 176, 192, 208, 224, 240, 255, 240, 224, 208,
+        192, 176, 160, 144, 128, 112, 96, 80, 64, 48, 32, 16, 1, 16, 32, 48, 64, 80, 96, 112 };
+    uint8_t acc = 0;
+    for (unsigned i = 0; i < NWORDS; i++)       /* 491 Hz triangle */
+        snd[i] = pdm_encode(tri[i & 31], &acc);
     sys_set_irq_handler(1, vbl);
     uint32_t idle = spin_one_second();
 
@@ -1339,6 +1397,7 @@ int main(void)
     uint32_t busy = spin_one_second();
     sys_set_irq_handler(4, NULL);               /* BIOS clears INTEN.HSYNC */
     *vec = bios_isr;                            /* put the BIOS handler back */
+    IO_AUDIO = 0xAA;                            /* back to the idle level */
 
     printf("CPU left: %lu%% (%lu clocks per line)\n", (unsigned long)(busy * 100 / idle),
            (unsigned long)((idle - busy) * VIDEO_NTSC_LINE_CLOCKS / idle));
@@ -1348,15 +1407,16 @@ int main(void)
 
 GCC's `interrupt_handler` attribute saves exactly the registers the function uses and returns
 with `rte`. This one compiles to 12 instructions and prints `CPU left: 70% (226 clocks per
-line)` in the emulator. The same job written in assembler, keeping the pointer in memory and
-using one register:
+line)` in the emulator, where `--audio-wav` shows one second of a 491 Hz triangle (the
+second the measurement runs). The same job written in assembler, keeping the pointer in
+memory and using one register:
 
 ```asm
 hsync_isr:
         move.w  #INTSTAT_HSYNC_MASK,IO_INTSTAT_ADDR   | acknowledge
         move.l  %a0,-(%sp)
         movea.l snd_ptr,%a0
-        move.w  (%a0)+,IO_GPIO_ADDR
+        move.w  (%a0)+,IO_AUDIO_ADDR
         move.l  %a0,snd_ptr
         movea.l (%sp)+,%a0
         rte
@@ -1374,9 +1434,16 @@ buffer must be a ring the main program keeps ahead of it, or long enough).
 | minimal handler: acknowledge + `rte`, *measured* | 84 | 11 % |
 | assembler sample player above, *measured* | 168 | 22 % |
 | C `interrupt_handler` sample player above, *measured* | 226 | 30 % |
-| BIOS level-4 handler + empty audio callback | 278 | 36 % |
-| BIOS handler + C callback writing one byte from a buffer, *measured* | about 390 | 51 % |
-| BIOS handler + C callback dequeuing from a ring with checks | about 470 | 62 % |
+| BIOS level-4 handler, fast path: the sample queue player (hand count, and *measured* by `abench`) | 254 | 33 % |
+| BIOS handler, slow path + empty audio callback, *measured* | 337 | 44 % |
+| BIOS handler + assembler callback popping a pattern from a ring, *measured* | 423 | 55 % |
+| BIOS handler + C callback popping a pattern from a ring, *measured* | 488 | 64 % |
+
+The last four rows are `sdk/examples/abench.c` (`abench` at the prompt), which counts
+iterations of a fixed loop for 12 frames with each audio path active and prints the CPU left:
+67 %, 56 %, 45 % and 36 %. Feeding the queue costs the producer too: `sys_audio_write`
+encodes at about 175 clocks per sample, so a program that streams sound continuously spends
+about 430 clocks of every line on audio, 56 %, before it computes the samples.
 
 Every clock in a per-line handler is spent 15,707 times a second. On the board, add to these:
 the entry's interrupt-acknowledge cycle is a 68000 "VPA" (6800-style) cycle that waits for the
@@ -1391,7 +1458,7 @@ Advice for lean handlers:
 * Do the minimum: one prepared value out, one pointer bumped. Precompute in the main loop.
 * Save only what you use; `move.l an,-(sp)` (12 clocks) beats `movem` for one or two
   registers. No `jsr` (16 + 16 clocks for the call and return).
-* Do not call the BIOS. The supervisor stack is shared and about 9.8 KB.
+* Do not call the BIOS. The supervisor stack is shared and about 5.4 KB.
 * Keep a level-4 handler well under 764 clocks, or lines merge (the flag is sticky, so a late
   handler sees one event for two lines) and the lower levels starve.
 * Worst-case latency is the longest instruction (a `divs` can take about 160 clocks), plus any
@@ -1399,43 +1466,139 @@ Advice for lean handlers:
 
 ## 2.8 Audio
 
-`GPIO_AUDIO` (GPIO bit 2) is a 5 V CMOS output of CPLD2. The analogue chain
-(`docs/architecture.md` section 5, `kicad/board.py`):
+### The shifter
+
+Since spec revision 5 the audio pin is bit 7 of an 8-bit rotating shift register in CPLD2,
+loaded by writing `IO_AUDIO` (0xF0000A, word access, pattern in bits 7..0, write only, reset
+0x0000 so the pin starts low). CPLD2 rotates it left one place at the leading edge of HSYNC and
+then every 24 slots (96 CPU clocks) after it, so each video line shows the eight bits for 96
+clocks each, about 126 kHz. The slot counter restarts at every HSYNC, so the rotation never
+drifts against the line; on NTSC (191 slots per line) the eighth bit of each line lasts 92
+clocks instead of 96, on PAL (192 slots) all eight are equal.
+
+* **Pattern semantics.** The pattern is a pulse-density code: the fraction of 1 bits sets the
+  level the low-pass filter turns it into. 0x00 is the bottom, 0xFF the top, 0xAA or 0x55
+  (four ones) the middle, which is the silence level the BIOS uses. Only the count of ones
+  matters for the level; how they are spread decides where the ripple goes (below).
+* **Repeat.** The register rotates rather than shifting in zeros, so a line without a write
+  plays the same eight bits again. A constant level therefore needs one write, ever.
+* **Writes.** A write replaces the register at once, mid-bit if need be, and wins over a
+  rotation due in the same clock.
+* **Rotation phase.** The written byte leaves bit 7 first only if the write lands in the first
+  eighth of the line (within 96 clocks of the HSYNC edge). A write in eighth k (k = 0..7) shows
+  bit 7 at once, then keeps rotating, so at the following line starts the register holds the
+  byte rotated *right* by k: the order of the bits on the pin is a rotation of the byte. The
+  density, hence the level, is unaffected. A player that writes at the same point of every line
+  still emits the bits in order, only delayed by k eighths: the end of one line's pattern runs
+  into the start of the next write. The BIOS's handler writes mostly 190-210 clocks after the
+  edge in the emulator (*measured* with `--io-trace`; the spread is interrupt latency, the
+  instruction being executed when HSYNC arrives), right at the boundary at 192, so k is 1 or 2
+  from line to line; on the board the VPA acknowledge and the slot penalties make it later.
+  Whenever k changes, one bit is held a little longer or shorter than 96 clocks. That is a
+  small extra noise, not a change of level.
+
+### Writing patterns directly
+
+Because the shifter repeats its byte, many sounds need no per-line interrupt at all:
+
+* **Fixed levels.** With one pattern per line there are nine levels, k ones out of eight. The
+  evenly spread patterns are the best choice: 0x00, 0x80, 0x88, 0x92, 0xAA, 0xB6, 0xEE, 0xFE,
+  0xFF. Those that repeat within the line (0x88, 0xAA, 0xEE: every 4 or 2 bits) put their ripple
+  at 31 or 63 kHz, where the filter removes it; the others (0x80, 0x92, 0xB6, 0xFE) repeat once
+  per line and leave a faint 15.7 kHz whine, as does any lumpy pattern such as 0xF0.
+* **Beeps with a volume.** Writing two patterns alternately at twice the tone frequency makes a
+  square wave whose amplitude is the difference in density: 0xFF/0x00 is full volume (the old
+  1-bit behaviour; the monitor's `beep` does exactly this, 0xFF and 0x00 every 500 us for
+  200 ms, then 0xAA), 0xEE/0x88 half, 0xAA/0x88 a quarter. The writes can come from the main
+  loop, a VBLANK hook (tones of 30 Hz down) or the 68681 timer
+  ([2.11](#211-serial-the-68681-duart)), at any point in the line, since a write takes effect
+  at once. Interrupts lengthen software delays; for steady pitch use a timer interrupt.
+* **Per-line patterns.** One pattern per line from your own HSYNC code (a `sys_set_audio_cb`
+  callback, or your own vector as in [2.7](#three-ways-to-use-an-interrupt)) gives full
+  sample playback at the line rate. Write as early in the line as you can and at the same
+  point every line. While you write AUDIO yourself, do not also queue samples with
+  `sys_audio_write`: the BIOS's handler writes the register every line while it has samples,
+  and the idle pattern when it runs out.
+
+### The BIOS's encoder and sample queue
+
+`sys_audio_write` turns each 8-bit sample into one pattern with a **first-order sigma-delta**
+modulator run for the eight bits of the line, carrying its 8-bit accumulator from sample to
+sample. For accumulator `acc` (0..255) and the sample's top seven bits `v7`, each of the eight
+steps is `s = acc + 2*v7; bit = s >> 8; acc = s & 255`, and the first step's bit is pattern
+bit 7. Over many lines the density of ones is `v7 / 128`, and the error left in the
+accumulator is carried into the next line instead of being lost, which is what lets 9 levels
+per line add up to 128 levels over time. From an empty accumulator, constant samples give
+0x00 for 0, 0x11 for 64, 0x55
+for 128 (the silence level) and 0x77 for 192; 255 gives 0xFF after the first line.
+
+The BIOS does this through a table in ROM, built by `fw/tools/pdmtab.py`: 32,768 big-endian
+words, index `(acc << 7) | v7`, entry `(new acc << 8) | pattern`, so a word write of the entry
+to `IO_AUDIO` delivers the pattern in the low byte. It is 64 KB, which is most of the BIOS
+image's growth in revision 5 (104,536 of the 131,072 bytes are used). Encoding happens at
+queue time in `sys_audio_write` (about 175 clocks per sample through the table), so the queue
+holds ready patterns and the interrupt handler only pops a byte and writes it: the 254-clock
+fast path of [2.7](#what-the-bios-installs). In effect the lean own-vector player that an
+earlier revision of this guide recommended is now the BIOS's player, with the end-of-data
+check and the self-disabling interrupt included. The queue is a 4,096-byte ring in the BIOS
+data area; a level-4 hook moves the handler to its slow path, which still plays the queue but
+keeps the interrupt on, and an audio callback stops the queue being played at all.
+
+To use the same encoding in your own code:
+
+* `pdm_encode` in `lean.c` ([2.7](#three-ways-to-use-an-interrupt)) is the algorithm in C. At
+  `-Os` it takes about 900 clocks per sample (*measured*): fine for preparing sounds in
+  advance, too slow for streaming.
+* For speed, build the table yourself (64 KB of RAM; filling it with `pdm_encode` takes about
+  2.5 s at startup) or program it once into the free flash at 0xE20000 ([2.12](#212-the-flash-rom)),
+  where reads cost 4 clocks with no slot penalty. Then each sample is
+
+  ```c
+  uint16_t e = tab[(acc << 7) | (s >> 1)];    /* acc 0..255, s 0..255 */
+  IO_AUDIO = e;                               /* pattern in the low byte */
+  acc = e >> 8;
+  ```
+
+* The BIOS's own copy is `pdm_table` in `fw/build/rom.map` (0xE08380 in the current build),
+  but its address is not part of the ABI and moves whenever the BIOS changes. A program that
+  borrows it must first check a few dozen entries against `pdm_encode`.
+
+### The analogue chain and what to expect
+
+The pin is a 5 V CMOS output of CPLD2. The analogue chain is unchanged from earlier
+revisions (`docs/architecture.md` section 5, `kicad/board.py`):
 
 ```
-GPIO.AUDIO ---[1k]---+---[10k]---+---[10 uF]---> 3.5 mm jack, tip and ring (mono on both)
-                     |           |
-                  [10 nF]      [2.2k]
-                     |           |
-                    GND         GND
+AUDIO pin ---[1k]---+---[10k]---+---[10 uF]---> 3.5 mm jack, tip and ring (mono on both)
+(shifter bit 7)     |           |
+                 [10 nF]      [2.2k]
+                    |           |
+                   GND         GND
 ```
 
 The 1 kΩ/10 nF low-pass has its corner at about 15.9 kHz, the divider scales the 5 V swing to
 about 0.8 V peak to peak, and the capacitor removes the DC. The source impedance is about
 1.8 kΩ: feed it to an amplifier or a line input rather than headphones.
 
-The GPIO register is write-only and shared with the keyboard lines and LEDs: every write must
-carry `GPIO_PS2CLK | GPIO_PS2DAT` and your LED bits (see [2.1](#write-only-registers-and-the-bioss-shadows)).
+* Nothing above about 7.8 kHz (half the 15.7 kHz sample rate) can be reproduced.
+* Samples have 7 bits. The sigma-delta modulator pushes its quantisation noise up in
+  frequency, but with only eight bits per sample it cannot push it far: the parts at 31 and
+  63 kHz are filtered out, but the noise between 8 and 16 kHz, and the images of the signal
+  mirrored about the line rate (a 1 kHz tone has a faint partner at 14.7 kHz), pass a filter
+  whose corner is at 16 kHz. **Expect some hiss.** An external low-pass at 7-8 kHz, or an
+  amplifier with little treble, removes most of it.
+* First-order sigma-delta has idle tones: a constant sample whose 7-bit value is not a
+  multiple of 16 (130, say) makes the accumulator cycle with a period of 2 to 16 lines, a
+  faint tone between about 1 and 7.8 kHz, about the size of one 7-bit step. Silence (128, a
+  steady 0x55 or 0xAA) has none, and because the queue's idle pattern is the same level,
+  starting and stopping sound does not click.
+* Square-wave tones and chip music are clean, speech and effects good, sampled music
+  acceptable with a little hiss.
 
-**Beeps by toggling.** Any loop that flips the bit at an audio rate makes a square wave. The
-monitor's `beep` toggles every 500 us for 200 ms (1 kHz) with a calibrated delay loop.
-Interrupts lengthen software delays; for steady pitch use a timer interrupt.
-
-**Sampled playback from HSYNC.** The line interrupt is a 15.7 kHz sample clock (15,625 Hz on
-PAL). With one bit per sample the choices are square-wave synthesis (phase accumulators; several
-voices can be mixed by alternating them or by OR/XOR), or 1-bit pulse-density (sigma-delta)
-encoding of PCM done in the main loop. Pulse-width modulation inside a line would need the
-handler to wait within the line, which costs far too much. Store prepared GPIO words (fastest
-handler, 2 bytes per sample, 31 KB per second of sound) or bit-packed samples (8 times smaller,
-a few more clocks per interrupt).
-
-**What to expect.** Nothing above about 7.8 kHz (half the sample rate); a strong 15.7 kHz
-component that the 15.9 kHz filter barely attenuates; the noise of 1-bit quantisation, pushed
-up in frequency by sigma-delta but with little room to push it into. Square-wave tones are
-clean; speech and effects are recognisable; music from samples sounds rough.
-
-**Other sample rates.** The 68681's counter/timer can interrupt at another rate on level 3;
-see [2.11](#211-serial-the-68681-duart).
+**Other sample rates.** The 68681's counter/timer can interrupt at another rate on level 3
+([2.11](#211-serial-the-68681-duart)); since a write to AUDIO takes effect at once, patterns
+written at another rate still set the level, but the bit order within a line is then
+unrelated to the write, so the line rate is the natural one.
 
 ## 2.9 Keyboard
 
@@ -1562,8 +1725,8 @@ static uint8_t spi_xfer(uint8_t out, uint16_t cs_bits)
 
 The BIOS's C version of this loop (fully unrolled, in `fw/sd.c`) takes about 50 clocks per bit;
 its receive-only path (`sdhw_read` in `fw/sdspi.S`: MOSI held high, two writes, a read, `btst`,
-`sne`, `add`, `sub`) is 46-48 clocks per bit by the 68000 timing tables (the source comment says
-44), about 16 ms per 512-byte block plus command overhead. *Measured* in the emulator: 32 raw
+`sne`, `add`, `sub`) is 46 or 48 clocks per bit plus 18 per byte by the 68000 timing tables,
+about 17 ms per 512-byte block plus command overhead. *Measured* in the emulator: 32 raw
 blocks with `sys_sd_read_block` in 34 frames (about 29 KB/s), and 27 KB/s reading a file through
 FatFs. The board adds the I/O alignment penalty.
 
@@ -1761,8 +1924,9 @@ place to poll in a tight loop.
 The 1 MB window at 0xE00000 is two SST39SF040 chips side by side: U4 holds the even bytes
 (D15..D8), U5 the odd bytes (D7..D0); chip byte address N is CPU word address `ROM_BASE + 2N`.
 Reads take 4 clocks at any alignment and never wait for a slot, so the flash is the fastest
-memory on the board for code and read-only data. The BIOS occupies 0xE00000-0xE1FFFF; the
-other 896 KB are erased (0xFF) and available.
+memory on the board for code and read-only data. The BIOS occupies 0xE00000-0xE1FFFF (104,536
+of its 131,072 bytes are used, 64 KB of that the PDM encoder table); the other 896 KB are
+erased (0xFF) and available.
 
 ### Programming
 
@@ -1841,9 +2005,10 @@ reprogramming the chips in an external programmer.
 
 ### What the BIOS leaves when your program starts
 
-* Vectors at 0x000000-0x0003FF as described in 2.7; BIOS data at 0x000400-0x001994; supervisor
+* Vectors at 0x000000-0x0003FF as described in 2.7; BIOS data at 0x000400-0x002A5F; supervisor
   stack below 0x004000.
-* INTEN = 0x000D (VBLANK, PS/2, DUART); GPIO = 0x0003; SDIO = CS high, CLK low.
+* INTEN = 0x000D (VBLANK, PS/2, DUART); GPIO = 0x0003; AUDIO = 0xAA (the idle pattern; the
+  sample queue empty); SDIO = CS high, CLK low.
 * DUART channel A at 38400 8N1 with IMR = RXRDYA; channel B and the counter/timer idle.
 * NTSC timing, page 0 displayed with the console on it.
 * The CPU in user mode with SR = 0x0000, USP pointing at `{return address, argc, argv}` just
@@ -1872,6 +2037,7 @@ What depends on what, if you still want parts of the BIOS:
 | console output | the above; page 0 is drawn on and DUART channel A is written |
 | `sys_getchar`, `sys_pollchar`, `sys_key_event`, `sys_serial_getc` | the level-2 and level-3 BIOS handlers (vectors 26, 27, enables on, mask below 2) |
 | `sys_ticks`, `sys_wait_vblank`, `sys_sleep_ms` | the level-1 handler (vector 25, enable on, mask 0); the waits spin forever otherwise |
+| `sys_audio_write` | the level-4 handler (vector 28, mask below 4) and INTEN written only through the BIOS; otherwise the queue fills and is never played |
 | `sys_exit` | returns to the monitor with a fresh supervisor stack and mask 0: vectors and DUART state you changed stay changed |
 
 What you lose by taking it all: the console, keyboard decoding, the serial receive ring, the
@@ -1929,14 +2095,17 @@ NTSC figures unless stated; PAL in parentheses. One CPU clock = 83.3 ns.
 | `rte` | 20 |
 | `trap #n` entry | 34 |
 | trivial system call (`sys_ticks`), *measured* | about 450 |
-| BIOS HSYNC handler with an empty audio callback | 278 per line, 36 % of the CPU |
-| BIOS handler + C ring-buffer audio callback | about 470 per line, 62 % |
+| BIOS HSYNC handler playing the sample queue (fast path), *measured* | 254 per line, 33 % of the CPU (67 % left) |
+| BIOS handler + empty audio callback (slow path), *measured* | 337 per line, 44 % (56 % left) |
+| BIOS handler + C / assembler callback popping a pattern from a ring, *measured* | 488 / 423 per line, 64 % / 55 % |
+| BIOS HSYNC interrupt while nothing is queued and no callback or hook is installed | 0 (the interrupt is off) |
+| `sys_audio_write`, *measured* | about 2,300 per call + 175 per sample |
 | own HSYNC vector, C `interrupt_handler` / assembler, *measured* | 226 / 168 per line |
 | `memcpy` of a page, *measured* | about 430,000 (2.15 frames) |
 | `memset` of a page, *measured* | about 420,000 (2.1 frames) |
 | `movem.l` fill of a page (2.4), *measured* | about 180,000 (0.9 frame) |
 | console character (serial-bound) | about 3,125 (260 us) |
-| SD block read, BIOS | about 16-18 ms |
+| SD block read, BIOS | about 17 ms |
 | single-precision soft-float multiply-add, *measured* | about 3,400 |
 
 At 12,000,000 clocks per second: 15,707 lines and 59.95 frames per second (15,625 and 50.08
@@ -1945,35 +2114,10 @@ on PAL).
 ## Known discrepancies
 
 Places where the repository disagrees with itself, found while writing this guide. The guide
-follows the code.
+follows the code. (The eleven items listed for spec revision 4 have all been fixed.)
 
-1. `README.md` describes the ROM as "2x M27C512 EPROM"; the spec, `fw/` and `kicad/` use two
-   SST39SF040 flash chips (1 MB window, 128 KB image).
-2. The comments in `fw/duart.S` and `fw/duart.h`, the boot description in `fw/README.md` and
-   `fw/STATUS.md` say the BIOS writes ACR = 0x80 (baud-rate set 2). The spec and the code write
-   `SERIAL_ACR_VALUE` = 0x00 (set 1), which is what makes CSR code 0xC mean 38,400; in set 2 it
-   would be 19,200.
-3. `fw/README.md` says bad user pointers give `E_INVAL` ("the ABI has no E_FAULT") and that
-   non-8.3 names give `E_INVAL`; `fw/STATUS.md` repeats the latter. The code returns `E_FAULT`
-   and `E_NAMETOOLONG`, as the spec defines.
-4. `sdk/README.md` says `errno` is `EINVAL` for a non-8.3 name or a bad pointer and `EIO` for
-   no card; `sdk/newlib_shim.c` has no mapping for `E_NAMETOOLONG`, `E_FAULT` or `E_NODEV`,
-   so those set `errno` to `ENOSYS`.
-5. `times()`/`clock()` in the shim count 60 Hz ticks, but newlib's `CLOCKS_PER_SEC` is 1000;
-   `gettimeofday()` divides by 60 even on PAL, where the BIOS ticks at 50 Hz.
-6. The spec's IO region text says address bits A5..A15 are ignored; CPLD2 decodes only A1..A3
-   (`hdl/cpld2_io.v`), so A4 is ignored too and the registers repeat every 16 bytes, as the
-   emulator and `hdl/README.md` say.
-7. `hdl/README.md` still mentions SERDATA, SERRX and SERRXOVR (removed in spec revision 2) and
-   gives register reset values "0x0000 / 0x0003 / 0x0007 / 0x000F"; SDIO resets to 0x0001 in
-   the spec and in `cpld2_io.v`. Its note that `architecture.md` gives 6 clocks for an
-   S0-at-E2 cycle is stale (it now says 7).
-8. The spec's `set_irq_handler` text says hooks are called "with interrupts masked"; the BIOS
-   handlers run at the interrupt's own level, so higher levels can still interrupt a hook.
-9. `sys_sleep_ms` computes the frame length as `1000 / ticks_per_sec` in integer arithmetic
-   (16 ms on NTSC), so sleeps run about 3 % long.
-10. The comment in `fw/sdspi.S` gives 44 clocks per received bit; the 68000 timing tables give
-    46 or 48 for that loop body (`btst #imm,dn` is 10 clocks, `sne` 4 or 6).
-11. `sys_video_info`, `sys_mem_info` and `sys_con_info` reject only `NULL`; unlike the other
-    pointer-taking calls they do not check that the structure lies in user RAM. `sys_puts`
-    does not check its pointer at all.
+1. `hdl/README.md`'s note on the PDM shifter says the last bit period of an NTSC line "is 7
+   slots short". In `hdl/cpld2_io.v` the slot counter restarts at the HSYNC edge and rotates on
+   every 24th slot, so the seven timed rotations come at slots 24..168 of the 191-slot line and
+   the eighth bit lasts 23 slots: one slot (4 clocks) short, as the emulator's model
+   (`emu/README.md`) and [2.8](#the-shifter) say.
