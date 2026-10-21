@@ -10,7 +10,7 @@ emulator, all generated from one specification.
 | ROM | 1 MB window: 2x SST39SF040 flash, word wide, 128 KB BIOS image, in-system programmable, overlaid at address 0 at reset |
 | Video | memory-mapped 320x240, 8 bpp RGB332 framebuffer, two pages; AD724 composite encoder, NTSC (PAL by build option) |
 | Glue | two ATF1508AS CPLDs ("MMU" and "I/O + shifter"), two 74AHCT245 bus transceivers |
-| I/O | PS/2 keyboard, bit-banged SD card (microSD), 68681 DUART serial (38400 8N1 on an FTDI header), 8-bit PDM audio (one byte per video line shifted out by the CPLD), 2 LEDs, 4 GPIO, NMI button |
+| I/O | PS/2 keyboard, microSD card on a bit-banged 4-bit SD bus, 68681 DUART serial (38400 8N1 on an FTDI header), 8-bit PDM audio (one byte per video line shifted out by the CPLD), 2 LEDs, 4 GPIO, NMI button |
 | Power | USB-C, 5 V |
 
 ## Layout

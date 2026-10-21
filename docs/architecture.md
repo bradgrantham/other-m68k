@@ -209,9 +209,9 @@ rewrites them in place.
 
 Registers are 16-bit at `IO_BASE + 2n`, selected by A1..A3; see the spec for bits.
 Reads: CPLD2 drives D during F5..F7 of a serviced I/O read (IOCS low & R/W high). Writes:
-CPLD2 latches D at E0 when IOCS low & R/W low. INTEN, SDIO, GPIO and USERIO.OUT are
-write-only (they read as 0): every readable bit is a product term and a fan-in on the
-data-bus LAB, and the fitter budget (section 7) does not allow them.
+CPLD2 latches D at E0 when IOCS low & R/W low. INTEN, GPIO and AUDIO are write-only (they
+read as 0): every readable bit is a product term and a fan-in on the data-bus LAB, and the
+fitter budget (section 7) does not allow them. SDIO reads back the six card lines (rev 7).
 
 * **Interrupt controller**: flags VBLANK (edge of VSYNC), HSYNC (edge of HSYNC), PS2RDY,
   and the live DUART IRQ pin; enables in INTEN. IPL2..0 encodes the highest enabled pending
@@ -227,12 +227,19 @@ data-bus LAB, and the fitter budget (section 7) does not allow them.
   header). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
   set; INTSTAT.DUARTIRQ shows the pin. The DUART's IACK is tied high: all interrupts are
   autovectored and the ISR reads the DUART's own ISR register.
-* **SD card**: SDIO register pins. Software SPI mode 0. 3.3 V card; CS/CLK/MOSI via
-  resistor dividers, MISO 3.3 V straight into a TTL-threshold input.
-* **Audio**: GPIO.AUDIO -> 1 k / 10 nF low-pass -> 10 k : 2.2 k divider -> 10 uF -> 3.5 mm
-  jack. Toggle it for beeps, or use the HSYNC interrupt at 15.7 kHz as a sample clock and
-  output 1-bit PDM/PWM audio.
-* **USERIO**: four open-drain pins with pull-ups on the expansion header.
+* **SD card** (spec rev 7, board rev C1): native 4-bit SD bus, bit-banged. The six lines
+  CLK, CMD, DAT0..3 are open-drain outputs of CPLD2 (write 0 = drive low, 1 = release) with
+  10 k pull-ups to 3.3 V, and SDIO reads their levels back, so the 3.3 V card needs no level
+  dividers. Two clock pulses move a byte (a nibble per pulse) instead of eight in SPI mode.
+  Rev B4 boards have SPI wiring instead (dividers on CS/CLK/MOSI, MISO straight in, DAT1/2
+  only pulled up): see the `rev-b` tag.
+* **Audio** (spec rev 5+): the AUDIO register loads an 8-bit rotating PDM shifter whose MSB
+  drives the pin, one rotation at the HSYNC edge and every 24 slots (8 bits per line, about
+  126 kHz) -> 1 k / 10 nF low-pass -> 10 k : 2.2 k divider -> 10 uF -> 3.5 mm jack. The BIOS
+  streams pattern buffers from the HSYNC interrupt (audio_start/next/last); the SDK encodes
+  8-bit samples with a sigma-delta table.
+* **USERIO**: removed in spec rev 7; its four macrocells and pins went to the SD data lines.
+  The expansion header keeps +5V, +3V3, GND and DUART channel B.
 
 ## 6. Reset
 
