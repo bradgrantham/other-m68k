@@ -8152,7 +8152,7 @@
 				(justify left)
 			)
 		)
-		(property "Value" "10nF"
+		(property "Value" "33nF"
 			(at 111.125 210.82 0)
 			(effects
 				(font
@@ -8206,7 +8206,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "CL10B103KB8NNNC"
+		(property "MPN" "CL10B333KB8NFNC"
 			(at 110.49 208.28 0)
 			(effects
 				(font
@@ -8215,7 +8215,7 @@
 				(hide yes)
 			)
 		)
-		(property "LCSC" "C57112"
+		(property "LCSC" "C307488"
 			(at 110.49 208.28 0)
 			(effects
 				(font
@@ -8224,7 +8224,7 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "10 nF 50 V X7R 0603"
+		(property "Desc" "33 nF 50 V X7R 0603"
 			(at 110.49 208.28 0)
 			(effects
 				(font

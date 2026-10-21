@@ -107,6 +107,16 @@ void audio_reset_vector(void)
     VECTOR_SET(audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL]);
 }
 
+/* sys_read may fill a BIOS audio buffer directly (spec rev 8): the whole range must lie in
+ * the AUDIO_NBUF buffers at the front of audio_state and a stream must be open, so a
+ * program cannot use a stale pointer to scribble on the BIOS between streams. */
+int audio_buf_range_ok(const void *p, uint32_t len)
+{
+    uintptr_t a = (uintptr_t)p, b0 = (uintptr_t)&audio_state.buf[0][0];
+    return audio_state.started && a >= b0 && a - b0 < AUDIO_NBUF * AUDIO_BUF_MAX &&
+           len <= AUDIO_NBUF * AUDIO_BUF_MAX - (a - b0);
+}
+
 uint8_t *audio_start(unsigned bufsize)
 {
     if (bufsize == 0 || bufsize > AUDIO_BUF_MAX || audio_cb) return 0;

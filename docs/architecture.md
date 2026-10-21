@@ -235,7 +235,8 @@ fitter budget (section 7) does not allow them. SDIO reads back the six card line
   only pulled up): see the `rev-b` tag.
 * **Audio** (spec rev 5+): the AUDIO register loads an 8-bit rotating PDM shifter whose MSB
   drives the pin, one rotation at the HSYNC edge and every 24 slots (8 bits per line, about
-  126 kHz) -> 1 k / 10 nF low-pass -> 10 k : 2.2 k divider -> 10 uF -> 3.5 mm jack. The BIOS
+  126 kHz) -> 1 k / 33 nF low-pass (4.8 kHz; rev B4 has 10 nF = 16 kHz, which passes most of
+  the sigma-delta hiss) -> 10 k : 2.2 k divider -> 10 uF -> 3.5 mm jack. The BIOS
   streams pattern buffers from the HSYNC interrupt (audio_start/next/last); the SDK encodes
   8-bit samples with a sigma-delta table.
 * **USERIO**: removed in spec rev 7; its four macrocells and pins went to the SD data lines.

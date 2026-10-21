@@ -29,6 +29,13 @@
    "desc": "10 nF 50 V X7R 0603",
    "assembly": "pcba"
   },
+  "33nF|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL10B333KB8NFNC",
+   "lcsc": "C307488",
+   "desc": "33 nF 50 V X7R 0603",
+   "assembly": "pcba"
+  },
   "10pF|Capacitor_SMD:C_0603_1608Metric": {
    "mfr": "Samsung",
    "mpn": "CL10C100JB8NNNC",

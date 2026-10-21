@@ -814,7 +814,7 @@
   },
   "audio": {
     "enabled": true,
-    "desc": "AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> 1 k / 10 nF RC low-pass -> 10 k : 2.2 k divider -> 10 uF DC-blocking cap -> 3.5mm jack. Sampled audio: the program hands the BIOS buffers of PDM pattern bytes (audio_start / audio_next / audio_last, AUDIO_NBUF buffers of up to AUDIO_BUF_MAX bytes, producer/consumer, optionally blocking so the program is paced to the line rate); the BIOS HSYNC interrupt writes one byte per line (15.7 kHz NTSC, 15.6 kHz PAL) and does no other per-sample work. Encoding 8-bit unsigned samples (128 = silence) into patterns is the program's job, normally through the SDK's pdm_init/pdm_encode (first-order sigma-delta, 8-bit accumulator x 7-bit sample table built in RAM). The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click."
+    "desc": "AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> 1 k / 33 nF RC low-pass (board rev C1; rev B4 has 10 nF) -> 10 k : 2.2 k divider -> 10 uF DC-blocking cap -> 3.5mm jack. Sampled audio: the program hands the BIOS buffers of PDM pattern bytes (audio_start / audio_next / audio_last, AUDIO_NBUF buffers of up to AUDIO_BUF_MAX bytes, producer/consumer, optionally blocking so the program is paced to the line rate); the BIOS HSYNC interrupt writes one byte per line (15.7 kHz NTSC, 15.6 kHz PAL) and does no other per-sample work. Encoding 8-bit unsigned samples (128 = silence) into patterns is the program's job, normally through the SDK's pdm_init/pdm_encode (first-order sigma-delta, 8-bit accumulator x 7-bit sample table built in RAM). The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click."
   },
   "power": {
     "input": "USB-C receptacle, 5V only (5.1k CC pull-downs)",
@@ -993,7 +993,7 @@
           "buf"
         ]
       ],
-      "desc": "Read up to len bytes. Returns count or negative error. fd 0 is the keyboard (blocks for the first byte, then returns what is queued); /dev/ttya behaves the same on the serial ring."
+      "desc": "Read up to len bytes. Returns count or negative error. fd 0 is the keyboard (blocks for the first byte, then returns what is queued); /dev/ttya behaves the same on the serial ring. The destination must be in user RAM, or inside a BIOS audio buffer the program currently holds (audio_start/audio_next) so a file can stream straight into it."
     },
     {
       "num": 14,
@@ -1227,7 +1227,7 @@
           "bufsize"
         ]
       ],
-      "desc": "Begin streaming PDM pattern bytes to the AUDIO register, one byte per video line (15.7 kHz NTSC, 15.6 kHz PAL). The BIOS owns AUDIO_NBUF buffers of AUDIO_BUF_MAX bytes; bufsize (1..AUDIO_BUF_MAX) is how many bytes of each the program will fill and the hardware will play. Resets the stream (anything queued is dropped, the output goes to the idle pattern) and returns the first buffer to fill. Non-blocking. Returns NULL if bufsize is out of range or an audio callback is installed. The bytes are raw hardware patterns: encode samples with the SDK's pdm_encode (first-order sigma-delta) or write patterns directly. Playback starts at the first audio_next."
+      "desc": "Begin streaming PDM pattern bytes to the AUDIO register, one byte per video line (15.7 kHz NTSC, 15.6 kHz PAL). The BIOS owns AUDIO_NBUF buffers of AUDIO_BUF_MAX bytes; bufsize (1..AUDIO_BUF_MAX) is how many bytes of each the program will fill and the hardware will play. Resets the stream (anything queued is dropped, the output goes to the idle pattern) and returns the first buffer to fill. Non-blocking. Returns NULL if bufsize is out of range or an audio callback is installed. The bytes are raw hardware patterns: encode samples with the SDK's pdm_encode (first-order sigma-delta) or write patterns directly. Playback starts at the first audio_next. The buffer is BIOS RAM below user RAM; sys_read may still write into it while the stream is open."
     },
     {
       "num": 31,

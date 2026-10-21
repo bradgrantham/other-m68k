@@ -6,8 +6,8 @@
  *   sdplay -half FILE.PCM    unsigned 8-bit PCM at half the line rate (7854 Hz): each
  *                            encoded pattern is played for two lines
  *
- * The BIOS buffers are below user RAM, so sys_read cannot target them directly: the file
- * is read into a program buffer and copied (512 bytes, about 1 % of the CPU).
+ * Raw PDM files are read straight into the BIOS buffer (sys_read accepts a buffer the
+ * program holds from audio_start/audio_next as its destination, spec rev 8).
  *
  * Reads 512-byte buffers with sys_read and hands them to sys_audio_next (blocking), so the
  * BIOS paces the program to the line rate. At the end it reports how long the stream took
@@ -73,11 +73,8 @@ int main(int argc, char **argv)
                 pdm_encode(buf, pcm, BUFSIZE);
             }
         } else {
-            n = sys_read(fd, BUFSIZE, pat);
-            if (n > 0) {
-                if (n < BUFSIZE) memset(pat + n, pdm_silence(), BUFSIZE - n);
-                memcpy(buf, pat, BUFSIZE);
-            }
+            n = sys_read(fd, BUFSIZE, buf);         /* straight into the BIOS buffer */
+            if (n > 0 && n < BUFSIZE) memset(buf + n, pdm_silence(), BUFSIZE - n);
         }
         if (n <= 0) break;
         bytes += BUFSIZE;

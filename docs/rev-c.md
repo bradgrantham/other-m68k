@@ -56,6 +56,10 @@ the level-4 interrupt acknowledge (saves the INTSTAT write, ~20 clocks) and keep
 its own register so no GPIO shadow is needed. With those a hand-written ISR is about
 150 clocks per line (20 % of the CPU) instead of 470.
 
+Audio low-pass: DONE 2026-10-21 in board rev C1, the 1 k / 10 nF RC (16 kHz corner, which
+passed the sigma-delta hiss above 8 kHz) became 1 k / 33 nF (4.8 kHz; about 6 dB less noise
+above 8 kHz in the emulator reconstruction of the tune example, notes unaffected).
+
 ## Composite video
 
 ## Video outputs

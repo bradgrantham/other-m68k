@@ -874,8 +874,9 @@ as `sys_ticks()` costs about 450 clocks (*measured*), so do not make system call
 loops. Errors are negative `E_*` values from `syscalls.h`. Every pointer argument (buffers,
 structures, strings) must point into user RAM, 0x004000-0x0FFFFF, and a buffer must fit there
 entirely, otherwise `E_FAULT`. The exception is the audio stream (30-32): its buffers belong
-to the BIOS, and `sys_audio_next` and `sys_audio_last` accept only the buffer the BIOS last
-handed out.
+to the BIOS, `sys_audio_next` and `sys_audio_last` accept only the buffer the BIOS last
+handed out, and `sys_read` accepts that buffer as its destination while the stream is open,
+so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw PDM files).
 
 | # | prototype | description, results and errors |
 |---|---|---|
@@ -892,7 +893,7 @@ handed out.
 | 10 | `int sys_video_set_page(int page)` | Display page 0 or 1 from the next frame on. 0, or `E_INVAL`. |
 | 11 | `int sys_open(int flags, const char *path)` | Open a file. `flags`: `O_RDONLY`, `O_WRONLY` or `O_RDWR`, plus `O_CREAT` (create if missing), `O_TRUNC`, `O_APPEND` (every write goes to the end); the last three need write access, else `E_INVAL`. Returns a descriptor 3..10, or `E_NOENT`, `E_NAMETOOLONG` (not 8.3), `E_NFILE` (8 open), `E_NOSPC` (directory full, or the file is read-only), `E_NODEV` (no card / no FAT), `E_IO`, `E_FAULT`, `E_INVAL`. A path starting with `/dev/` opens a device instead: `/dev/ttya` (serial port A) needs no card, honours the access mode and ignores `O_CREAT`/`O_TRUNC`/`O_APPEND`; any other `/dev/` name is `E_NOENT`. |
 | 12 | `int sys_close(int fd)` | Close a file or device; 0 (also for 0..2), or `E_BADF`. |
-| 13 | `int sys_read(int fd, unsigned len, void *buf)` | Read up to `len` bytes; returns the count (0 at end of file) or `E_BADF`, `E_IO`, `E_FAULT`. On fd 0 (the keyboard), waits for one character and returns whatever else is already queued (no echo, no line editing); a `/dev/ttya` descriptor does the same on the serial receive ring. `E_BADF` on fd 1, 2. |
+| 13 | `int sys_read(int fd, unsigned len, void *buf)` | Read up to `len` bytes; returns the count (0 at end of file) or `E_BADF`, `E_IO`, `E_FAULT`. On fd 0 (the keyboard), waits for one character and returns whatever else is already queued (no echo, no line editing); a `/dev/ttya` descriptor does the same on the serial receive ring. `E_BADF` on fd 1, 2. `buf` must be in user RAM, or inside the BIOS audio buffers while an audio stream is open (spec rev 8). |
 | 14 | `int sys_write(int fd, unsigned len, const void *buf)` | Write `len` bytes; returns `len`, or `E_NOSPC` (card full), `E_BADF`, `E_IO`, `E_FAULT`. On fd 1, 2: to the video console. On a `/dev/ttya` descriptor: raw bytes to serial port A, waiting for the transmitter. `E_BADF` on fd 0. |
 | 15 | `int sys_lseek(int fd, int offset, int whence)` | `SEEK_SET`/`SEEK_CUR`/`SEEK_END`; returns the new offset, or `E_INVAL` (negative result, bad `whence`, console fds, devices), `E_BADF`. Seeking past the end of a writable file extends it. |
 | 16 | `int sys_opendir(const char *path)` | Open a directory (`"/"` for the root); returns a handle 0..3, or `E_NOENT`, `E_NFILE` (4 open), `E_NODEV`, `E_IO`, `E_FAULT`. |
@@ -909,7 +910,7 @@ handed out.
 | 27 | `int sys_key_event(void)` | Next raw key event (bits 7..0 set-2 scan code, `KEY_RELEASE` bit 8, `KEY_EXTENDED` bit 9), or -1. |
 | 28 | `void sys_sleep_ms(uint32_t ms)` | Busy-wait `ms` milliseconds: `ms * 60 / 1000` whole frames (50 on PAL), then a calibrated loop for the rest. |
 | 29 | `int sys_set_audio_cb(void *cb)` | Install `void cb(void)` to be called once per video line (15.7 kHz) from the HSYNC interrupt, in supervisor mode at level 4. The callback owns `IO_AUDIO` (it should write one pattern per call); the audio stream is not played while it is installed, and `sys_audio_start` fails. `NULL` removes it. Returns 0. |
-| 30 | `uint8_t *sys_audio_start(unsigned bufsize)` | Open the audio stream: pattern bytes played one per video line (15,707 Hz NTSC, 15,625 PAL) from the BIOS's `AUDIO_NBUF` = 3 buffers of `AUDIO_BUF_MAX` = 512 bytes, of which the program fills `bufsize` (1..512) each. Drops anything queued, sets the output to the idle pattern 0xAA and returns the first buffer to fill; nothing plays until it is handed in. Non-blocking. NULL if `bufsize` is out of range or an audio callback is installed. |
+| 30 | `uint8_t *sys_audio_start(unsigned bufsize)` | Open the audio stream: pattern bytes played one per video line (15,707 Hz NTSC, 15,625 PAL) from the BIOS's `AUDIO_NBUF` = 3 buffers of `AUDIO_BUF_MAX` = 512 bytes, of which the program fills `bufsize` (1..512) each. Drops anything queued, sets the output to the idle pattern 0xAA and returns the first buffer to fill; nothing plays until it is handed in. Non-blocking. NULL if `bufsize` is out of range or an audio callback is installed. The buffer is BIOS RAM below `USER_BASE`; `sys_read` may still fill it while the stream is open. |
 | 31 | `uint8_t *sys_audio_next(const uint8_t *filled, int block)` | Queue the filled buffer (the one last returned) for playing and return the next free buffer. If none is free: `block` != 0 waits, with interrupts running, until the playing buffer finishes (this paces the program to the audio rate); `block` = 0 returns NULL, and the handed buffer is still queued. `filled` = NULL hands nothing in and only asks for a free buffer. NULL also if the stream is not open or `filled` is not the buffer the program holds. Turns the line interrupt on when a buffer is queued with nothing playing. |
 | 32 | `int sys_audio_last(const uint8_t *filled, int block)` | Queue the final buffer (`filled` may be NULL) and close the stream; `block` != 0 waits until everything queued has played. After the last byte the BIOS writes the idle pattern 0xAA and switches the line interrupt off. 0, or `E_INVAL` if the stream is not open. |
 
@@ -1796,28 +1797,35 @@ To use the same encoding in your own code:
 
 ### The analogue chain and what to expect
 
-The pin is a 5 V CMOS output of CPLD2. The analogue chain is unchanged from earlier
-revisions (`docs/architecture.md` section 5, `kicad/board.py`):
+The pin is a 5 V CMOS output of CPLD2. The analogue chain (`docs/architecture.md` section 5,
+`kicad/board.py`) is, on board rev C1:
 
 ```
 AUDIO pin ---[1k]---+---[10k]---+---[10 uF]---> 3.5 mm jack, tip and ring (mono on both)
 (shifter bit 7)     |           |
-                 [10 nF]      [2.2k]
+                 [33 nF]      [2.2k]
                     |           |
                    GND         GND
 ```
 
-The 1 kΩ/10 nF low-pass has its corner at about 15.9 kHz, the divider scales the 5 V swing to
+The 1 kΩ/33 nF low-pass has its corner at about 4.8 kHz, the divider scales the 5 V swing to
 about 0.8 V peak to peak, and the capacitor removes the DC. The source impedance is about
-1.8 kΩ: feed it to an amplifier or a line input rather than headphones.
+1.8 kΩ: feed it to an amplifier or a line input rather than headphones. Rev B4 boards were
+built with 10 nF (16 kHz corner), which passes most of the modulator's hiss; changing that
+one 0603 capacitor to 33 nF is the whole difference. In the emulator's reconstruction of
+the `tune` example through each filter (*measured*, `--audio-edge-log` and a model of the
+chain), the power above 8 kHz relative to the music band falls from -14 dB with 10 nF to
+-20.5 dB with 33 nF, and the 2-8 kHz band from -10.7 dB to -12.8 dB; the notes themselves
+are unaffected (a 4.8 kHz first-order corner is about -1 dB at 2.5 kHz).
 
 * Nothing above about 7.8 kHz (half the 15.7 kHz sample rate) can be reproduced.
 * Samples have 7 bits. The sigma-delta modulator pushes its quantisation noise up in
   frequency, but with only eight bits per sample it cannot push it far: the parts at 31 and
-  63 kHz are filtered out, but the noise between 8 and 16 kHz, and the images of the signal
-  mirrored about the line rate (a 1 kHz tone has a faint partner at 14.7 kHz), pass a filter
-  whose corner is at 16 kHz. **Expect some hiss.** An external low-pass at 7-8 kHz, or an
-  amplifier with little treble, removes most of it.
+  63 kHz are filtered out, and the 4.8 kHz corner of rev C1 takes 5-10 dB off the noise
+  between 8 and 16 kHz and off the images of the signal mirrored about the line rate (a
+  1 kHz tone has a faint partner at 14.7 kHz). **Expect a little hiss**, more on a rev B4
+  board with its 16 kHz corner; an external low-pass at 7-8 kHz, or an amplifier with
+  little treble, removes most of what is left.
 * First-order sigma-delta has idle tones: a constant sample whose 7-bit value is not a
   multiple of 16 (130, say) makes the accumulator cycle with a period of 2 to 16 lines, a
   faint tone between about 1 and 7.8 kHz, about the size of one 7-bit step. Silence (128, a

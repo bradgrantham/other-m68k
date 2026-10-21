@@ -298,8 +298,9 @@ def build():
     c = C("100nF", "cpld2", near="J4")
     b.power("+3V3", c.pin(1))
     b.power("GND", c.pin(2))
-    # audio: 1k / 10nF low-pass -> 10k:2.2k divider -> 10uF -> jack (both channels)
-    r_lp, c_lp = R("1k", "cpld2", near="J6"), C("10nF", "cpld2", near="J6")
+    # audio: 1k / 33nF low-pass (4.8 kHz corner; rev B4 had 10nF = 16 kHz, which passed the
+    # PDM sigma-delta hiss above 8 kHz) -> 10k:2.2k divider -> 10uF -> jack (both channels)
+    r_lp, c_lp = R("1k", "cpld2", near="J6"), C("33nF", "cpld2", near="J6")
     r_div1, r_div2 = R("10k", "cpld2", near="J6"), R("2.2k", "cpld2", near="J6")
     c_out = C("10uF", "cpld2", near="J6", fp=C0805)
     b.net("AUDIO", u7.pin(p2["AUDIO"]), r_lp.pin(1))

@@ -123,7 +123,8 @@ int bios_close(int fd)
 
 int bios_read(int fd, unsigned len, void *buf)
 {
-    if (!user_range_ok(buf, len)) return E_FAULT;
+    /* the destination may also be a BIOS audio buffer the program holds (spec rev 8) */
+    if (!user_range_ok(buf, len) && !audio_buf_range_ok(buf, len)) return E_FAULT;
     if (fd == 0) {
         uint8_t *p = buf;
         unsigned n = 0;

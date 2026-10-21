@@ -1,13 +1,15 @@
 # Ordering other-m68k rev B from PCBWay
 
 This file describes the **rev B4** order placed 2026-10-20 (git tag `rev-b`). The current
-design in this directory is **rev C1** (spec rev 7, 2026-10-21), not ordered: the SD card is
+design in this directory is **rev C1** (spec rev 7/8, 2026-10-21), not ordered: the SD card is
 wired as a native 4-bit bus (CLK, CMD, DAT0..3 straight to CPLD2 pins 15, 24, 8, 16, 58, 4
 with 10 k pull-ups to 3.3 V, the three 1.8k/3.3k level dividers removed), and the four UIO
 bits on the expansion header are gone (pins 5/7/9/11 unconnected). Six fewer resistors
 overall; everything else is as below. Rev B4 boards can be modified by hand to the rev C1
 wiring: remove the dividers, bridge CS/CLK/MOSI across, add 10 k pull-ups, and wire J4 DAT1/DAT2
-to CPLD2 pins 16 and 58.
+to CPLD2 pins 16 and 58. Rev C1 also changes the audio low-pass capacitor (the 0603 next to J6,
+1 k / 10 nF on B4) (C31) to 33 nF: a 4.8 kHz corner instead of 16 kHz, which cuts the PDM hiss above
+8 kHz by about 6 dB; on a B4 board swap that one capacitor.
 
 Decisions taken 2026-10-20. Everything below is produced by `make -C kicad fab` into
 `kicad/build/fab/`; upload the Gerber zip for the boards and the PCBWay BOM + centroid for

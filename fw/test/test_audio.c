@@ -155,4 +155,18 @@ void test_audio(void)
     audio_cb = (irq_hook_fn)1; audio_update_mode(); CHECK_EQ(vector_slow, 1); audio_cb = 0;
     irq_user_hook[IRQ_HSYNC_LEVEL] = (irq_hook_fn)1; audio_update_mode(); CHECK_EQ(vector_slow, 1);
     irq_user_hook[IRQ_HSYNC_LEVEL] = 0; audio_update_mode(); CHECK_EQ(vector_slow, 0);
+
+    /* sys_read destinations inside the BIOS buffers are allowed only while a stream is open */
+    uint8_t *b0 = &audio_state.buf[0][0];
+    CHECK(!audio_buf_range_ok(b0, 1));                                   /* no stream */
+    uint8_t *got = audio_start(512);
+    CHECK(got == b0);
+    CHECK(audio_buf_range_ok(b0, AUDIO_NBUF * AUDIO_BUF_MAX));
+    CHECK(audio_buf_range_ok(b0 + AUDIO_NBUF * AUDIO_BUF_MAX - 1, 1));
+    CHECK(!audio_buf_range_ok(b0 + AUDIO_NBUF * AUDIO_BUF_MAX - 1, 2));  /* runs off the end */
+    CHECK(!audio_buf_range_ok(b0 + AUDIO_NBUF * AUDIO_BUF_MAX, 1));
+    CHECK(!audio_buf_range_ok(b0 - 1, 1));
+    CHECK(!audio_buf_range_ok(b0, (uint32_t)-1));
+    audio_stop();
+    CHECK(!audio_buf_range_ok(b0, 1));
 }

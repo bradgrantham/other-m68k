@@ -1,7 +1,7 @@
 "Refs","Value","Footprint","Qty","DNP","Manufacturer","MPN","LCSC","Assembly","Socket MPN","Description"
 "C1,C2,C4-C18,C20-C27,C29,C30,C33-C35,C38,C40,C44,C45","100nF","Capacitor_SMD:C_0603_1608Metric","34","","Samsung","CL10B104KB8NNNC","C1591","pcba","","100 nF 50 V X7R 0603"
 "C3,C19,C28,C32,C39,C41,C47","10uF","Capacitor_SMD:C_0805_2012Metric","7","","Samsung","CL21A106KAYNNNE","C15850","pcba","","10 uF 25 V X5R 0805"
-"C31","10nF","Capacitor_SMD:C_0603_1608Metric","1","","Samsung","CL10B103KB8NNNC","C57112","pcba","","10 nF 50 V X7R 0603"
+"C31","33nF","Capacitor_SMD:C_0603_1608Metric","1","","Samsung","CL10B333KB8NFNC","C307488","pcba","","33 nF 50 V X7R 0603"
 "C36","10pF","Capacitor_SMD:C_0603_1608Metric","1","","Samsung","CL10C100JB8NNNC","C32949","pcba","","10 pF 50 V C0G 0603"
 "C37","220uF","Capacitor_THT:CP_Radial_D6.3mm_P2.50mm","1","","Rubycon","16ZLH220MEFC6.3X11","","pcba","","220 uF 16 V electrolytic, 6.3 mm dia, 2.5 mm pitch"
 "C42","15pF","Capacitor_SMD:C_0603_1608Metric","1","","Samsung","CL10C150JB8NNNC","C1644","pcba","","15 pF 50 V C0G 0603"

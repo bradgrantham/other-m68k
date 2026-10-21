@@ -39,6 +39,7 @@ extern struct audio_state audio_state;
 
 void     audio_init(void);                /* idle pattern to the shifter, no stream */
 uint8_t *audio_start(unsigned bufsize);   /* bios_audio_start */
+int      audio_buf_range_ok(const void *p, uint32_t len);  /* [p, p+len) inside the BIOS buffers while a stream is open */
 uint8_t *audio_next(const uint8_t *filled, int block);
 int      audio_last(const uint8_t *filled, int block);
 void     audio_stop(void);                /* drop everything, idle pattern (sys_exit, start) */
