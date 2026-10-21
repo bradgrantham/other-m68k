@@ -8,7 +8,7 @@ assembly.
 
 | parameter | value |
 |---|---|
-| quantity | 5 bare boards, 2 of them assembled |
+| quantity | 5 bare boards, 1 of them assembled |
 | size | 180 x 125 mm, 3 mm corner radius, four M3 holes |
 | layers | 4: F.Cu signal, In1 GND plane, In2 VCC plane, B.Cu signal (PCBWay standard 4-layer stackup) |
 | thickness / copper | 1.6 mm, 1 oz outer and inner |
@@ -24,7 +24,7 @@ assembly.
 | BOM | `other-m68k-pcbway-bom.csv` (Item, Designator, Qty, Manufacturer, Mfg Part #, Description, Package, Type SMD/THT, Supplied By) |
 | placement | `other-m68k-pcbway-centroid.csv` (KiCad convention: mm, Y up, KiCad rotation, top side only) |
 | scope | SMD **and** through-hole: passives, LDO, AD724, supervisor, 74AHCT245 (SOIC), connectors, headers, jacks, switches, crystals, oscillator, electrolytics, every IC socket (plain DIP/PLCC sockets, no ZIF), and four memory chips that PCBWay buys and inserts into their sockets: the two AS6C4008-55PCN SRAMs (U2/U3) and the two SST39SF040 flash chips (U4/U5, inserted blank) |
-| consigned | AD724JRZ (U11): last-time-buy part, we buy five and ship them to PCBWay |
+| consigned | none. U11 (AD724JRZ) is in the BOM as PCBWay-supplied; it is a last-time-buy part (DigiKey LTB date 2027-07-29, about 50 in stock at $25, Mouser/Farnell/Newark also stock it). If PCBWay's BOM review cannot source it, have them leave U11 unfitted and hand-solder it (SOIC-16W, 1.27 mm pitch). Buy spares for the bare boards while stock lasts. |
 | customer fits afterwards | `other-m68k-customer-parts.csv`: U1 MC68000P12, U6/U7 ATF1508AS-7JX84, U10 MC68681P, all into their sockets |
 | first firmware | the flash chips arrive blank: program `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0) with the TL866 (SST39SF040, 512 KB images), then later updates with the monitor's `flash ROM.BIN` from the SD card and `reboot` |
 | not fitted | mounting holes, test pads, the crystal trim capacitor (DNP) |
