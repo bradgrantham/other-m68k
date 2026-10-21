@@ -238,7 +238,9 @@ is what releases it. `INTSTAT.DUARTIRQ` shows the live pin. Channel B is not use
 The BIOS uses channel A only for the POST report and the banner (`console_serial` in
 `main.c`). After the banner the port is released (spec `serial.console`): `putchar_both`
 writes video only, `input_pollchar` reads the keyboard only, and nothing in the BIOS
-touches the port again except the monitor's `srec` command while it runs. The RX interrupt
+touches the port again except the monitor's `srec` command while it runs and the `flash`
+command's RAM routine, which prints its progress dots and result on serial because the ROM
+holding the console code is being rewritten. The RX interrupt
 keeps filling the 512-byte ring, which `sys_serial_getc` and reads of `/dev/ttya` drain.
 A program claims the port by `sys_open`ing `/dev/ttya` (no card needed; `fs.c` gives it a
 descriptor slot): `read` blocks for one byte and returns what else is queued, `write`
@@ -329,7 +331,7 @@ again rather than `go` to restart a loaded program.
 
 40 columns x 30 rows, 8x8 font (public-domain `font8x8_basic.h` from dhepper/font8x8),
 white on dark blue, page 0. Handles `\n` (CR+LF), `\r`, `\b` (non-destructive), `\t`
-(8 columns); scrolls at the bottom (a scroll is a 74 KB move, ~35 ms). Everything printed
+(8 columns); scrolls at the bottom (a scroll is a 74 KB move, ~40 ms). Everything printed
 on the console during the POST and the banner is also sent to the serial port with `\n`
 -> `\r\n`; after the banner the console is video only (see "Serial"). Input is the
 keyboard (ASCII); `sys_key_event` reads raw PS/2 events.
@@ -382,8 +384,9 @@ Type `srec` in the monitor (on the keyboard: serial is not console input), then 
 512-byte ring would overflow), stores S1/S2/S3 data (only into 0x4000-0xFFFFF; records
 outside that are counted and dropped), and finishes at the S7/S8/S9 record or at the first
 non-record line, printing `srec: N records, M bytes, start-end, entry E`. Then `go` runs
-it. In the emulator, type `srec` with `--type` and pipe the file to stdin or pass it with
-`--serial-type` (the emulator feeds stdin to the DUART as serial RX).
+it. In the emulator, type `srec` with `--type` and send the file with a delayed
+`--serial-type "$(cat prog.srec)" --serial-type-delay 450`: bytes that arrive before `srec`
+is typed (a pipe into stdin from start-up) land during the POST and are discarded.
 
 ### Running programs
 

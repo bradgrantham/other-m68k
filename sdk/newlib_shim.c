@@ -6,7 +6,8 @@
  *   fd 1, 2    console output (the video console) via sys_write
  *   fd >= 3    SD card files via sys_open/read/write/lseek/close (8.3 names, see fw/README.md),
  *              or devices: open("/dev/ttya") is serial port A, which the BIOS releases
- *              after the POST; those fds report isatty() so stdio line-buffers them
+ *              after the POST; those fds fstat() as character devices and report isatty(),
+ *              so stdio line-buffers them (newlib asks fstat first, then isatty)
  *   sbrk       __heap_start .. mem_info.user_end - STACK_RESERVE
  *
  * newlib's O_* flag values (fcntl.h) differ from the BIOS ABI's (syscalls.h); open()
@@ -147,7 +148,11 @@ off_t lseek(int fd, off_t offset, int whence)
 int fstat(int fd, struct stat *st)
 {
     memset(st, 0, sizeof *st);
-    if (fd < 3) { st->st_mode = S_IFCHR; st->st_blksize = 0; return 0; }
+    if (fd < 3 || (fd < 32 && (dev_fds >> fd) & 1)) {      /* console or /dev/ device: a character device */
+        st->st_mode = S_IFCHR;
+        st->st_blksize = 0;
+        return 0;
+    }
     int cur = sys_lseek(fd, 0, SEEK_CUR);
     if (cur < 0) return map_err(cur);
     int end = sys_lseek(fd, 0, SEEK_END);

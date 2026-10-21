@@ -130,4 +130,5 @@ Emulator: build an image with `fw/test/mkimage.sh` (see `fw/README.md`) and pass
 
 Serial: type `srec` at the `> ` prompt (on the keyboard), then send `build/hello.srec`
 (e.g. `cat build/hello.srec > /dev/ttyUSB0`, 38400 8N1). The monitor prints a summary and
-`go` runs the program. Emulator: `--type "srec\n"` and pipe the file to stdin.
+`go` runs the program. Emulator: `--type "srec\n"` and a delayed `--serial-type "$(cat
+build/hello.srec)" --serial-type-delay 450` (bytes sent before `srec` runs are discarded).

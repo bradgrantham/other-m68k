@@ -192,7 +192,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `main.c` | `bios_main`, banner, `putchar_both` (console, plus serial with `\n` -> CRLF only while `console_serial` is set: POST and banner) |
 | `console.c`, `font8x8_basic.h` | 40x30 console, nibble table renderer, scroll, cursor, shadow text; renders through `con_fb` (host-testable) |
 | `serial.c` | GPIO shadow + atomic set/clear, DUART RX interrupt enable, polled TX, `delay_us` |
-| `input.c`, `queue.c` | serial 512 B, keyboard 256 B, key events 64 x 16-bit rings; merged `input_pollchar` |
+| `input.c`, `queue.c` | serial 512 B (drained by `/dev/ttya` and `serial_getc`), keyboard 256 B, key events 64 x 16-bit rings; `input_pollchar` reads the keyboard only |
 | `ps2.c` | set-2 decoder: F0/E0/E1, shift/ctrl/caps, arrows/Home/End/Ins/Del/PgUp/PgDn/F1-F12 escape sequences, raw events |
 | `irq.c` | ISRs (`interrupt_handler` attribute, verified `rte` in rom.lst), DUART RX FIFO drain, user hooks, INTEN shadow |
 | `exception.c` | names, register dump, `exception_entry` |
@@ -210,7 +210,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
   with the write order swapped between the halves of RAM, keeping full cell coverage.
 * Fills/verifies use plain `move.l`/`cmp.l` unrolled x4 instead of `movem`: on this bus every
   word is one slot-aligned bus cycle either way, so `movem` buys almost nothing. POST takes
-  about 4 s for 1 MB at 12 MHz (50 M clocks measured in the emulator). The same applies to the console scroll (~35 ms).
+  about 4 s for 1 MB at 12 MHz (50 M clocks measured in the emulator). The same applies to the console scroll (~40 ms measured).
 * `md` dumps are only key-abortable when longer than 256 bytes; a short `md` must not consume
   the first character of the next typed line (the emulator types ahead).
 * Keyboard ASCII ring is 256 B (64 B overflowed when the emulator typed through a long,

@@ -16,7 +16,7 @@
 #define SAMPLE_RATE  15707u                 /* NTSC lines per second */
 #define BPM          150u
 #define SIXTEENTH    (SAMPLE_RATE * 60u / (BPM * 4u))   /* samples per sixteenth note */
-#define BUFSIZE      512                    /* samples per hand-off, 33 ms: two buffers of slack cover a printf line at 38400 baud */
+#define BUFSIZE      512                    /* samples per hand-off, 33 ms: two buffers of slack cover a printf line and a scroll */
 
 /* phase increment per sample for MIDI notes 108..119 (C8..B8) at SAMPLE_RATE */
 static const uint32_t octave8[12] = {

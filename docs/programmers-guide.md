@@ -1,6 +1,6 @@
 # other-m68k Programmer's Guide
 
-This guide describes **board rev C1, spec revision 7** (`"revision": 7` in `spec/board.json`,
+This guide describes **board rev C1, spec revision 8** (`"revision": 8` in `spec/board.json`,
 `BOARD_REVISION` in `generated/hw.h`) and the BIOS/monitor in `fw/` as it stands in this
 repository. Revision 5 changed only the audio hardware (an 8-bit PDM shifter behind a new
 `AUDIO` register instead of a GPIO bit, a JED-only change for B4 boards). Revision 6 changed
@@ -13,7 +13,10 @@ line levels ([2.10](#210-sd-card)); `INTSTAT_SDMISO`, the `USERIO` register and 
 pins on the expansion header are gone, their CPLD2 macrocells went to the extra SD lines. That
 is a wiring change, board rev C1. The rev B4 boards that were ordered are wired for SPI: they
 run the CPLD images and firmware at git tag `rev-b` (spec revision 6), or can be modified by
-hand to the C1 wiring as `kicad/ORDER.md` describes. Every address, bit and syscall
+hand to the C1 wiring as `kicad/ORDER.md` describes. Revision 8 changed only the BIOS and the
+SDK, not the board: serial port A carries the POST report and the banner and is then released,
+so the console is the screen and the keyboard alone, and programs claim the port as the device
+file `/dev/ttya` ([1.4](#serial-port-a-is-yours-devttya)). Every address, bit and syscall
 name below comes from `spec/board.json` or from the headers generated from it
 (`generated/hw.h`, `generated/syscalls.h`, `generated/hw.inc`). Where the spec, the firmware and
 the other documents disagree, the text says so; the list is collected in
@@ -30,7 +33,7 @@ the other documents disagree, the text says so; the list is collected in
 | ROM | 1 MB flash window at 0xE00000 (2x SST39SF040); the BIOS image is the first 128 KB, the rest is erased and free |
 | Video | 320x240, one byte per pixel (RGB332), two pages in RAM, composite out through an AD724 (NTSC only on rev B4 and C1) |
 | Glue | two ATF1508AS CPLDs: CPLD1 = decode, DTACK, SRAM address mux, video timing, soft switches; CPLD2 = I/O registers, pixel shifter, interrupt encoder, PS/2 receiver, PDM audio shifter, SD/GPIO pins |
-| I/O | 68681 DUART (channel A = console, 38400 8N1; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; the expansion header carries power and DUART channel B only |
+| I/O | 68681 DUART (channel A on the FTDI header, 38400 8N1: the POST report and the banner, then free for programs as `/dev/ttya`; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; the expansion header carries power and DUART channel B only |
 | Interrupts | autovectored, vector = 24 + level: VBLANK 1, PS/2 2, DUART 3, HSYNC 4, NMI button 7 |
 
 Programs are ELF files on the SD card. The monitor loads one into the user region of RAM
@@ -44,7 +47,7 @@ Programs are ELF files on the SD card. The monitor loads one into the user regio
 1. Build it with the SDK: drop `foo.c` into `sdk/examples/`, add `foo` to `EXAMPLES` in
    `sdk/Makefile`, run `make -C sdk`. The result is `sdk/build/foo.elf`.
 2. Copy it to a FAT32 (or FAT16) card as `FOO.ELF` (8.3 names only).
-3. At the monitor prompt type `foo` (any word that is not a monitor command runs
+3. At the monitor prompt type `foo` on the PS/2 keyboard (any word that is not a monitor command runs
    `WORD.ELF` from the card, with the rest of the line as arguments), or `run foo.elf args`.
 4. Or skip the card: build an image with `fw/test/mkimage.sh` and run the emulator with
    `--sd image`, then type `foo` in its window.
@@ -52,8 +55,8 @@ Programs are ELF files on the SD card. The monitor loads one into the user regio
 ### Which part to read
 
 * **Part 1, Writing applications**, is for a C programmer who wants to write a program
-  quickly and does not want to know how the hardware works: build, console, graphics,
-  files, sound, timing, and a reference table of every system call.
+  quickly and does not want to know how the hardware works: build, console and serial port,
+  graphics, files, sound, timing, and a reference table of every system call.
 * **Part 2, Programming the hardware directly**, is for someone writing a game engine, an
   interpreter, a demo or bare-metal code who wants every cycle: memory map, bus timing,
   every register bit, interrupts and their cost, the SD/PS/2/DUART/flash protocols, and
@@ -133,23 +136,30 @@ sh fw/test/mkimage.sh /tmp/card/sd.img 64 /tmp/card/FOO.ELF   # 64 MB FAT32 (nee
 emu/build/m68k-emu --rom fw/build/rom.bin --sd /tmp/card/sd.img
 ```
 
-The window shows the video output and takes the PS/2 keyboard; the serial console is the
-emulator's stdin/stdout. Wait for the POST (about 4 s: the RAM test) and the `> ` prompt, then
-type `foo`. F12 (or Pause) is the NMI button, F11 the reset button.
+The window shows the video output and takes the PS/2 keyboard, where monitor commands are
+typed. Serial port A is the emulator's stdin/stdout: it shows the POST report and the banner,
+and after that only what a program sends to `/dev/ttya`. Wait for the POST (about 4 s: the RAM
+test) and the `> ` prompt, then type `foo`. F12 (or Pause) is the NMI button, F11 the reset
+button.
 
 Headless, for scripted tests and CI:
 
 ```
 emu/build/m68k-emu --rom fw/build/rom.bin --sd /tmp/card/sd.img --headless --frames 1500 \
-    --type "foo arg1 arg2\n" --type-delay 350 --no-audio --no-stdin --serial-log /tmp/run.log
+    --type "foo arg1 arg2\n" --type-delay 350 --no-audio --no-stdin --text-dump /tmp/run.txt
 ```
 
 `--type` types on the PS/2 keyboard after `--type-delay` frames (350 leaves the POST time to
-finish); `--serial-type` does the same on the serial port. Everything the console prints is
-also on stdout and in the serial log. `--frames N` stops after N frames (60 per second).
-Use `--type "foo\n"` for the command and `--serial-type` for later input if you need two
-inputs at different times (there is one of each). Useful debugging options: `--exit-on-berr`,
-`--break ADDR`, `--trace`, `--io-trace` (every register access with a cycle stamp),
+finish): monitor commands and a program's keyboard input both go this way. `--serial-type`
+(after `--serial-type-delay` frames; `\n` is sent as CR) feeds the serial port instead, which
+only a program reading `/dev/ttya` or the monitor's `srec` command listens to. The console is
+on the screen only, so `--text-dump FILE` (`-` for stdout) is how a headless run reads what
+was printed: at exit it writes the 40x30 console text, decoded from framebuffer page 0 by
+matching each 8x8 cell against the BIOS font (a cell that matches no character, graphics for
+instance, shows as `?`). Only what is still on the screen at exit is there. stdout and
+`--serial-log FILE` carry the POST report, the banner and whatever the program sends to
+`/dev/ttya`. `--frames N` stops after N frames (60 per second). Useful debugging options:
+`--exit-on-berr`, `--break ADDR`, `--trace`, `--io-trace` (every register access with a cycle stamp),
 `--dump-mem ADDR LEN`, `--audio-wav FILE` (the audio output rendered to a 48 kHz mono WAV from
 cycle 0; works headless and with `--fast`, so you can check sound without a sound card) and
 `--audio-edge-log FILE` (every edge of the audio pin with its cycle stamp). See
@@ -161,9 +171,14 @@ clusters); smaller ones come out as FAT16, which also works.
 ### On the board
 
 Copy `FOO.ELF` to the card, insert it, and type `foo` at the prompt (or `run foo.elf`). `dir`
-lists the card. You can also send `sdk/build/foo.srec` over the serial port (38400 8N1) after
-the prompt appears (`cat foo.srec > /dev/ttyUSB0`); the monitor recognises the S-records,
-prints a summary, and `go` starts the program (with `argc` = 0).
+lists the card. Without a card, type `srec` at the prompt, then send `sdk/build/foo.srec` over
+the serial port (38400 8N1, `cat foo.srec > /dev/ttyUSB0`); the monitor reads the records
+straight from the port, prints a summary, and `go` starts the program (with `argc` = 0). ESC, on
+the keyboard or from the port, abandons the upload; other keys are ignored until it ends. In the
+emulator, `--type "srec\n"` with `--serial-type "$(cat sdk/build/foo.srec)"` and a
+`--serial-type-delay` that falls after the `srec` prompt does the same (at 38400 baud the
+97 KB `hello.srec` takes 25 s, 1,500 frames). Piping the file into stdin from the start does
+not work: it arrives during the POST, and `srec` throws away whatever was already waiting.
 
 ### What the monitor does with the command line
 
@@ -197,14 +212,15 @@ graphics; the loader will not put ELF segments there, but you can point at it:
 
 ### The C library
 
-* `printf`, `puts`, `putchar`, `fprintf(stderr, ...)`: go to the console (video page 0 and
-  the serial port). `stdout` is line buffered; call `fflush(stdout)` before waiting for input
-  after a prompt that has no newline.
-* `fgets(buf, n, stdin)`, `scanf`, `getchar()`: read the console through a small line editor
-  (echo, Backspace) in the shim; the line ends with Enter.
+* `printf`, `puts`, `putchar`, `fprintf(stderr, ...)`: go to the console, the text screen on
+  video page 0 (not to the serial port, [1.4](#14-the-console)). `stdout` is line buffered;
+  call `fflush(stdout)` before waiting for input after a prompt that has no newline.
+* `fgets(buf, n, stdin)`, `scanf`, `getchar()`: read the PS/2 keyboard through a small line
+  editor (echo on the screen, Backspace) in the shim; the line ends with Enter.
 * `malloc`/`free`/`realloc`/`calloc`: newlib's allocator on top of `sbrk`.
 * `fopen`/`fread`/`fwrite`/`fseek`/`fclose`, `open`/`read`/`write`/`lseek`/`close`,
-  `stat`/`fstat`: files on the SD card (see [Files](#17-files-and-directories)).
+  `stat`/`fstat`: files on the SD card (see [Files](#17-files-and-directories)), and the serial
+  port as `/dev/ttya` ([1.4](#serial-port-a-is-yours-devttya)).
 * `time()`, `gettimeofday()`, `clock()`, `times()`: count from boot, derived from the VBLANK
   tick counter and the real frame length of the current video standard (764 x 262 clocks,
   59.95 Hz, on NTSC; 768 x 312, 50.08 Hz, on PAL). `clock()` and `times()` count milliseconds,
@@ -243,16 +259,20 @@ The NMI button does the same at any time (that is how you break out of a hung pr
 ## 1.4 The console
 
 The console is a 40x30 character text screen (8x8 font) drawn on framebuffer page 0, white on
-dark blue, mirrored to the serial port. Characters it understands: printable ASCII,
-`\n` (new line, CR+LF on serial), `\r`, `\b` (cursor left, not destructive), `\t` (to the next
-multiple of 8 columns). Other control characters are dropped, so ANSI escape sequences are
-*not* interpreted on the video screen (a terminal on the serial port will interpret them).
-At the bottom the screen scrolls (a 74 KB move, about 35-40 ms).
+dark blue, and the PS/2 keyboard. The serial port is not part of it: since spec revision 8 the
+BIOS sends its POST report and banner to serial port A as well as to the screen and then lets
+go of the port, so the monitor, crash reports, `[exit n]` and everything a program prints
+appear on the screen only, and console input comes from the keyboard only. The port is the
+program's ([below](#serial-port-a-is-yours-devttya)). Characters the screen understands:
+printable ASCII, `\n` (new line), `\r`, `\b` (cursor left, not destructive), `\t` (to the
+next multiple of 8 columns). Other control characters are dropped, so ANSI escape sequences
+are *not* interpreted. At the bottom the screen scrolls (a 74 KB move, about 40 ms).
 
-Printing is slow because every character is also sent to the serial port at 38400 baud and the
-BIOS waits for the transmitter: about 3,840 characters per second, *measured* 400
-`sys_putchar` calls in 6 frames. A full screen of text takes about 0.3 s. For fast text in a
-game, draw your own glyphs into the framebuffer.
+Printing costs about 2,600-2,900 clocks a character in a string (`sys_write`, `sys_puts`,
+`printf`) and 3,000 one at a time through `sys_putchar` (*measured*: 3,900 characters, 39 to a
+line, in 50-56 and 59 frames), about 4,000-4,600 characters per second, plus 40 ms for each scroll
+(*measured* 100 scrolls in 241 frames). A full screen of text takes about 0.3 s. For fast text
+in a game, draw your own glyphs into the framebuffer.
 
 | call | what it does |
 |---|---|
@@ -266,7 +286,8 @@ program runs.
 
 ### Keyboard input as characters
 
-Input is merged from the PS/2 keyboard and the serial port (keyboard first).
+Console input is the PS/2 keyboard only. Bytes that arrive on the serial port wait in a ring
+of their own for a program that reads `/dev/ttya` or calls `sys_serial_getc`.
 
 * `sys_getchar()` waits for a character; `sys_pollchar()` returns -1 if there is none.
 * The keyboard is decoded with a US layout, Shift, Caps Lock and Ctrl. Enter gives `'\r'`,
@@ -274,7 +295,7 @@ Input is merged from the PS/2 keyboard and the serial port (keyboard first).
 * Cursor and function keys arrive as VT100/xterm escape sequences: arrows `ESC [ A/B/C/D`
   (up, down, right, left), Home/End `ESC [ H` / `ESC [ F`, Insert/Delete/PgUp/PgDn
   `ESC [ 2~` `3~` `5~` `6~`, F1-F4 `ESC O P`..`S`, F5-F12 `ESC [ 15~ 17~ 18~ 19~ 20~ 21~ 23~ 24~`.
-* Through stdio (`fgets(stdin)`, `getchar()`), input is line edited and echoed.
+* Through stdio (`fgets(stdin)`, `getchar()`), input is line edited and echoed on the screen.
 
 ### Keyboard input as key events (for games)
 
@@ -324,6 +345,97 @@ int main(void)
 For "is this key held" in a game loop, keep a table: `held[ev & 0x2FF] = !(ev & KEY_RELEASE)`
 for every event read (masking with 0x2FF drops the release bit and keeps the `E0` bit), with
 `held` sized 0x300.
+
+### Serial port A is yours: `/dev/ttya`
+
+After the banner nothing in the BIOS reads or writes serial port A (the 6-pin FTDI header,
+38400 8N1) except the monitor's `srec` command while it runs, and nothing gives the port back
+to the console. A program can use it as it likes: to talk to a host, as a second terminal, or
+as the console of an operating-system personality (a CP/M-68K-style system, say, whose
+programs expect a bigger terminal than 40x30), while the BIOS's own console stays on the
+screen. The receive interrupt runs all the time, so input is not lost while the program is
+busy: bytes wait in a 512-byte ring, and the newest are dropped once 511 are waiting. The ring
+is not emptied between programs; `while (sys_serial_getc() >= 0) ;` discards old input.
+
+The port is a device file: `fopen("/dev/ttya", ...)`, `open()` or `sys_open(O_RDWR,
+"/dev/ttya")` opens it, with or without a card.
+
+* `O_RDONLY`, `O_WRONLY` and `O_RDWR` are honoured (`E_BADF` for the wrong direction);
+  `O_CREAT`, `O_TRUNC` and `O_APPEND` are ignored, so `"w"` and `"r+"` both work.
+* `read` waits for the first byte, then returns whatever else is already in the ring, up to
+  `len`: the same shape as fd 0.
+* `write` sends the bytes raw, without turning `\n` into CR LF (send `"\r\n"` yourself), and
+  waits for the transmitter: 260 us a byte, so a 40-character line takes 10 ms.
+* There is no echo, no line editing and no flow control (CTS and RTS are not connected).
+  `lseek`, and so `fseek`, is `E_INVAL`.
+* The descriptor takes one of the 8 slots shared with files, stays open through the card
+  errors that close files, and is closed at exit.
+
+Through stdio, a `/dev/ttya` stream is **line buffered**: the SDK's `fstat` reports a device
+descriptor as a character device and `isatty` says yes, so newlib sends each line when the
+`\n` is written (*measured*: a `"\r\n"` line reaches the port without a flush, text after it
+waits). Call `fflush` after a prompt that has no newline. Use one stream for each direction, as
+below: a single `"r+"` stream needs an `fseek` between reading and
+writing, which a device cannot do. Without a descriptor, `sys_serial_putc` sends one raw byte
+and `sys_serial_getc` takes the next byte from the ring, or -1 at once if there is none, which
+is the way to poll the port.
+
+```c
+/* ttyecho.c: a line service on serial port A through stdio. */
+#include <stdio.h>
+#include <string.h>
+
+int main(void)
+{
+    FILE *in = fopen("/dev/ttya", "r");         /* one stream each way: no fseek needed */
+    FILE *out = fopen("/dev/ttya", "w");        /* between reading and writing */
+    if (!in || !out) { perror("/dev/ttya"); return 1; }
+    printf("serial A: send \"bye\" to stop\n");
+    fprintf(out, "\r\nother-m68k: type a line\r\n> ");
+    char line[64];
+    unsigned n = 0;
+    for (;;) {
+        fflush(out);                            /* the prompt and the echo have no newline */
+        int c = fgetc(in);                      /* waits for the next byte; no echo, no editing */
+        if (c == EOF) break;
+        if (c == '\n') continue;                /* Enter sends CR, or CR LF */
+        if (c == '\r') {
+            line[n] = 0;
+            n = 0;
+            printf("remote: %s\n", line);       /* to the screen */
+            if (!strcmp(line, "bye")) break;
+            fprintf(out, "\r\n%u characters\r\n> ", (unsigned)strlen(line));
+        } else if ((c == 0x08 || c == 0x7F) && n > 0) {
+            n--;
+            fputs("\b \b", out);                /* rub out on the terminal */
+        } else if (c >= ' ' && c < 0x7F && n < sizeof line - 1) {
+            line[n++] = (char)c;
+            fputc(c, out);                      /* echo: the port does none */
+        }
+    }
+    fprintf(out, "\r\nbye\r\n");
+    fclose(out);
+    fclose(in);
+    return 0;
+}
+```
+
+The screen shows `remote:` and each line received; the terminal at the other end gets the
+prompt, its own typing echoed and the length of each line. In the emulator, the headless
+command of [1.2](#in-the-emulator) with `--type "ttyecho\n" --type-delay 350 --serial-type
+"hello\nbye\n" --serial-type-delay 600 --frames 900 --text-dump -` prints `remote: hello`
+and `remote: bye` from the screen, and stdout before them has the other side of the
+conversation (`5 characters`); in a window, the shell that started the emulator is the
+terminal. On the board, any terminal program on the FTDI port does
+(`picocom -b 38400 /dev/ttyUSB0`).
+
+`sdk/examples/term.c` (`term` at the prompt, `TERM.ELF` on the card) uses the raw calls: it
+opens `/dev/ttya` with `sys_open`, sends a greeting, then copies keys (`sys_pollchar`) to the
+port and bytes from the port (`sys_serial_getc`) to the screen until ESC is pressed, which makes
+the board a small terminal for whatever is at the other end. An operating-system personality
+works the other way round: it opens `/dev/ttya` once at start-up and uses it as its console,
+reading its commands from the port and writing its output there, and leaves the BIOS console
+on the screen.
 
 ## 1.5 Graphics the easy way
 
@@ -458,8 +570,11 @@ Rules:
   that is not a valid 8.3 name fails with `E_NAMETOOLONG`.
 * Paths are from the root; a leading `/` is optional; subdirectories work (`/GAMES/LEVEL1.DAT`).
   There is no current directory.
-* At most 8 files and 4 directories open at once. Files are closed for you when the program
-  exits.
+* At most 8 files and 4 directories open at once (an open `/dev/ttya` counts as a file).
+  Files are closed for you when the program exits.
+* Paths that start with `/dev/` name devices, not files on the card. The only one is
+  `/dev/ttya`, serial port A ([1.4](#serial-port-a-is-yours-devttya)); any other `/dev/` name
+  gives `E_NOENT`.
 * Cannot delete, rename or create directories (no system calls for these).
 
 With stdio, everything works as usual:
@@ -476,7 +591,7 @@ translates newlib's `O_CREAT`/`O_TRUNC`/`O_APPEND` into the ABI's values. The ra
 `sys_write(fd, len, buf)`, `sys_lseek(fd, offset, whence)` and `sys_close(fd)` return the
 ABI's negative `E_*` codes instead of setting `errno`. Use the `O_*` constants from
 `syscalls.h` with the raw calls; they differ from newlib's `<fcntl.h>`, so do not include both
-headers in one source file. Descriptors 0, 1, 2 are the console; files get 3..10.
+headers in one source file. Descriptors 0, 1, 2 are the console; files and devices get 3..10.
 
 Directories are read with the raw calls; `struct dirent` has `name[64]` (the 8.3 name),
 `size` and `attr` (`ATTR_DIR`, `ATTR_READONLY`, `ATTR_HIDDEN`).
@@ -573,9 +688,10 @@ The stream (system calls 30-32):
 * While you fill one buffer the other two are playing or queued, so you have about two
   buffers' time for each one. If the program is later than that (an underrun), the last
   pattern repeats until the next buffer arrives: a gap, heard as a click, but nothing
-  breaks. A `printf` is the usual cause, because the console waits for the 38400-baud serial
-  port (about 14 ms for a full 40-character line); that is why `tune.c` below uses 512-byte
-  buffers, after 256-byte ones underran once at a line break.
+  breaks. A `printf` is the usual cause: a 40-character line takes about 9 ms to draw and a
+  scroll at the bottom of the screen about 40 ms, half as long again while the stream's
+  interrupt takes its third of the CPU. That is why `tune.c` below uses 512-byte buffers: two
+  of them, 66 ms, cover a scroll, two 256-byte ones do not.
 * While sound plays the line interrupt takes **about a third of the CPU** (242 of the 764
   clocks in every line) and `pdm_encode` 83 clocks per sample, so about 440 clocks per sample
   are left for making the samples. Synthesise with integer arithmetic (soft float costs
@@ -635,12 +751,13 @@ encoder) and try it in the emulator without a sound card by writing the output t
 cp sdk/build/arp.elf /tmp/card/ARP.ELF                  # after adding arp to EXAMPLES
 sh fw/test/mkimage.sh /tmp/card/sd.img 64 /tmp/card/ARP.ELF
 emu/build/m68k-emu --rom fw/build/rom.bin --sd /tmp/card/sd.img --headless --frames 700 \
-    --type "arp\n" --type-delay 350 --no-stdin --audio-wav /tmp/card/arp.wav
+    --type "arp\n" --type-delay 350 --no-stdin --audio-wav /tmp/card/arp.wav --text-dump -
 ```
 
 It prints `arpeggio at 15706 samples/s`, then, about 3 s later (0.4 s for `pdm_init` and
-2.6 s of sound, 16 notes of 2,560 samples), `done` and `[exit 0]`; `arp.wav` holds the notes
-at their pitches (262 to 659 Hz). With `--io-trace` added you can see that the line interrupt
+2.6 s of sound, 16 notes of 2,560 samples), `done` and `[exit 0]`, all on the screen, which
+`--text-dump -` copies to stdout at the end; `arp.wav` holds the notes at their pitches (262
+to 659 Hz). With `--io-trace` added you can see that the line interrupt
 was switched on once and off once, with exactly 40,960 stream writes to AUDIO in between and
 never more than 904 clocks between two of them (a line is 764; the rest is interrupt
 latency), so no buffer arrived late. In a window (without `--headless`) you hear it.
@@ -731,9 +848,9 @@ avoid the problem.
 ## 1.10 Exiting and chaining
 
 * Returning from `main(argc, argv)` or calling `exit(n)` flushes stdio and calls
-  `sys_exit(n)`. The BIOS closes the program's files, stops the audio stream at once (buffers
-  still queued are dropped; call `sys_audio_last(NULL, 1)` before exiting if the end of the
-  sound matters) and puts the audio output back to the silence level, removes its hooks and
+  `sys_exit(n)`. The BIOS closes the program's files (and `/dev/ttya`), stops the audio
+  stream at once (buffers still queued are dropped; call `sys_audio_last(NULL, 1)` before
+  exiting if the end of the sound matters) and puts the audio output back to the silence level, removes its hooks and
   audio callback, restores its
   interrupt enables, turns off the LEDs, selects page 0, prints
   `[exit n]` and returns to the monitor prompt.
@@ -763,21 +880,21 @@ handed out.
 | # | prototype | description, results and errors |
 |---|---|---|
 | 0 | `void sys_exit(int code)` | End the program: close its files, stop the audio stream (queued buffers are dropped), drop hooks and audio callback, restore interrupt enables, audio to the silence level, LEDs off, select page 0, print `[exit code]`, return to the monitor. Does not return. |
-| 1 | `int sys_putchar(int c)` | Write a character to the console (video page 0 and serial). Returns `c & 0xFF`. Blocks while the serial transmitter is busy. |
-| 2 | `int sys_getchar(void)` | Wait for a character from the keyboard (first) or serial port; returns it (0..255). |
-| 3 | `int sys_pollchar(void)` | Next character, or -1 if none. |
-| 4 | `int sys_puts(const char *s)` | Write a NUL-terminated string to the console, no newline added. Returns the number of characters, or `E_FAULT` if `s` does not start in user RAM (an unterminated string stops at the end of RAM). |
-| 5 | `int sys_serial_putc(int c)` | Write a raw byte to the serial port only (no `\n` translation). Returns `c & 0xFF`. |
-| 6 | `int sys_serial_getc(void)` | Next byte from the serial receive buffer (512 bytes, filled by interrupt), or -1. |
+| 1 | `int sys_putchar(int c)` | Write a character to the video console (page 0). Returns `c & 0xFF`. |
+| 2 | `int sys_getchar(void)` | Wait for a character from the PS/2 keyboard; returns it (0..255). |
+| 3 | `int sys_pollchar(void)` | Next keyboard character, or -1 if none. |
+| 4 | `int sys_puts(const char *s)` | Write a NUL-terminated string to the video console, no newline added. Returns the number of characters, or `E_FAULT` if `s` does not start in user RAM (an unterminated string stops at the end of RAM). |
+| 5 | `int sys_serial_putc(int c)` | Write a raw byte to serial port A (no `\n` translation), waiting for the transmitter (260 us a byte). The port is free for programs after the POST; see also `/dev/ttya`. Returns `c & 0xFF`. |
+| 6 | `int sys_serial_getc(void)` | Next byte from serial port A's receive ring (512 bytes, filled by interrupt; reads of `/dev/ttya` drain the same ring), or -1 if none. Does not wait. |
 | 7 | `uint32_t sys_ticks(void)` | Frames since boot (VBLANK count; 59.95 Hz NTSC, 50.08 Hz PAL). |
 | 8 | `void sys_wait_vblank(void)` | Wait until the tick count changes (the next VBLANK interrupt, at the start of vertical sync). |
 | 9 | `int sys_video_info(struct video_info *info)` | Fill in width, height, bpp, bytes per line, both page addresses, the current page and the video standard. 0, or `E_FAULT` if the structure is not in user RAM (`NULL` included). |
 | 10 | `int sys_video_set_page(int page)` | Display page 0 or 1 from the next frame on. 0, or `E_INVAL`. |
-| 11 | `int sys_open(int flags, const char *path)` | Open a file. `flags`: `O_RDONLY`, `O_WRONLY` or `O_RDWR`, plus `O_CREAT` (create if missing), `O_TRUNC`, `O_APPEND` (every write goes to the end); the last three need write access, else `E_INVAL`. Returns a descriptor 3..10, or `E_NOENT`, `E_NAMETOOLONG` (not 8.3), `E_NFILE` (8 open), `E_NOSPC` (directory full, or the file is read-only), `E_NODEV` (no card / no FAT), `E_IO`, `E_FAULT`, `E_INVAL`. |
-| 12 | `int sys_close(int fd)` | Close a file; 0 (also for 0..2), or `E_BADF`. |
-| 13 | `int sys_read(int fd, unsigned len, void *buf)` | Read up to `len` bytes; returns the count (0 at end of file) or `E_BADF`, `E_IO`, `E_FAULT`. On fd 0, waits for one character and returns whatever else is already queued (no echo, no line editing). `E_BADF` on fd 1, 2. |
-| 14 | `int sys_write(int fd, unsigned len, const void *buf)` | Write `len` bytes; returns `len`, or `E_NOSPC` (card full), `E_BADF`, `E_IO`, `E_FAULT`. On fd 1, 2: to the console. `E_BADF` on fd 0. |
-| 15 | `int sys_lseek(int fd, int offset, int whence)` | `SEEK_SET`/`SEEK_CUR`/`SEEK_END`; returns the new offset, or `E_INVAL` (negative result, bad `whence`, console fds), `E_BADF`. Seeking past the end of a writable file extends it. |
+| 11 | `int sys_open(int flags, const char *path)` | Open a file. `flags`: `O_RDONLY`, `O_WRONLY` or `O_RDWR`, plus `O_CREAT` (create if missing), `O_TRUNC`, `O_APPEND` (every write goes to the end); the last three need write access, else `E_INVAL`. Returns a descriptor 3..10, or `E_NOENT`, `E_NAMETOOLONG` (not 8.3), `E_NFILE` (8 open), `E_NOSPC` (directory full, or the file is read-only), `E_NODEV` (no card / no FAT), `E_IO`, `E_FAULT`, `E_INVAL`. A path starting with `/dev/` opens a device instead: `/dev/ttya` (serial port A) needs no card, honours the access mode and ignores `O_CREAT`/`O_TRUNC`/`O_APPEND`; any other `/dev/` name is `E_NOENT`. |
+| 12 | `int sys_close(int fd)` | Close a file or device; 0 (also for 0..2), or `E_BADF`. |
+| 13 | `int sys_read(int fd, unsigned len, void *buf)` | Read up to `len` bytes; returns the count (0 at end of file) or `E_BADF`, `E_IO`, `E_FAULT`. On fd 0 (the keyboard), waits for one character and returns whatever else is already queued (no echo, no line editing); a `/dev/ttya` descriptor does the same on the serial receive ring. `E_BADF` on fd 1, 2. |
+| 14 | `int sys_write(int fd, unsigned len, const void *buf)` | Write `len` bytes; returns `len`, or `E_NOSPC` (card full), `E_BADF`, `E_IO`, `E_FAULT`. On fd 1, 2: to the video console. On a `/dev/ttya` descriptor: raw bytes to serial port A, waiting for the transmitter. `E_BADF` on fd 0. |
+| 15 | `int sys_lseek(int fd, int offset, int whence)` | `SEEK_SET`/`SEEK_CUR`/`SEEK_END`; returns the new offset, or `E_INVAL` (negative result, bad `whence`, console fds, devices), `E_BADF`. Seeking past the end of a writable file extends it. |
 | 16 | `int sys_opendir(const char *path)` | Open a directory (`"/"` for the root); returns a handle 0..3, or `E_NOENT`, `E_NFILE` (4 open), `E_NODEV`, `E_IO`, `E_FAULT`. |
 | 17 | `int sys_readdir(int handle, struct dirent *ent)` | Next entry: 1 and `*ent` filled, 0 at the end, or `E_BADF`, `E_IO`, `E_FAULT`. |
 | 18 | `int sys_closedir(int handle)` | Close a directory handle; 0 or `E_BADF`. |
@@ -802,7 +919,7 @@ Any other number returns `E_NOSYS`. The constants and structures (`O_*`, `SEEK_*
 
 | code | value | meaning here |
 |---|---|---|
-| `E_NOENT` | -2 | no such file or directory |
+| `E_NOENT` | -2 | no such file or directory, or no such `/dev/` device |
 | `E_IO` | -5 | card error (after a failed file call, the next call re-initialises the card) |
 | `E_NOEXEC` | -8 | not a loadable ELF |
 | `E_BADF` | -9 | bad descriptor or wrong direction |
@@ -1342,7 +1459,7 @@ level-4 hook is installed or an audio buffer is playing or queued. The handlers:
 |---|---|
 | 1 | clear VBLANK, `ticks++`, call the level-1 hook |
 | 2 | read INTSTAT and PS2DATA; on PS2ERR clear it and count an error, else decode the byte into the character and key-event queues; call the level-2 hook |
-| 3 | read the DUART ISR; if RXRDYA, pop RBA into the 512-byte serial ring while SRA.RXRDY (counting overruns, clearing OE); call the level-3 hook |
+| 3 | read the DUART ISR; if RXRDYA, pop RBA into the 512-byte serial ring while SRA.RXRDY (counting overruns, clearing OE); call the level-3 hook. The ring is what `sys_serial_getc` and `/dev/ttya` read; it fills whether or not a program reads it |
 | 4 | `irq_hsync.S`, assembler, two handlers. `irq_hsync_fast` (no callback, no level-4 hook): clear HSYNC, write the next byte of the playing stream buffer to AUDIO; at the end of a buffer release it and take the next queued one, or, with none queued, clear `INTEN_HSYNC` (through `inten_shadow`), writing the idle pattern 0xAA first if the stream was closed with `sys_audio_last`. `irq_hsync_slow`: clear HSYNC, call the audio callback if one is installed, otherwise run the same stream step in C (leaving the interrupt on while a hook is installed), then call the level-4 hook |
 | 7 | through the exception path: print registers, enter the monitor |
 
@@ -1375,9 +1492,9 @@ I/O and waits.
    acknowledge the source yourself, preserve every register, end with `rte`, keep the enable
    bit set, and put the old vector back before the program exits. Replacing level 1 stops
    `sys_ticks`, `sys_wait_vblank` and `sys_sleep_ms` (chain to the old handler or count ticks
-   yourself); replacing level 2 or 3 starves the keyboard or serial input of the BIOS, and at
-   level 3 your handler must drain the receiver (or clear RXRDYA from IMR), or the level-sensitive
-   DUART request never goes away.
+   yourself); replacing level 2 starves the BIOS's keyboard queues and level 3 its serial ring
+   (`sys_serial_getc`, `/dev/ttya`), and at level 3 your handler must drain the receiver (or
+   clear RXRDYA from IMR), or the level-sensitive DUART request never goes away.
 3. **Poll the flag** with the interrupt disabled, as in [2.5](#25-video-timing-and-finding-the-beam).
 
 For HSYNC, the tidy way to get the enable bit set and kept consistent with the BIOS is a
@@ -1745,7 +1862,7 @@ the keyboard's LEDs stay off.
 
 * Read events with `sys_key_event` (cheapest).
 * Or replace vector 26 and read `IO_PS2DATA` yourself; the BIOS queues then stay empty
-  (`sys_getchar` sees serial input only).
+  (`sys_getchar` and stdin wait for ever: the console has no other input).
 * Or turn `INTEN_PS2` off and poll `INTSTAT_PS2RDY`.
 
 ### Talking to the keyboard
@@ -2205,19 +2322,34 @@ drains the receiver, resets error status and sets IMR = `IMR_RXRDYA`, and INTEN.
 IRQ to level 3. Channel B and the counter/timer are left at their hardware-reset state
 (disabled).
 
+The POST report and the banner go out on channel A (and on the screen); then the BIOS releases
+the port (spec `serial.console`, `console_serial` in `fw/main.c`). From the banner on, console
+output goes to the screen only and console input comes from the keyboard only. The BIOS
+writes channel A again only when a program asks (`sys_serial_putc`, a write to `/dev/ttya`),
+and takes bytes out of the receive ring only for a program (`sys_serial_getc`, a read of
+`/dev/ttya`) or for the monitor's `srec` command, which reads the records from the port itself
+while it runs. The receive interrupt stays on the whole time. (The `flash` command's RAM
+routine also prints its progress on the port, [2.12](#the-monitor-commands).) Nothing puts the
+console back on the serial port: no system call, no monitor command.
+
 38,400 baud is the top of the 68681's fixed table: CSR code 0xC is 38.4k in set 1 (ACR bit 7
 = 0); other set-1 codes include 0xB = 9600 and 0x8 = 2400. In set 2 (ACR bit 7 = 1) code 0xC
 means 19.2k, so **keep ACR bit 7 at 0** whenever you write ACR (it is write-only; the BIOS's
 value is 0x00).
 
 **Transmit** is polled: `serial_putc` waits for `SRA_TXRDY` and writes TBA, with interrupts
-enabled. `sys_serial_putc` sends a raw byte this way; the console calls add `\r` before `\n`.
-You can write TBA yourself (poll TXRDY first).
+enabled. `sys_serial_putc` and writes to `/dev/ttya` send raw bytes this way, 260 us each at
+38400 baud; only the POST and banner output adds `\r` before `\n`. You can write TBA yourself
+(poll TXRDY first).
 
 **Receive** is interrupt driven: the level-3 handler moves bytes from the 3-byte FIFO into a
-512-byte ring, which `sys_serial_getc` and `sys_getchar` read. Polling SRA/RBA yourself races
-with that handler; to own the receiver, write IMR without `IMR_RXRDYA` and put
-`IMR_RXRDYA` back before exiting (IMR is write-only and `sys_exit` does not restore it).
+512-byte ring, which `sys_serial_getc` and reads of `/dev/ttya` drain (`sys_getchar` does not
+look at it). The ring holds 511 bytes; while it is full, further bytes are dropped without
+being counted (only `SRA.OE`, a FIFO overrun, is counted, and `info` shows it). It is not
+emptied between programs, so a program can find bytes that arrived before it started. Polling
+SRA/RBA yourself races with that handler; to own the receiver, write IMR without
+`IMR_RXRDYA` and put `IMR_RXRDYA` back before exiting (IMR is write-only and `sys_exit` does
+not restore it).
 
 ### Channel B
 
@@ -2378,7 +2510,10 @@ reprogramming the chips in an external programmer.
   hands over to a routine copied into RAM (`fw/flashram.S`) which, with interrupts masked,
   erases, programs and verifies the sixteen 8 KB sectors (a `.` per sector on the serial port)
   and jumps through the new image's reset vectors. On a timeout or verify mismatch it prints the
-  sector and stops the CPU. Do not press NMI or reset while it runs.
+  sector and stops the CPU. All of that output goes to serial port A only (the routine cannot
+  call the BIOS's screen code, which is in the flash it is rewriting), so attach a terminal to
+  follow it; the screen only says that programming has started. Do not press NMI or reset while
+  it runs.
 * `reboot` jumps through the reset vectors at `ROM_BASE` (SSP and PC) without resetting the
   glue: the way to start a ROM image that was just written.
 
@@ -2404,7 +2539,9 @@ reprogramming the chips in an external programmer.
   audio stream open); SDIO = 0x3F (every line released, CLK high); the SD card initialised
   and in transfer state on the 4-bit bus (unless the program came over the serial port and
   nothing has used the card since reset).
-* DUART channel A at 38400 8N1 with IMR = RXRDYA; channel B and the counter/timer idle.
+* DUART channel A at 38400 8N1 with IMR = RXRDYA, released: the BIOS writes it only when the
+  program asks, and its receive ring may already hold bytes. Channel B and the counter/timer
+  idle.
 * NTSC timing, page 0 displayed with the console on it.
 * The CPU in user mode with SR = 0x0000, USP pointing at `{return address, argc, argv}` just
   below the argument strings, D0-D7 and A1-A6 cleared (A0 holds the entry address).
@@ -2429,8 +2566,10 @@ What depends on what, if you still want parts of the BIOS:
 |---|---|
 | any system call | vector 47 intact, BIOS data 0x000400-0x003FFF intact, room on the supervisor stack |
 | files, raw blocks, `sys_exec` | the above; works with interrupts masked (the SD driver polls) |
-| console output | the above; page 0 is drawn on and DUART channel A is written |
-| `sys_getchar`, `sys_pollchar`, `sys_key_event`, `sys_serial_getc` | the level-2 and level-3 BIOS handlers (vectors 26, 27, enables on, mask below 2) |
+| console output | the above; page 0 is drawn on (the DUART is not touched) |
+| `sys_getchar`, `sys_pollchar`, `sys_key_event`, stdin | the level-2 BIOS handler (vector 26, `INTEN_PS2`, mask below 2) |
+| `sys_serial_getc`, reads of `/dev/ttya` | the level-3 BIOS handler (vector 27, `INTEN_DUART`, `IMR_RXRDYA`, mask below 3); a `/dev/ttya` read waits for ever otherwise |
+| `sys_serial_putc`, writes to `/dev/ttya` | channel A's transmitter as the BIOS set it up; works with interrupts masked (it polls) |
 | `sys_ticks`, `sys_wait_vblank`, `sys_sleep_ms` | the level-1 handler (vector 25, enable on, mask 0); the waits spin forever otherwise |
 | `sys_audio_start`, `sys_audio_next`, `sys_audio_last` | the level-4 handler (vector 28 as the BIOS sets it, mask below 4), INTEN written only through the BIOS, and the BIOS data area, which holds the buffers; otherwise nothing plays and a blocking `sys_audio_next` or `sys_audio_last` waits for ever |
 | `sys_exit` | returns to the monitor with a fresh supervisor stack and mask 0: vectors and DUART state you changed stay changed |
@@ -2448,9 +2587,9 @@ the BIOS data area intact, and then call `sys_exit`.
 
 ### Other ways in
 
-* **S-records**: send an S-record file over the serial port at the monitor prompt; data is
-  accepted only for 0x004000-0x0FFFFF; `go [addr]` starts it in user mode with `argc` 0. This
-  needs no SD card.
+* **S-records**: type `srec` at the monitor prompt and send an S-record file over the serial
+  port ([1.2](#on-the-board)); data is accepted only for 0x004000-0x0FFFFF; `go [addr]` starts
+  it in user mode with `argc` 0. This needs no SD card.
 * **A different ROM**: the reset vectors always come from `ROM_BASE`, so code that must run
   before the BIOS has to replace the BIOS image (`flash`, or an external programmer with the
   even/odd split images). A broken image can only be recovered with the external programmer.
@@ -2500,7 +2639,9 @@ NTSC figures unless stated; PAL in parentheses. One CPU clock = 83.3 ns.
 | `memcpy` of a page, *measured* | about 430,000 (2.15 frames) |
 | `memset` of a page, *measured* | about 420,000 (2.1 frames) |
 | `movem.l` fill of a page (2.4), *measured* | about 180,000 (0.9 frame) |
-| console character (serial-bound) | about 3,125 (260 us) |
+| console character, in a string / through `sys_putchar`, *measured* | about 2,600-2,900 / 3,000 |
+| console scroll, *measured* | about 480,000 (40 ms) |
+| serial byte at 38400 baud (`sys_serial_putc`, `/dev/ttya`) | 3,125 (260 us) |
 | SD 4-bit read loop (BIOS, `sd4_read512`), per byte | 86.5 |
 | SD block read, data phase / `sys_sd_read_block`, *measured* | 44,300 / about 60,600 (3.7 ms / 5.05 ms, 101 KB/s) |
 | SD block write, `sys_sd_write_block`, *measured* (emulated card busy 16 clocks) | about 160,000 (13.3 ms, of which 6.9 ms CRC16s), plus the card's programming time |
@@ -2511,6 +2652,14 @@ on PAL).
 
 ## Known discrepancies
 
-Places where the repository disagrees with itself, found while writing this guide. Every item
-found so far (eleven for spec revision 4, one each for revisions 5 and 6, three for revision 7)
-has been fixed in the repository; nothing is open at the time of writing.
+Places where the repository disagrees with itself, found while writing this guide. The guide
+follows the code. Every item found for earlier revisions (eleven for spec revision 4, one each
+for revisions 5 and 6, three for revision 7) has been fixed in the repository. The revision 8
+pass found five more, all fixed the same day: `/dev/ttya` streams were fully buffered because
+the SDK's `fstat` failed on a device descriptor (it now reports a character device, so stdio
+line-buffers them); spec `serial.console` now names the `flash` command's RAM routine as the
+other BIOS user of the port after the banner; `fw/README.md` and `sdk/README.md` no longer
+suggest piping an S-record file into the emulator's stdin from start-up (bytes sent before
+`srec` runs are discarded); a stale serial-era comment in `sdk/examples/tune.c` and the
+`input.c` row of `fw/STATUS.md`; and the "4 GPIO" left in `README.md`'s machine table from
+revision 7. Nothing is open.
