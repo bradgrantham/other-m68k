@@ -10,12 +10,30 @@ CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 | Region | Start | End | Size | Kind | Notes |
 |---|---|---|---|---|---|
 | RAM | 0x000000 | 0x03FFFF | 256 KB | ram | 256 KB SRAM. Time-sliced with the video fetch; CPU accesses are phase-aligned by DTACK (0 or 2 wait clocks). At reset the ROM is overlaid here until the first access to the ROM region. |
-| ROM | 0xE00000 | 0xE1FFFF | 128 KB | rom | 128 KB EPROM. Read-only; zero wait states; not subject to slot alignment. Vectors at offset 0 (overlaid at 0x000000 at reset). |
+| ROM | 0xE00000 | 0xEFFFFF | 1024 KB | rom | 1 MB flash window; the BIOS image occupies the first 128 KB (ROM_IMAGE_SIZE, checksum in its last word), the rest is free (erased 0xFF). Reads: zero wait states, not subject to slot alignment. Writes get DTACK and reach the chips (ROMWE), so the firmware can reprogram itself in place with the JEDEC command sequence (see "flash"). Vectors at offset 0 (overlaid at 0x000000 at reset). |
 | IO | 0xF00000 | 0xF0FFFF | 64 KB | io | CPLD2 peripheral registers. 16-bit word access only; address bits A5..A15 ignored (mirrored). INTEN, SDIO, GPIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows. |
 | SWITCHES | 0xF10000 | 0xF1FFFF | 64 KB | io | CPLD1 soft switches. Write-only; writing any value to the address performs the action. Reads return garbage. |
 | DUART | 0xF20000 | 0xF2FFFF | 64 KB | io | 68681 DUART. Byte registers on D7..D0 at ODD addresses (A1..A4 -> RS1..RS4); A5..A15 ignored. Use odd-address byte accesses only: an even-byte or word cycle still selects the chip (undefined data; a read pops the FIFO into the wrong lane). DTACK comes from the DUART (open drain, shared with CPLD1); accesses are not slot aligned. |
 
 BERR asserted (bus error exception) for any access outside the regions above, except the interrupt-acknowledge pattern A23..A4 all ones, which is autovectored via VPA.
+
+## Flash ROM
+
+SST39SF040-70-4C-PHE, one per byte lane (U4 = D15..D8 even bytes, U5 = D7..D0 odd bytes). Chip 512 KB, sectors 4096 bytes per chip (8192 bytes in the CPU's word view).
+
+Both chips see the same command sequence because every command is issued as a WORD write with the byte repeated in both halves: chip byte address N is CPU address ROM_BASE + 2N, so the JEDEC unlock addresses 0x5555/0x2AAA become FLASH_CMD1 = ROM_BASE + 0xAAAA and FLASH_CMD2 = ROM_BASE + 0x5554. Program a word: 0xAAAA->CMD1, 0x5555->CMD2, 0xA0A0->CMD1, data->address, then poll until a read returns the data (each byte shows toggling DQ6 / inverted DQ7 while busy; at most 20 us). Erase the 8 KB (CPU view) sector holding address X: 0xAAAA->CMD1, 0x5555->CMD2, 0x8080->CMD1, 0xAAAA->CMD1, 0x5555->CMD2, 0x3030->X, poll until 0xFFFF (at most 25 ms). ID: 0xAAAA->CMD1, 0x5555->CMD2, 0x9090->CMD1; read ROM_BASE -> 0xBFBF, ROM_BASE+2 -> 0xB7B7; 0xF0F0 anywhere exits. Programming only clears bits: erase first. The chips cannot be read (code cannot run from them) while an operation is in progress, so the routine that issues commands runs from RAM with interrupts masked; the NMI button must not be pressed meanwhile. Only word writes are used; a byte write would present the same byte to both chips (the 68000 duplicates write data on both bus halves) and is not part of the protocol.
+
+| Constant | Value |
+|---|---|
+| FLASH_CHIP_SIZE | 0x080000UL |
+| FLASH_SECTOR_BYTES | 0x002000UL |
+| FLASH_CMD1 | 0xE0AAAAUL |
+| FLASH_CMD2 | 0xE05554UL |
+| FLASH_MFR_ID | 0xBF |
+| FLASH_DEV_ID | 0xB7 |
+| FLASH_T_BYTE_PROGRAM_US | 20 |
+| FLASH_T_SECTOR_ERASE_MS | 25 |
+| FLASH_T_CHIP_ERASE_MS | 100 |
 
 ## RAM layout
 
@@ -412,10 +430,10 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 
 ## Glue logic
 
-**CPLD1** (ATF1508AS-7JX84): MMU: CPU clock divider, address decode, ROM overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches, DUART chip select (DTACK released during DUART cycles)
+**CPLD1** (ATF1508AS-7JX84): MMU: CPU clock divider, address decode, ROM overlay, flash read/write strobes, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches, DUART chip select (DTACK released during DUART cycles)
 
 * inputs: CLK24, SYSRESET, A1..A23, AS, UDS, LDS, RW
-* outputs: CPUCLK, MA0..MA16, DTACK, BERR, VPA, RAMOE, WEU, WEL, ROMCE, IOCS, BUFEN, LATCH, DE, HSYNC, VSYNC, DUARTCS
+* outputs: CPUCLK, MA0..MA16, DTACK, BERR, VPA, RAMOE, WEU, WEL, ROMOE, ROMWE, IOCS, BUFEN, LATCH, DE, HSYNC, VSYNC, DUARTCS
 
 **CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers
 

@@ -58,6 +58,12 @@ def gen_hw_h(d):
         A("#define %s_BASE %sUL" % (nm, hx(r["base"])))
         A("#define %s_SIZE %sUL" % (nm, hx(r["size"])))
         A("#define %s_END  (%s_BASE + %s_SIZE)" % (nm, nm, nm))
+        if "image_size" in r:
+            A("#define %s_IMAGE_SIZE %sUL /* bytes of the window the BIOS image occupies */" % (nm, hx(r["image_size"])))
+    if "flash" in d:
+        A("\n/* ---- flash (see spec \"flash\"): word writes, chip byte address N = ROM_BASE + 2N ---- */")
+        for k, v in flash_consts(d):
+            A("#define %s %s" % (k, v))
     A("\n/* ---- RAM layout ---- */")
     for r in d["ram_layout"]:
         nm = cident(r["name"])
@@ -131,6 +137,20 @@ def gen_hw_h(d):
     return "\n".join(o) + "\n"
 
 # ---------------------------------------------------------------- gas include
+def flash_consts(d):
+    """(name, C/asm literal) pairs for the flash section."""
+    f = d["flash"]
+    rom = next(r for r in d["memory_map"] if r["name"] == "ROM")
+    base = n(rom["base"])
+    return [("FLASH_CHIP_SIZE", "%sUL" % hx(f["chip_size"])),
+            ("FLASH_SECTOR_BYTES", "%sUL /* CPU view: two chips x %s */" % (hx(2 * n(f["sector_size"])), hx(f["sector_size"]))),
+            ("FLASH_CMD1", "%sUL" % hx(base + 2 * n(f["cmd_addr1"]))),
+            ("FLASH_CMD2", "%sUL" % hx(base + 2 * n(f["cmd_addr2"]))),
+            ("FLASH_MFR_ID", hx(f["mfr_id"], 2)), ("FLASH_DEV_ID", hx(f["dev_id"], 2)),
+            ("FLASH_T_BYTE_PROGRAM_US", str(f["t_byte_program_us"])),
+            ("FLASH_T_SECTOR_ERASE_MS", str(f["t_sector_erase_ms"])),
+            ("FLASH_T_CHIP_ERASE_MS", str(f["t_chip_erase_ms"]))]
+
 def gen_hw_inc(d):
     o = ["/* %s */" % HDR, ""]
     A = o.append
@@ -141,6 +161,11 @@ def gen_hw_inc(d):
         nm = cident(r["name"])
         eq(nm + "_BASE", hx(r["base"])); eq(nm + "_SIZE", hx(r["size"]))
         eq(nm + "_END", hx(n(r["base"]) + n(r["size"])))
+        if "image_size" in r:
+            eq(nm + "_IMAGE_SIZE", hx(r["image_size"]))
+    if "flash" in d:
+        for k, v in flash_consts(d):
+            eq(k, v.split(" /*")[0].replace("UL", ""))
     eq("SYS_STACK_TOP", hx(n(d["ram_layout"][1]["base"]) + n(d["ram_layout"][1]["size"])))
     v = d["video"]
     eq("VIDEO_WIDTH", v["width"]); eq("VIDEO_HEIGHT", v["height"]); eq("VIDEO_BPP", v["bpp"])
@@ -185,7 +210,7 @@ def gen_memory_ld(d):
     rom = next(r for r in d["memory_map"] if r["name"] == "ROM")
     sysd = next(r for r in d["ram_layout"] if r["name"] == "SYSDATA")
     o = ["/* %s */" % HDR, "MEMORY", "{",
-         "    ROM (rx)      : ORIGIN = %s, LENGTH = %s" % (hx(rom["base"]), hx(rom["size"])),
+         "    ROM (rx)      : ORIGIN = %s, LENGTH = %s" % (hx(rom["base"]), hx(rom.get("image_size", rom["size"]))),
          "    SYSDATA (rwx) : ORIGIN = %s, LENGTH = %s" % (hx(sysd["base"]), hx(sysd["size"])),
          "}",
          "_sys_stack_top = ORIGIN(SYSDATA) + LENGTH(SYSDATA);",
@@ -399,6 +424,15 @@ def gen_doc(d):
     for r in d["memory_map"]:
         A("| %s | %s | %s | %d KB | %s | %s |" % (r["name"], hx(r["base"]), hx(n(r["base"]) + n(r["size"]) - 1), n(r["size"]) // 1024, r["kind"], r["desc"]))
     A(""); A(d["unmapped_policy"]); A("")
+    if "flash" in d:
+        f = d["flash"]
+        A("## Flash ROM"); A("")
+        A("%s. Chip %d KB, sectors %d bytes per chip (%d bytes in the CPU's word view)." % (f["device"], n(f["chip_size"]) // 1024, n(f["sector_size"]), 2 * n(f["sector_size"]))); A("")
+        A(f["desc"]); A("")
+        A("| Constant | Value |"); A("|---|---|")
+        for k, v in flash_consts(d):
+            A("| %s | %s |" % (k, v.split(" /*")[0]))
+        A("")
     A("## RAM layout"); A("")
     A("| Area | Start | End | Size | Purpose |"); A("|---|---|---|---|---|")
     for r in d["ram_layout"]:

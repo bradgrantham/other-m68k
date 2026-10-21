@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define BOARD_NAME "other-m68k"
-#define BOARD_REVISION 2
+#define BOARD_REVISION 3
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL
 #define SLOT_CPU_CLOCKS 4
@@ -14,8 +14,9 @@
 #define RAM_SIZE 0x040000UL
 #define RAM_END  (RAM_BASE + RAM_SIZE)
 #define ROM_BASE 0xE00000UL
-#define ROM_SIZE 0x020000UL
+#define ROM_SIZE 0x100000UL
 #define ROM_END  (ROM_BASE + ROM_SIZE)
+#define ROM_IMAGE_SIZE 0x020000UL /* bytes of the window the BIOS image occupies */
 #define IO_BASE 0xF00000UL
 #define IO_SIZE 0x010000UL
 #define IO_END  (IO_BASE + IO_SIZE)
@@ -25,6 +26,17 @@
 #define DUART_BASE 0xF20000UL
 #define DUART_SIZE 0x010000UL
 #define DUART_END  (DUART_BASE + DUART_SIZE)
+
+/* ---- flash (see spec "flash"): word writes, chip byte address N = ROM_BASE + 2N ---- */
+#define FLASH_CHIP_SIZE 0x080000UL
+#define FLASH_SECTOR_BYTES 0x002000UL /* CPU view: two chips x 0x001000 */
+#define FLASH_CMD1 0xE0AAAAUL
+#define FLASH_CMD2 0xE05554UL
+#define FLASH_MFR_ID 0xBF
+#define FLASH_DEV_ID 0xB7
+#define FLASH_T_BYTE_PROGRAM_US 20
+#define FLASH_T_SECTOR_ERASE_MS 25
+#define FLASH_T_CHIP_ERASE_MS 100
 
 /* ---- RAM layout ---- */
 #define VECTORS_BASE 0x000000UL

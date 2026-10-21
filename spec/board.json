@@ -1,7 +1,7 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 2,
+    "revision": 3,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
@@ -22,10 +22,11 @@
     {
       "name": "ROM",
       "base": "0xE00000",
-      "size": "0x020000",
+      "size": "0x100000",
       "kind": "rom",
-      "device": "2x M27C512-70 (64Kx8, 70ns), word wide",
-      "desc": "128 KB EPROM. Read-only; zero wait states; not subject to slot alignment. Vectors at offset 0 (overlaid at 0x000000 at reset)."
+      "device": "2x SST39SF040-70 (512Kx8 NOR flash, 70 ns, 5 V), word wide, CE tied low",
+      "desc": "1 MB flash window; the BIOS image occupies the first 128 KB (ROM_IMAGE_SIZE, checksum in its last word), the rest is free (erased 0xFF). Reads: zero wait states, not subject to slot alignment. Writes get DTACK and reach the chips (ROMWE), so the firmware can reprogram itself in place with the JEDEC command sequence (see \"flash\"). Vectors at offset 0 (overlaid at 0x000000 at reset).",
+      "image_size": "0x020000"
     },
     {
       "name": "IO",
@@ -54,6 +55,19 @@
     }
   ],
   "unmapped_policy": "BERR asserted (bus error exception) for any access outside the regions above, except the interrupt-acknowledge pattern A23..A4 all ones, which is autovectored via VPA.",
+  "flash": {
+    "device": "SST39SF040-70-4C-PHE, one per byte lane (U4 = D15..D8 even bytes, U5 = D7..D0 odd bytes)",
+    "chip_size": "0x080000",
+    "sector_size": "0x001000",
+    "cmd_addr1": "0x5555",
+    "cmd_addr2": "0x2AAA",
+    "mfr_id": "0xBF",
+    "dev_id": "0xB7",
+    "t_byte_program_us": 20,
+    "t_sector_erase_ms": 25,
+    "t_chip_erase_ms": 100,
+    "desc": "Both chips see the same command sequence because every command is issued as a WORD write with the byte repeated in both halves: chip byte address N is CPU address ROM_BASE + 2N, so the JEDEC unlock addresses 0x5555/0x2AAA become FLASH_CMD1 = ROM_BASE + 0xAAAA and FLASH_CMD2 = ROM_BASE + 0x5554. Program a word: 0xAAAA->CMD1, 0x5555->CMD2, 0xA0A0->CMD1, data->address, then poll until a read returns the data (each byte shows toggling DQ6 / inverted DQ7 while busy; at most 20 us). Erase the 8 KB (CPU view) sector holding address X: 0xAAAA->CMD1, 0x5555->CMD2, 0x8080->CMD1, 0xAAAA->CMD1, 0x5555->CMD2, 0x3030->X, poll until 0xFFFF (at most 25 ms). ID: 0xAAAA->CMD1, 0x5555->CMD2, 0x9090->CMD1; read ROM_BASE -> 0xBFBF, ROM_BASE+2 -> 0xB7B7; 0xF0F0 anywhere exits. Programming only clears bits: erase first. The chips cannot be read (code cannot run from them) while an operation is in progress, so the routine that issues commands runs from RAM with interrupts masked; the NMI button must not be pressed meanwhile. Only word writes are used; a byte write would present the same byte to both chips (the 68000 duplicates write data on both bus halves) and is not part of the protocol."
+  },
   "ram_layout": [
     {
       "name": "VECTORS",
@@ -1318,7 +1332,7 @@
   "glue": {
     "cpld1": {
       "part": "ATF1508AS-7JX84",
-      "role": "MMU: CPU clock divider, address decode, ROM overlay, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches, DUART chip select (DTACK released during DUART cycles)",
+      "role": "MMU: CPU clock divider, address decode, ROM overlay, flash read/write strobes, DTACK/BERR/VPA, SRAM address mux and strobes, video address counter, H/V timing, soft switches, DUART chip select (DTACK released during DUART cycles)",
       "signals": {
         "inputs": [
           "CLK24",
@@ -1338,7 +1352,8 @@
           "RAMOE",
           "WEU",
           "WEL",
-          "ROMCE",
+          "ROMOE",
+          "ROMWE",
           "IOCS",
           "BUFEN",
           "LATCH",
