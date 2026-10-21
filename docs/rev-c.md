@@ -110,7 +110,13 @@ them. 80-column text will be readable on S-video and in the monochrome mode, and
 as CGA-on-a-TV on colour composite. A font with 2-pixel strokes is worse on colour
 composite (3.58 MHz detail sits exactly on the subcarrier).
 
-## SD card: 4-bit data lines (checked 2026-10-21)
+## SD card: 4-bit data lines (DONE 2026-10-21: spec rev 7, board rev C1)
+
+Implemented the same day: spec rev 7 makes SDIO six open-drain lines with read-back and drops
+USERIO; CPLD2 fits at 123/128 macrocells (two nodes spare); board rev C1 in kicad/release has the
+dividers removed, six 10 k pull-ups to 3.3 V, DAT1/DAT2 on CPLD2 pins 16/58, J8 pins 5/7/9/11
+unconnected; the emulator models a native-mode SDHC/SDSC card. The notes below are the analysis
+that led there.
 
 The B4 board has 10 k pull-ups on DAT1/DAT2 but no trace from them to CPLD2, and the CMD
 line (MOSI) goes through the 1.8k/3.3k 5 V-to-3.3 V divider, which is wrong once the card
