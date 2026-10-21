@@ -9,8 +9,8 @@
 //
 // Written to fit the Atmel fitter (docs/atf15xx.md): one clock, GCLR reset, a sentinel
 // shifter instead of a bit counter, and a read mux that only carries what the CPU cannot
-// shadow.  The control registers INTEN, SDIO,
-// GPIO, AUDIO and USERIO.OUT are therefore WRITE-ONLY (they read as 0); the BIOS keeps shadows.
+// shadow.  The control registers INTEN, GPIO and AUDIO are therefore WRITE-ONLY (they read
+// as 0); the BIOS keeps shadows.  SDIO reads back the levels of the six card lines.
 // Serial lives in a 68681 DUART on the CPU bus (spec revision 2); CPLD2 only routes the
 // DUART's IRQ pin into the interrupt encoder (level 3) and INTSTAT.DUARTIRQ.
 // Spec revision 4 (1 MB SRAM, 2x 512Kx8): CPLD1 ran out of pins, so the two upper SRAM
@@ -23,6 +23,11 @@
 // 8 bits MSB first (~126 kHz PDM) and a line without a write repeats the byte.  A write
 // loads the register at once and wins over a coincident rotate.  GPIO bit 2 is stored but
 // drives nothing.
+// Spec revision 7: the SD card moves to its native 4-bit bus.  SDIO holds six open-drain
+// drivers (DAT3, CLK, CMD, DAT0, DAT1, DAT2: 0 drives the pin low, 1 releases it to the
+// board's 3.3 V pull-up) and a read of SDIO returns the pin LEVELS in the same bit
+// positions, so the CPU sees the card's responses on CMD and its data on DAT3..0.  The
+// USERIO register and the UIO pins were dropped to make room (and INTSTAT.SDMISO with them).
 `timescale 1ns/1ps
 
 module cpld2_io #(
@@ -45,11 +50,13 @@ module cpld2_io #(
     output reg  [2:0]  ipl_n,
     // RGB332 pixel to the resistor DACs: {R2,R1,R0,G2,G1,G0,B1,B0}
     output wire [7:0]  rgb,
-    // SD card (software SPI)
-    output wire        sd_cs,
-    output wire        sd_clk,
-    output wire        sd_mosi,
-    input  wire        sd_miso,
+    // SD card, native 4-bit bus, all lines open drain (bit-banged through SDIO)
+    inout  wire        sd_dat3,
+    inout  wire        sd_clk,
+    inout  wire        sd_cmd,
+    inout  wire        sd_dat0,
+    inout  wire        sd_dat1,
+    inout  wire        sd_dat2,
     // PS/2 (open drain)
     inout  wire        ps2_clk,
     inout  wire        ps2_dat,
@@ -60,7 +67,6 @@ module cpld2_io #(
     output wire [1:0]  led,
     input  wire        paljmp,
     input  wire        nmibtn,        // 1 = pressed
-    inout  wire [3:0]  uio,           // open drain with pull-ups
     // upper SRAM address bits (spec rev 4): CPU A19..A18 in the CPU half of a slot,
     // FB_PAGE_HI during the video fetch
     input  wire        a18,
@@ -88,7 +94,6 @@ wire        sel_inten   = (a[3:1] == IO_INTEN_OFF[2:0]);
 wire        sel_sdio    = (a[3:1] == IO_SDIO_OFF[2:0]);
 wire        sel_gpio    = (a[3:1] == IO_GPIO_OFF[2:0]);
 wire        sel_ps2data = (a[3:1] == IO_PS2DATA_OFF[2:0]);
-wire        sel_userio  = (a[3:1] == IO_USERIO_OFF[2:0]);
 wire        sel_id      = (a[3:1] == IO_ID_OFF[2:0]);
 wire        sel_audio   = (a[3:1] == IO_AUDIO_OFF[2:0]);
 
@@ -98,11 +103,10 @@ wire        rd_end = e0 & ~iocs_n &  rw;   // read side effects at E0
 
 // ---------------------------------------------------------------- registers
 reg [3:0]  inten;
-reg [2:0]  sdio;                        // CS, CLK, MOSI
+reg [5:0]  sdio;                        // DAT3, CLK, CMD, DAT0, DAT1, DAT2 drive bits (1 = released)
 reg [4:0]  gpio;                        // PS2CLK, PS2DAT, (unused), LED0, LED1
 reg [7:0]  aud_sh;                      // PDM shifter; bit 7 is the pin
 reg [4:0]  aud_cnt;                     // bus slots since the last rotate (24 = 1/8 line)
-reg [3:0]  uio_out;
 reg [7:0]  ps2data;
 reg        f_ps2err;
 reg        f_vblank, f_hsync, f_ps2rdy;
@@ -118,17 +122,16 @@ reg  nmi_s;
 
 // pin drivers.  Open-drain pins: the flop that holds the bit also drives the pin
 // (value 0) and its complement is the output enable, so pin and register share a cell.
-assign sd_cs   = sdio[SDIO_CS_BIT];
-assign sd_clk  = sdio[SDIO_CLK_BIT];
-assign sd_mosi = sdio[SDIO_MOSI_BIT];
+assign sd_dat3 = sdio[SDIO_DAT3_BIT] ? 1'bz : 1'b0;
+assign sd_clk  = sdio[SDIO_CLK_BIT]  ? 1'bz : 1'b0;
+assign sd_cmd  = sdio[SDIO_CMD_BIT]  ? 1'bz : 1'b0;
+assign sd_dat0 = sdio[SDIO_DAT0_BIT] ? 1'bz : 1'b0;
+assign sd_dat1 = sdio[SDIO_DAT1_BIT] ? 1'bz : 1'b0;
+assign sd_dat2 = sdio[SDIO_DAT2_BIT] ? 1'bz : 1'b0;
 assign ps2_clk = gpio[GPIO_PS2CLK_BIT] ? 1'bz : gpio[GPIO_PS2CLK_BIT];
 assign ps2_dat = gpio[GPIO_PS2DAT_BIT] ? 1'bz : gpio[GPIO_PS2DAT_BIT];
 assign audio   = aud_sh[7];
 assign led     = {gpio[GPIO_LED1_BIT], gpio[GPIO_LED0_BIT]};
-assign uio[0]  = uio_out[0] ? 1'bz : uio_out[0];
-assign uio[1]  = uio_out[1] ? 1'bz : uio_out[1];
-assign uio[2]  = uio_out[2] ? 1'bz : uio_out[2];
-assign uio[3]  = uio_out[3] ? 1'bz : uio_out[3];
 
 // ---------------------------------------------------------------- read mux
 reg [15:0] rd_data;
@@ -142,7 +145,6 @@ always @* begin
         rd_data[INTSTAT_DUARTIRQ_BIT]  = dirq_s;
         rd_data[INTSTAT_PS2ERR_BIT]    = f_ps2err;
         rd_data[INTSTAT_NMIBTN_BIT]    = nmibtn;
-        rd_data[INTSTAT_SDMISO_BIT]    = sd_miso;
         rd_data[INTSTAT_PS2CLK_BIT]    = ps2_clk;
         rd_data[INTSTAT_PS2DAT_BIT]    = ps2_dat;
         rd_data[INTSTAT_PALJMP_BIT]    = paljmp;
@@ -151,7 +153,14 @@ always @* begin
         rd_data[INTSTAT_HSYNCPIN_BIT]  = hs;
     end
     sel_ps2data: rd_data[PS2DATA_DATA_BIT +: 8] = ps2data;
-    sel_userio:  rd_data[USERIO_IN_BIT +: 4] = uio;
+    sel_sdio: begin                                // card line levels, same bits as the drivers
+        rd_data[SDIO_DAT3_BIT] = sd_dat3;
+        rd_data[SDIO_CLK_BIT]  = sd_clk;
+        rd_data[SDIO_CMD_BIT]  = sd_cmd;
+        rd_data[SDIO_DAT0_BIT] = sd_dat0;
+        rd_data[SDIO_DAT1_BIT] = sd_dat1;
+        rd_data[SDIO_DAT2_BIT] = sd_dat2;
+    end
     sel_id:      rd_data = ID_VALUE;
     default:     rd_data = 16'h0000;
     endcase
@@ -191,10 +200,9 @@ always @(posedge clk24 or negedge sysreset_n) begin
         pix      <= 8'd0;
         lo       <= 8'd0;
         inten    <= 4'd0;
-        sdio     <= 3'b001;             // SDIO reset 0x0001: CS high, CLK low
+        sdio     <= 6'h3F;              // SDIO reset 0x003F: every card line released
         gpio     <= 5'b00011;           // GPIO reset 0x0003: PS/2 released
         aud_sh   <= 8'd0; aud_cnt <= 5'd0;
-        uio_out  <= 4'hF;               // USERIO reset 0x000F
         ps2data  <= 8'd0; f_ps2err <= 1'b0;
         f_vblank <= 1'b0; f_hsync <= 1'b0; f_ps2rdy <= 1'b0; dirq_s <= 1'b0;
         hs_q     <= 1'b0; vs_q <= 1'b0; nmi_s <= 1'b0;
@@ -237,10 +245,9 @@ always @(posedge clk24 or negedge sysreset_n) begin
                 if (d[INTSTAT_PS2ERR_BIT])   f_ps2err   <= 1'b0;
             end
             if (sel_inten)  inten   <= d[3:0];
-            if (sel_sdio)   sdio    <= d[2:0];
+            if (sel_sdio)   sdio    <= d[5:0];
             if (sel_gpio)   gpio    <= d[4:0];
             if (sel_audio)  aud_sh  <= d[7:0];
-            if (sel_userio) uio_out <= d[USERIO_OUT_BIT +: 4];
         end
         // -------- read side effects
         if (rd_end & sel_ps2data) f_ps2rdy <= 1'b0;
@@ -293,21 +300,22 @@ endmodule
 // ---- pin block (written by pins.py from a fitter run; see hdl/README.md) ----
 //PIN: CHIP "cpld2_io" ASSIGNED TO AN PLCC84
 //PIN: sysreset_n     : 1
-//PIN: sd_cs          : 4
+//PIN: sd_dat3        : 4
 //PIN: D_13           : 5
 //PIN: D_15           : 6
-//PIN: sd_miso        : 8
+//PIN: sd_dat0        : 8
 //PIN: iocs_n         : 9
 //PIN: A_2            : 10
 //PIN: A_1            : 11
 //PIN: A_0            : 12
 //PIN: sd_clk         : 15
+//PIN: sd_dat1        : 16
 //PIN: duart_irq_n    : 17
 //PIN: paljmp         : 18
 //PIN: de             : 20
 //PIN: LATCH          : 21
 //PIN: rw             : 22
-//PIN: sd_mosi        : 24
+//PIN: sd_cmd         : 24
 //PIN: audio          : 25
 //PIN: led_0          : 27
 //PIN: led_1          : 28
@@ -334,6 +342,7 @@ endmodule
 //PIN: a19            : 55
 //PIN: ma17           : 56
 //PIN: ma18           : 57
+//PIN: sd_dat2        : 58
 //PIN: D_6            : 63
 //PIN: D_12           : 64
 //PIN: D_11           : 65
@@ -342,10 +351,6 @@ endmodule
 //PIN: D_9            : 69
 //PIN: D_5            : 70
 //PIN: nmibtn         : 73
-//PIN: uio_3          : 74
-//PIN: uio_2          : 75
-//PIN: uio_1          : 76
-//PIN: uio_0          : 77
 //PIN: ps2_dat        : 79
 //PIN: ps2_clk        : 80
 //PIN: D_4            : 81

@@ -254,11 +254,21 @@ tb_sram #(.NAME("SRAM-lo")) sram_lo (.a(ma_p), .d(sram_d[7:0]),  .ce_n(1'b0), .o
 // ---- CPLD2 -----------------------------------------------------------------------
 wire [2:0] ipl_n;
 wire [7:0] rgb;
-wire       sd_cs, sd_clk, sd_mosi, audio;
+wire       audio;
 wire [1:0] led;
-reg        sd_miso = 1'b0, paljmp = 1'b0, nmibtn = 1'b0;
+reg        paljmp = 1'b0, nmibtn = 1'b0;
 tri1       ps2_clk, ps2_dat;
-tri1 [3:0] uio;
+// SD card lines: open drain with the board's 3.3 V pull-ups (tri1); the "card" side drives
+// each line low through sd_card_drv (1 = released), like the PS/2 lines below
+tri1       sd_dat3, sd_clk, sd_cmd, sd_dat0, sd_dat1, sd_dat2;
+reg [5:0]  sd_card_drv = 6'h3F;               // {DAT2, DAT1, DAT0, CMD, CLK, DAT3}, card side
+assign sd_dat3 = sd_card_drv[0] ? 1'bz : 1'b0;
+assign sd_clk  = sd_card_drv[1] ? 1'bz : 1'b0;
+assign sd_cmd  = sd_card_drv[2] ? 1'bz : 1'b0;
+assign sd_dat0 = sd_card_drv[3] ? 1'bz : 1'b0;
+assign sd_dat1 = sd_card_drv[4] ? 1'bz : 1'b0;
+assign sd_dat2 = sd_card_drv[5] ? 1'bz : 1'b0;
+wire [5:0] sd_lines = {sd_dat2, sd_dat1, sd_dat0, sd_cmd, sd_clk, sd_dat3};
 reg        ps2_clk_drv = 1'b1, ps2_dat_drv = 1'b1;   // tb side of the open-drain lines
 assign ps2_clk = ps2_clk_drv ? 1'bz : 1'b0;
 assign ps2_dat = ps2_dat_drv ? 1'bz : 1'b0;
@@ -268,10 +278,10 @@ cpld2_io u2 (
     .a(a[3:1]), .iocs_n(iocs_p), .rw(rw),
     .latch(latch_p), .de(de_p), .hsync(hsync_p), .vsync(vsync_p),
     .d(sram_d), .ipl_n(ipl_n), .rgb(rgb),
-    .sd_cs(sd_cs), .sd_clk(sd_clk), .sd_mosi(sd_mosi), .sd_miso(sd_miso),
+    .sd_dat3(sd_dat3), .sd_clk(sd_clk), .sd_cmd(sd_cmd), .sd_dat0(sd_dat0), .sd_dat1(sd_dat1), .sd_dat2(sd_dat2),
     .ps2_clk(ps2_clk), .ps2_dat(ps2_dat),
     .duart_irq_n(duart_irq_n),
-    .audio(audio), .led(led), .paljmp(paljmp), .nmibtn(nmibtn), .uio(uio),
+    .audio(audio), .led(led), .paljmp(paljmp), .nmibtn(nmibtn),
     .a18(a[18]), .a19(a[19]), .ma17(ma17), .ma18(ma18)
 );
 
@@ -744,10 +754,10 @@ initial begin
     begin_test("IO register write/read, ID, pins, NMI");
     cpu.read_word(io_addr(IO_ID_OFF));      check_eq(cpu.last_data, ID_VALUE, "ID register");
     cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h0000, "INTEN is write-only (reads 0)");
-    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0000, "SDIO is write-only (reads 0)");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h003F, "SDIO reset: all six card lines released, read high");
     cpu.read_word(io_addr(IO_GPIO_OFF));    check_eq(cpu.last_data, 16'h0000, "GPIO is write-only (reads 0)");
-    cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0F00, "USERIO reset value (pins read high, OUT reads 0)");
-    check(sd_cs === 1 && sd_clk === 0 && sd_mosi === 0, "SDIO reset value on the pins");
+    cpu.read_word(24'hF0000C);              check_eq(cpu.last_data, 16'h0000, "former USERIO offset reads 0 (rev 7)");
+    check(sd_lines === 6'h3F, "SDIO reset value on the pins (released)");
     check(ps2_clk === 1'b1 && ps2_dat === 1'b1 && led === 2'b00 && audio === 1'b0, "GPIO reset value on the pins");
     cpu.write_word(io_addr(IO_INTEN_OFF), 16'hFFFF);
     cpu.read_word(io_addr(IO_INTEN_OFF));   check_eq(cpu.last_data, 16'h0000, "INTEN still reads 0 after write");
@@ -763,18 +773,11 @@ initial begin
     check(cpu.last_data[INTSTAT_PS2CLK_BIT] == 0 && cpu.last_data[INTSTAT_PS2DAT_BIT] == 0, "INTSTAT shows PS/2 pins low");
     cpu.write_word(io_addr(IO_GPIO_OFF), 16'h0003);
     check(ps2_clk === 1'b1 && ps2_dat === 1'b1, "PS/2 lines released");
-    sd_miso = 1;
-    cpu.write_word(io_addr(IO_SDIO_OFF), 16'h0004);
-    check(sd_cs === 0 && sd_clk === 0 && sd_mosi === 1, "SD pins follow SDIO");
-    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0000, "SDIO reads 0 (MISO via INTSTAT)");
-    cpu.write_word(io_addr(IO_SDIO_OFF), 16'h0003);
-    cpu.write_word(io_addr(IO_USERIO_OFF), 16'h000A);
-    check(uio === 4'b1010, "USERIO pins");
-    cpu.read_word(io_addr(IO_USERIO_OFF));  check_eq(cpu.last_data, 16'h0A00, "USERIO pins read back in IN, OUT reads 0");
-    cpu.write_word(io_addr(IO_USERIO_OFF), 16'h000F);
+    cpu.write_word(24'hF0000C, 16'h000A);                  // former USERIO: ignored
+    cpu.read_word(24'hF0000C);              check_eq(cpu.last_data, 16'h0000, "former USERIO offset ignores writes");
     paljmp = 1;
     cpu.read_word(io_addr(IO_INTSTAT_OFF));
-    check(cpu.last_data[INTSTAT_PALJMP_BIT] == 1 && cpu.last_data[INTSTAT_SDMISO_BIT] == 1 && cpu.last_data[INTSTAT_DUARTIRQ_BIT] == 0, "INTSTAT live pins");
+    check(cpu.last_data[INTSTAT_PALJMP_BIT] == 1 && cpu.last_data[8] == 0 && cpu.last_data[INTSTAT_DUARTIRQ_BIT] == 0, "INTSTAT live pins (bit 8, ex SDMISO, reads 0)");
     paljmp = 0;
     // IO cycles are slot aligned like RAM
     cpu.read_word(24'h001000);
@@ -955,6 +958,33 @@ initial begin
     #(t_hs + (96 + 192*4)*T_CLK24 - $time);
     check(audio === 1'b0, "bit 5 of 0x40");
     cpu.write_word(io_addr(IO_AUDIO_OFF), 16'h0000);
+    end_test;
+
+    // ------------------------------------------------------------------ 15 (spec rev 7)
+    begin_test("SDIO: six open-drain card lines, drive low / release, read back the pin levels");
+    cpu.write_word(io_addr(IO_SDIO_OFF), 16'h0000);
+    check(sd_lines === 6'h00, "SDIO 0x00 drives DAT3, CLK, CMD, DAT0..2 low");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0000, "SDIO reads the low levels");
+    cpu.write_word(io_addr(IO_SDIO_OFF), 16'hFFFF);
+    check(sd_lines === 6'h3F, "SDIO 0x3F releases every line (pull-ups read high)");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h003F, "SDIO reads 0x003F released (upper bits 0)");
+    cpu.write_word(io_addr(IO_SDIO_OFF), 16'h002A);                 // DAT2, DAT0, CLK low... pattern 101010
+    check(sd_lines === 6'h2A, "SDIO 0x2A: mixed drive pattern on the pins");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h002A, "SDIO reads back 0x2A");
+    cpu.write_word(io_addr(IO_SDIO_OFF), 16'h003F);                 // host releases everything
+    sd_card_drv = 6'b11_0_0_11;                                       // card drives DAT0 (bit 3) and CMD (bit 2) low
+    #100;
+    check(sd_lines === 6'b110011 && sd_cmd === 1'b0 && sd_dat0 === 1'b0, "card pulls CMD and DAT0 low while the host has released them");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0033, "SDIO reads the card's levels (CMD=0, DAT0=0)");
+    sd_card_drv = 6'b000_0_0_0;                                       // card (test) pulls all low
+    #100;
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h0000, "SDIO reads all low when the card drives all low");
+    sd_card_drv = 6'h3F;
+    cpu.write_word(io_addr(IO_SDIO_OFF), 16'h003D);                 // host drives CLK low only
+    #100;
+    check(sd_clk === 1'b0 && sd_lines === 6'h3D, "wired-AND: host CLK low, everything else high");
+    cpu.read_word(io_addr(IO_SDIO_OFF));    check_eq(cpu.last_data, 16'h003D, "SDIO reads 0x3D");
+    cpu.write_word(io_addr(IO_SDIO_OFF), 16'h003F);
     end_test;
 
     // ------------------------------------------------------------------ 11
