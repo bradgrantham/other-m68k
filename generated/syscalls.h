@@ -99,7 +99,8 @@ enum {
     SYS_key_event = 27,
     SYS_sleep_ms = 28,
     SYS_set_audio_cb = 29,
-    SYS_COUNT = 30
+    SYS_audio_write = 30,
+    SYS_COUNT = 31
 };
 
 /* ---- user-side prototypes (implemented by generated/syscall_stubs.S) ---- */
@@ -124,7 +125,7 @@ int sys_readdir(int handle, struct dirent * ent); /* Next entry; 1 if filled, 0 
 int sys_closedir(int handle); /* Close a directory handle. */
 int sys_sd_read_block(uint32_t lba, void * buf); /* Raw 512-byte block read. */
 int sys_sd_write_block(uint32_t lba, const void * buf); /* Raw 512-byte block write. */
-void * sys_set_irq_handler(int level, void * handler); /* Install a user interrupt handler (called from the BIOS ISR with interrupts masked); returns the previous one. NULL restores default. */
+void * sys_set_irq_handler(int level, void * handler); /* Install a user interrupt handler for level 1..4 (called from the BIOS ISR in supervisor mode at that interrupt's own priority, so higher levels can still interrupt it); returns the previous one. NULL restores default. */
 int sys_mem_info(struct mem_info * info); /* Report the user RAM region available to the program. */
 int sys_con_set_cursor(int x, int y); /* Move the console text cursor. */
 int sys_con_clear(void); /* Clear the console. */
@@ -132,6 +133,7 @@ int sys_con_info(struct con_info * info); /* Console columns, rows, cursor posit
 int sys_exec(const char * path, const char * args); /* Load and run another ELF executable from the SD card with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor. */
 int sys_key_event(void); /* Next raw keyboard event: bit 8 = release, bits 7..0 = PS/2 set-2 scan code (E0-prefixed codes have bit 9 set); -1 if none. */
 void sys_sleep_ms(uint32_t ms); /* Delay for approximately ms milliseconds. */
-int sys_set_audio_cb(void * cb); /* Install a function called at 15.7 kHz from the HSYNC interrupt to drive GPIO.AUDIO; NULL disables. */
+int sys_set_audio_cb(void * cb); /* Install a function called from the HSYNC interrupt once per video line (15.7 kHz NTSC) in supervisor mode; it takes over the AUDIO register (the sample queue is not serviced while a callback is installed) and should write one PDM pattern per call. NULL disables and returns the register to the queue player. */
+int sys_audio_write(const uint8_t * samples, unsigned n); /* Queue n unsigned 8-bit samples (0 = minimum, 128 = silence level, 255 = maximum; 7 bits are used) to be played one per video line (15.7 kHz NTSC, 15.6 kHz PAL) by the BIOS HSYNC interrupt through the PDM encoder. Non-blocking: returns the number of samples accepted (0..n), which is less than n when the 4096-byte queue is full; call again later (one video frame drains 262 samples). n == 0 returns the free space in the queue. The HSYNC interrupt is enabled while the queue holds data and switched off when it runs dry, after writing the silence pattern, so idle audio costs no CPU; while playing, the interrupt costs about a third of the CPU. E_FAULT if samples is not in user RAM. */
 
 #endif /* SYSCALLS_H */

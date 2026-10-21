@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define BOARD_NAME "other-m68k"
-#define BOARD_REVISION 4
+#define BOARD_REVISION 5
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL
 #define SLOT_CPU_CLOCKS 4
@@ -151,8 +151,6 @@
 #define GPIO_PS2CLK (1u << 0)
 #define GPIO_PS2DAT_BIT 1
 #define GPIO_PS2DAT (1u << 1)
-#define GPIO_AUDIO_BIT 2
-#define GPIO_AUDIO (1u << 2)
 #define GPIO_LED0_BIT 3
 #define GPIO_LED0 (1u << 3)
 #define GPIO_LED1_BIT 4
@@ -164,6 +162,14 @@
 #define PS2DATA_DATA_SHIFT 0
 #define PS2DATA_DATA_WIDTH 8
 #define PS2DATA_DATA_MASK 0x00FF
+#define IO_AUDIO_OFFSET 10
+#define IO_AUDIO_ADDR (IO_BASE + 10)
+#define IO_AUDIO (*(volatile uint16_t *)IO_AUDIO_ADDR)
+#define IO_AUDIO_RESET 0x0000
+#define AUDIO_PATTERN_BIT 0
+#define AUDIO_PATTERN_SHIFT 0
+#define AUDIO_PATTERN_WIDTH 8
+#define AUDIO_PATTERN_MASK 0x00FF
 #define IO_USERIO_OFFSET 12
 #define IO_USERIO_ADDR (IO_BASE + 12)
 #define IO_USERIO (*(volatile uint16_t *)IO_USERIO_ADDR)

@@ -1,7 +1,7 @@
 <!-- Generated from spec/board.json by tools/gen.py -- DO NOT EDIT; edit the spec and run `make gen`. -->
 # other-m68k hardware reference
 
-68000 SBC: 1 MB SRAM, 1 MB flash ROM window (128 KB BIOS image), memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 1-bit audio.
+68000 SBC: 1 MB SRAM, 1 MB flash ROM window (128 KB BIOS image), memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 8-bit PDM audio (one byte per video line shifted out by CPLD2).
 
 CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 
@@ -64,6 +64,8 @@ Horizontal count 0 = first active pixel; vertical count 0 = first active line. T
 
 ## IO registers (base 0xF00000, 16-bit)
 
+CPLD2 peripheral registers. 16-bit word access only; address bits A4..A15 are not decoded, so the 16-byte register block repeats through the region. INTEN, SDIO, GPIO, AUDIO and USERIO.OUT are write-only (read as 0): the fitter budget does not allow read-back; software keeps shadows.
+
 ### INTSTAT @ 0xF00000 (RW)
 
 Interrupt and pin status. Reading returns flags and live pin levels; bits not listed read 0. Writing 1 to a clearable bit clears it.
@@ -107,13 +109,12 @@ SD card SPI bit-bang port (write-only, reads 0). Bits are pin levels; reset = CS
 
 ### GPIO @ 0xF00006 (W) reset 0x0003
 
-Misc outputs (write-only, reads 0). PS/2 lines are open-drain: 1 releases the line (read it via INTSTAT), 0 pulls it low.
+Misc outputs (write-only, reads 0). PS/2 lines are open-drain: 1 releases the line (read it via INTSTAT), 0 pulls it low. Bit 2 is unused since revision 5 (audio moved to the AUDIO register) and must be written 0.
 
 | Bit | Name | Description |
 |---|---|---|
 | 0 | PS2CLK | PS/2 clock drive (1 = release). |
 | 1 | PS2DAT | PS/2 data drive (1 = release). |
-| 2 | AUDIO | 1-bit audio output. |
 | 3 | LED0 | Diagnostic LED 0 (1 = on). |
 | 4 | LED1 | Diagnostic LED 1 (1 = on). |
 
@@ -124,6 +125,14 @@ Last PS/2 byte received (bits 7..0). Reading clears INTSTAT.PS2RDY.
 | Bit | Name | Description |
 |---|---|---|
 | 7..0 | DATA | Received scan code byte. |
+
+### AUDIO @ 0xF0000A (W) reset 0x0000
+
+PDM audio shifter (write-only, reads 0). The low byte is loaded into an 8-bit rotating shift register whose bit 7 drives the audio pin. CPLD2 rotates it left one place at the leading edge of HSYNC and then every 24 bus slots (192 CLK24 cycles = 96 CPU clocks), i.e. 8 bits per video line, bit 7 first, ~126 kHz PDM; the rotation is resynchronised to HSYNC so it never drifts. Because the register rotates rather than shifting in zeros, a line without a write repeats the previous byte. Write once per line from the HSYNC interrupt, as early in the line as possible; the write replaces the register immediately. The bit pattern is a pulse-density code: the fraction of 1 bits sets the output level (0x00 silence/low, 0xAA or 0x55 mid-level, 0xFF high). The BIOS encodes 8-bit unsigned samples into patterns with a first-order sigma-delta table (see audio_write); a program may also write patterns directly. Writing 0x00 or 0xFF for whole lines and toggling between them gives the old 1-bit behaviour.
+
+| Bit | Name | Description |
+|---|---|---|
+| 7..0 | PATTERN | PDM bit pattern, bit 7 is shifted out first. |
 
 ### USERIO @ 0xF0000C (RW) reset 0x000F
 
@@ -337,7 +346,7 @@ autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied in
 
 **sd**: mode: SPI bit-bang via SDIO register; connector: microSD push-push socket; power: 3.3V LDO; CLK/MOSI/CS through resistor dividers, MISO 3.3V direct into 5V TTL-threshold input; filesystem: FAT12/16/32 via FatFs (LFN off). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine).
 
-**audio**: enabled: True; desc: GPIO.AUDIO -> RC low-pass -> divider -> DC-blocking cap -> 3.5mm jack. Beeps by software toggling; sampled audio by toggling from the HSYNC interrupt (15.7 kHz).
+**audio**: enabled: True; desc: AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> RC low-pass -> divider -> DC-blocking cap -> 3.5mm jack. Sampled audio: one 8-bit unsigned sample per video line (15.7 kHz NTSC, 15.6 kHz PAL) queued with audio_write; the BIOS HSYNC interrupt encodes each sample to a PDM pattern through a ROM sigma-delta table (8-bit accumulator, 7-bit sample) and writes it to AUDIO. The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click.
 
 **power**: input: USB-C receptacle, 5V only (5.1k CC pull-downs); rails: 5V, 3.3V (SD card only)
 
@@ -370,7 +379,7 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | 18 | closedir | `int sys_closedir(int handle)` | Close a directory handle. |
 | 19 | sd_read_block | `int sys_sd_read_block(uint32_t lba, void * buf)` | Raw 512-byte block read. |
 | 20 | sd_write_block | `int sys_sd_write_block(uint32_t lba, const void * buf)` | Raw 512-byte block write. |
-| 21 | set_irq_handler | `void * sys_set_irq_handler(int level, void * handler)` | Install a user interrupt handler (called from the BIOS ISR with interrupts masked); returns the previous one. NULL restores default. |
+| 21 | set_irq_handler | `void * sys_set_irq_handler(int level, void * handler)` | Install a user interrupt handler for level 1..4 (called from the BIOS ISR in supervisor mode at that interrupt's own priority, so higher levels can still interrupt it); returns the previous one. NULL restores default. |
 | 22 | mem_info | `int sys_mem_info(struct mem_info * info)` | Report the user RAM region available to the program. |
 | 23 | con_set_cursor | `int sys_con_set_cursor(int x, int y)` | Move the console text cursor. |
 | 24 | con_clear | `int sys_con_clear(void)` | Clear the console. |
@@ -378,7 +387,8 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | 26 | exec | `int sys_exec(const char * path, const char * args)` | Load and run another ELF executable from the SD card with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor. |
 | 27 | key_event | `int sys_key_event(void)` | Next raw keyboard event: bit 8 = release, bits 7..0 = PS/2 set-2 scan code (E0-prefixed codes have bit 9 set); -1 if none. |
 | 28 | sleep_ms | `void sys_sleep_ms(uint32_t ms)` | Delay for approximately ms milliseconds. |
-| 29 | set_audio_cb | `int sys_set_audio_cb(void * cb)` | Install a function called at 15.7 kHz from the HSYNC interrupt to drive GPIO.AUDIO; NULL disables. |
+| 29 | set_audio_cb | `int sys_set_audio_cb(void * cb)` | Install a function called from the HSYNC interrupt once per video line (15.7 kHz NTSC) in supervisor mode; it takes over the AUDIO register (the sample queue is not serviced while a callback is installed) and should write one PDM pattern per call. NULL disables and returns the register to the queue player. |
+| 30 | audio_write | `int sys_audio_write(const uint8_t * samples, unsigned n)` | Queue n unsigned 8-bit samples (0 = minimum, 128 = silence level, 255 = maximum; 7 bits are used) to be played one per video line (15.7 kHz NTSC, 15.6 kHz PAL) by the BIOS HSYNC interrupt through the PDM encoder. Non-blocking: returns the number of samples accepted (0..n), which is less than n when the 4096-byte queue is full; call again later (one video frame drains 262 samples). n == 0 returns the free space in the queue. The HSYNC interrupt is enabled while the queue holds data and switched off when it runs dry, after writing the silence pattern, so idle audio costs no CPU; while playing, the interrupt costs about a third of the CPU. E_FAULT if samples is not in user RAM. |
 
 ### ABI constants
 
@@ -435,7 +445,7 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 * inputs: CLK24, SYSRESET, A1..A23, AS, UDS, LDS, RW
 * outputs: CPUCLK, MA0..MA16, DTACK, BERR, VPA, RAMOE, WEU, WEL, ROMOE, ROMWE, IOCS, BUFEN, LATCH, DE, HSYNC, VSYNC, DUARTCS
 
-**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)
+**CPLD2** (ATF1508AS-7JX84): I/O and shifter: video word latch and RGB332 pixel output, interrupt controller (incl. DUART IRQ), PS/2 receiver, SD/GPIO bits, 8-bit PDM audio shifter, registers, upper SRAM address bits MA17..MA18 (CPU A18..A19 in the CPU half of each slot, the framebuffer page bits during the video fetch)
 
 * inputs: CLK24, SYSRESET, A1..A3, A18, A19, IOCS, RW, LATCH, DE, HSYNC, VSYNC, SD_MISO, PALJMP, NMIBTN, DUART_IRQ
 * bidir: D0..D15 (SRAM-side bus), PS2_CLK, PS2_DAT, UIO0..UIO3

@@ -21,7 +21,7 @@ static const char *const emu_io_reg_names[] = {
     "SDIO",
     "GPIO",
     "PS2DATA",
-    "?",
+    "AUDIO",
     "USERIO",
     "ID",
 };
@@ -83,6 +83,7 @@ static const char *const emu_syscall_names[] = {
     "key_event",
     "sleep_ms",
     "set_audio_cb",
+    "audio_write",
 };
 
 #endif

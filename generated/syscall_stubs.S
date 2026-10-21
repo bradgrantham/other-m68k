@@ -257,3 +257,12 @@ sys_set_audio_cb:
 	moveq #29,%d0
 	trap #15
 	rts
+
+	.globl sys_audio_write
+	.type sys_audio_write, @function
+sys_audio_write:
+	move.l 4(%sp),%a0
+	move.l 8(%sp),%d1
+	moveq #30,%d0
+	trap #15
+	rts

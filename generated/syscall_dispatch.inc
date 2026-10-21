@@ -33,5 +33,6 @@ case SYS_exec: ret = (uint32_t)bios_exec((const char *)f->a0, (const char *)f->a
 case SYS_key_event: ret = (uint32_t)bios_key_event(); break;
 case SYS_sleep_ms: bios_sleep_ms((uint32_t)f->d1); ret = 0; break;
 case SYS_set_audio_cb: ret = (uint32_t)bios_set_audio_cb((void *)f->a0); break;
+case SYS_audio_write: ret = (uint32_t)bios_audio_write((const uint8_t *)f->a0, (unsigned)f->d1); break;
 default: ret = (uint32_t)E_NOSYS; break;
 }
