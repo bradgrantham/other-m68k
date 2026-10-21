@@ -1,6 +1,40 @@
 # Rev C ideas (collected after the rev B4 order, 2026-10-20)
 
-Nothing here is designed yet; these are the agreed directions for the next board.
+Nothing here is designed yet. The user's current preference is **VGA** (below); the
+composite/S-video section further down is the fallback if a TV output must stay.
+
+## VGA (preferred direction)
+
+Drop the AD724, its crystal and trim capacitor, and the RCA jack. CPLD2's RGB bits drive
+three resistor ladders into 75 ohm (0.7 V full scale); HSYNC/VSYNC go to the HD-15 as
+TTL straight from CPLD1. Fewer parts than composite, no artefacts, and every monitor or
+cheap VGA-to-HDMI adapter accepts 640x480 at 60 Hz.
+
+Clocking: a 25.000 MHz oscillator (640x480 at 59.5 Hz; monitors lock to it) keeps the
+CPU at exactly 12.5 MHz, the MC68000P12's rating. 25.175 MHz would put the P12 0.7 %
+over spec. A slot stays 8 fast clocks = 318 ns = 8 VGA pixels. Line doubling needs no
+line buffer: the video address counter simply repeats each framebuffer line, so the
+fetch rate per output line is unchanged.
+
+Modes with the present one-word-per-slot bus (16 bits per 8 pixels):
+
+| mode | bits/pixel | colours | bytes | notes |
+|---|---|---|---|---|
+| 640x480 | 1 | fg/bg registers | 38400 | 80x60 text with the 8x8 font, or 80x30 line-doubled |
+| 640x480 | 2 | 4 fixed | 76800 | |
+| 320x240 doubled | 4 | 16 fixed (RGBI) | 38400 | |
+| 160x120 quadrupled | 8 | RGB332 | 19200 | |
+
+Keeping **320x240x8** (the rev B mode) needs two video words per slot: either a
+12-fast-clock slot (CPU RAM access every 6 CPU clocks instead of 4, about 30 % slower
+for code in RAM, code in ROM unaffected) or a tighter 8-clock schedule with three SRAM
+accesses (feasible with 55 ns SRAM, about 106 ns each, but little margin). Decide this
+first; it shapes CPLD1.
+
+A programmable palette still does not fit the CPLDs (16 x 8 bits = 128 flip-flops);
+fixed RGBI mappings do.
+
+## Composite fallback
 
 ## Video outputs
 
