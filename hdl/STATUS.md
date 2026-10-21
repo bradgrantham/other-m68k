@@ -6,12 +6,20 @@
   Verilog-2001, one clock, async reset, no inferred memories. Lint clean (`iverilog -Wall`).
 * `tb/`: 68000 bus master, 512Kx8 55 ns SRAM model (AS6C4008-55 timings) with timing
   checks, SST39SF040 flash model (JEDEC program/erase/ID, busy status, write-timing checks)
-  and 74AHCT245 models, whole-board testbench with 15 tests, a frame/pixel monitor, a
+  and 74AHCT245 models, whole-board testbench with 16 tests, a frame/pixel monitor, a
   bus-contention checker and an MA18..17 edge checker.
-  `make -C hdl sim` ends in `RESULT: PASS` (15 tests, 0 errors; ~30 s).
+  `make -C hdl sim` ends in `RESULT: PASS` (16 tests, 0 errors; ~30 s).
 * **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 111/128
-  (pass 2, fan-in 37/40, no I/O left) and CPLD2 119/128 (pass 1, 60/64 I/O, 127/128 nodes) with
+  (pass 2, fan-in 37/40, no I/O left) and CPLD2 123/128 (pass 1, 58/64 I/O, 126/128 nodes) with
   the pin blocks kept. JEDs in `build/fit/`.
+* **Spec rev 7 (2026-10-21, rev C board)**: the SD card moved from bit-banged SPI to its native
+  4-bit bus. SDIO now holds six open-drain drivers (DAT3, CLK, CMD, DAT0, DAT1, DAT2; 1 =
+  released, reset 0x3F) and reads back the pin levels in the same bits; INTSTAT.SDMISO is gone;
+  USERIO and the four UIO pins (74-77) were removed to make room. New pins: `sd_dat1` 16,
+  `sd_dat2` 58; `sd_cs`/`sd_mosi`/`sd_miso` became `sd_dat3`/`sd_cmd`/`sd_dat0` on the same
+  pins (4, 24, 8). Fit 119 -> 123 macrocells, 127 -> 126 nodes+foldbacks, 60 -> 58 I/O;
+  unused I/O pins 60, 61, 74-77. Testbench test 15 checks drive-low/release, read-back and the
+  wired-AND with a card-side driver; the old SDMISO/USERIO checks in test 5 were replaced.
 * **Spec rev 5 (2026-10-21)**: audio became an 8-bit rotating PDM shifter fed by the new
   write-only AUDIO register (byte offset 10): bit 7 drives pin 25, the register rotates at the
   HSYNC leading edge and every 24 slots after it (8 bits per line, ~126 kHz, resynchronised

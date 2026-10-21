@@ -134,19 +134,20 @@ Reset state: `ph=0`, `h=0`, `v=0`, `de=1`, `va=FB_PAGE0_WORD`, `overlay=1`, `pag
 | `d[15:0]` | inout | SRAM-side data bus; driven while `iocs_n` low and `rw` high |
 | `ipl_n[2:0]` | out | registered, active-low encoded level |
 | `rgb[7:0]` | out | R2 R1 R0 G2 G1 G0 B1 B0, registered pixel |
-| `sd_cs`, `sd_clk`, `sd_mosi` / `sd_miso` | out / in | SDIO register bits |
+| `sd_dat3`, `sd_clk`, `sd_cmd`, `sd_dat0`, `sd_dat1`, `sd_dat2` | inout | native 4-bit SD bus (spec rev 7): open drain, driven low when the SDIO bit is 0, released when 1; a read of SDIO returns the six pin levels in the same bit positions |
 | `ps2_clk`, `ps2_dat` | inout | open drain, driven low when the GPIO bit is 0 |
 | `a18`, `a19` | in | 68000 A18, A19 (spec rev 4) |
 | `ma17`, `ma18` | out | SRAM word address bits 17..18: `{a19,a18}` loaded at E4 (LATCH high), `FB_PAGE_HI` loaded at E1 (`ph2 == 0`); the same edges at which CPLD1 loads `ma[16:0]` |
 | `audio` | out | bit 7 of the 8-bit PDM shifter loaded by the AUDIO register (spec rev 5): rotated left at the HSYNC leading edge and every 24 slots after it, so 8 bits per line MSB first (~126 kHz); a line without a write repeats the byte |
 | `led[1:0]` | out | GPIO bits 4..3 |
 | `paljmp`, `nmibtn` | in | read in INTSTAT; `nmibtn` high forces IPL 7 |
-| `uio[3:0]` | inout | open drain; USERIO bits 3..0 drive, pin levels read in bits 11..8 |
 
 Registers (word offsets `IO_*_OFF`, bit positions `*_BIT`, all from the parameters file):
 INTSTAT (flags + live pins; W1C on VBLANK, HSYNC, PS2ERR), INTEN, SDIO, GPIO, PS2DATA,
-AUDIO, USERIO, ID (`ID_VALUE`). Reset values INTEN 0x0000 / SDIO 0x0001 / GPIO 0x0003 /
-AUDIO 0x0000 / USERIO 0x000F as in the spec. Address bits A4..A15 are not decoded (the register block is mirrored).
+AUDIO, ID (`ID_VALUE`). Reset values INTEN 0x0000 / SDIO 0x003F / GPIO 0x0003 /
+AUDIO 0x0000 as in the spec. Address bits A4..A15 are not decoded (the register block is
+mirrored). The USERIO register (byte offset 12) and the UIO pins were removed in spec rev 7
+to make room for the SD lines; the offset reads 0 and ignores writes.
 
 * **Interrupts**: VBLANK flag on the rising edge of the (positive-logic) VSYNC, HSYNC flag
   on the rising edge of HSYNC, PS2RDY on a completed PS/2 frame.
@@ -161,14 +162,19 @@ AUDIO 0x0000 / USERIO 0x000F as in the spec. Address bits A4..A15 are not decode
 * **Serial**: none. The 68681 DUART on the CPU bus does it (spec rev 2); CPLD2 takes the
   DUART's open-drain IRQ on `duart_irq_n`, synchronises it, shows it as INTSTAT.DUARTIRQ and
   encodes level 3 when INTEN.DUART is set.
-* **Write-only control registers**: INTEN, SDIO, GPIO, AUDIO and USERIO.OUT read as 0 (the BIOS
-  keeps shadows).
+* **Write-only control registers**: INTEN, GPIO and AUDIO read as 0 (the BIOS keeps shadows).
+* **SD card lines** (spec rev 7): `sdio[5:0]` = {DAT2, DAT1, DAT0, CMD, CLK, DAT3} drive bits,
+  reset 0x3F. Each pin is `sdio[i] ? 1'bz : 1'b0` (the PS/2 open-drain idiom: the flop drives
+  the 0 and its complement is the output enable, so pin and register share a cell) against the
+  board's 10 k pull-ups to 3.3 V. Reading SDIO returns the six pin levels in the same bit
+  positions, so the CPU sees the card's CMD responses and DAT3..0 data without a shadow; the
+  wired-AND of host and card drive is what the pin shows. INTSTAT bit 8 (the old SDMISO) reads 0.
+  Cost over rev 6 with USERIO removed: +4 macrocells net (123/128, 126/128 nodes).
 * **PDM audio** (spec rev 5): `aud_sh[7:0]` with `audio = aud_sh[7]`; a write to AUDIO loads it,
   otherwise it rotates left at `hs_rise` and whenever the 5-bit slot counter `aud_cnt` (reset at
   `hs_rise`) reaches 23 at an E0 edge, i.e. 8 rotations per 191-slot NTSC line (the last bit
-  period is 7 slots short). A write wins over a coincident rotate. GPIO bit 2 is stored but
-  drives nothing. Cost: 13 flops, +12 macrocells; CPLD2 is at 127/128 nodes, so this is the
-  last thing that fits. Every readable bit costs a product term and a fan-in on the data-bus LAB.
+  period is one slot short). A write wins over a coincident rotate. GPIO bit 2 is stored but
+  drives nothing. Cost: 13 flops, +12 macrocells (CPLD2 reached 127/128 nodes in rev 5/6). Every readable bit costs a product term and a fan-in on the data-bus LAB.
 * **Pixel path**: `pix` (the RGB pins) and `lo` as in the architecture doc (both zeroed when
   DE is low, so no `active` flop); pixels are 4 fast clocks each, upper byte first.
 
@@ -216,8 +222,9 @@ Tests (all pass; the suite runs ~143 ms of board time in ~30 s):
    and the vector sector untouched), program after erase; no flash timing violations
 4. BERR above RAM (0x100000), below ROM, above SWITCHES, at 0x800000; VPA for IACK; edges of
    regions (top of the 1 MB RAM and of the 1 MB ROM window mapped)
-5. INTEN/GPIO/SDIO/USERIO/ID read/write and reset values, pins follow registers, INTSTAT
-   live pins, IO mirror, IO cycle alignment, NMI button -> IPL 7
+5. INTEN/GPIO/SDIO/ID read/write and reset values (SDIO reads 0x3F, the former USERIO offset
+   reads 0 and ignores writes), pins follow registers, INTSTAT live pins (bit 8 reads 0), IO
+   mirror, IO cycle alignment, NMI button -> IPL 7
 6. PAGE1 soft switch: first fetch of the next frame from `{FB_PAGE_HI, FB_PAGE1_WORD}` (all
    19 address bits checked), back to PAGE0
 7. one full NTSC frame: 262 lines, 240 active lines of 160 fetches, 3 VSYNC lines, 191
@@ -229,6 +236,10 @@ Tests (all pass; the suite runs ~143 ms of board time in ~30 s):
    (10b) AUDIO PDM shifter: a byte written just after the HSYNC edge appears on the pin MSB
    first, one bit per 24 slots, 8 bits per line; the next line repeats it without a write; a
    mid-line write replaces the register at once and shifting continues from the new byte
+   (10c) SDIO, spec rev 7: 0x00 drives all six card lines low, 0x3F releases them (pull-ups
+   read high), a mixed pattern (0x2A) on the pins and read back, the card side pulling CMD and
+   DAT0 low while the host has released them reads back as 0x33, host CLK low alone reads 0x3D
+   (wired-AND)
 9. DUART cycles (stub 68681 with open-drain DTACK 2.5 X1 clocks after CS): DUARTCS, byte
    read/write data and RS, CPLD1 releases DTACK, A5..A15 mirror, no IOCS/BUFEN/ROMOE/ROMWE
 10. DUART IRQ pin -> INTSTAT.DUARTIRQ, IPL 3 gated by INTEN.DUART
@@ -255,14 +266,15 @@ what costs what on this part.
 
 ### Results
 
-Current design (spec rev 5: DUART board, flash ROM, 1 MB SRAM, PDM audio), `-preassign keep` with the
+Current design (spec rev 7: DUART board, flash ROM, 1 MB SRAM, PDM audio, 4-bit SD), `-preassign keep` with the
 pin blocks in the sources, JTAG on, power_reset on, TDI/TMS pull-ups on (CPLD1 also
 xor_synthesis):
 
 | chip | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in | I/O pins |
 |---|---|---|---|---|---|---|---|---|
 | `cpld1_mmu` | 2 | **111 / 128** | 70 | 13 | 124 | 400 | 37 / 40 | 64 / 64 (incl. 4 JTAG) |
-| `cpld2_io` | 1 | **119 / 128** | 85 | 15 | 127 | 369 | 28 / 40 | 60 / 64 (incl. 4 JTAG) |
+| `cpld2_io` | 1 | **123 / 128** | 84 | 14 | 126 | 365 | 36 / 40 | 58 / 64 (incl. 4 JTAG) |
+| `cpld2_io` rev 5/6 (SPI SD, USERIO) | 1 | 119 / 128 | 85 | 15 | 127 | 369 | 28 / 40 | 60 / 64 |
 | `cpld2_io` before rev 5 (no PDM) | 1 | 107 / 128 | 73 | 9 | 107 | 322 | 28 / 40 | 60 / 64 |
 
 Spec rev 4 (2x AS6C4008 = 1 MB) needed two more SRAM address lines; CPLD1 had no pin left,
@@ -272,7 +284,14 @@ CPLD1's RAM decode shrank from A23..A18 to A23..A20 but the kept-pin fit stays a
 
 Spec rev 5 (2026-10-21) added the 8-bit PDM audio shifter to CPLD2: +12 macrocells, +12 flops,
 no pin change (all 60 placements identical to the rev 4 fit, audio still on pin 25), so it is
-a JED-only change for rev B4 boards. Nodes+foldbacks are at 127/128: CPLD2 is full.
+a JED-only change for rev B4 boards. Nodes+foldbacks were at 127/128: CPLD2 was full.
+
+Spec rev 7 (2026-10-21, rev C board) moved the SD card to its native 4-bit bus: six open-drain
+lines with read-back (`sd_dat3` pin 4, `sd_clk` 15, `sd_cmd` 24, `sd_dat0` 8, new `sd_dat1` 16
+and `sd_dat2` 58) in place of the four SPI pins, and USERIO/UIO (pins 74-77) removed to pay
+for it. Fit: 123/128 macrocells, 84 flops, 14 foldbacks, 126/128 nodes, 58/64 I/O; every
+placed pin matches `pins_cpld2_io.json`. Unused I/O pins: 60, 61, 74, 75, 76, 77. This is a
+board change (DAT1/DAT2 traces, CMD divider gone), not a JED update for rev B4.
 
 Spec rev 3 added ROMWE (flash write strobe) to CPLD1 on its last free I/O (pin 50) and
 widened the ROM window to 1 MB. The fitter now needs pass 2 (cascade logic) with the pin
