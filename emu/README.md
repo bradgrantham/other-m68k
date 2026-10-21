@@ -4,7 +4,8 @@
 peripherals: 1 MB RAM, the 1 MB ROM window (two SST39SF040 flash chips, in-system
 programmable) with the reset overlay, the CPLD2 registers, the soft
 switches, the 320x240 RGB332 framebuffer in an SDL2 window, the 68681 DUART (channel A is the
-serial console), the PS/2 keyboard, an SDHC card in SPI mode, 1-bit audio and the NMI/reset buttons.
+serial console), the PS/2 keyboard, an SDHC card in SPI mode, the 8-bit PDM audio shifter (spec rev 5)
+and the NMI/reset buttons.
 Addresses, bits and timing constants come from `generated/hw.h` / `generated/emu_map.h`; nothing
 is hard-coded that the spec defines.
 
@@ -33,6 +34,8 @@ m68k-emu --rom fw/build/rom.bin [options]
   --io-trace          log CPLD2 and DUART register accesses, soft switches and serial RX arrivals with cycle stamps
   --dump-regs-on-exit                                                --dump-mem ADDR LEN   hex dump at exit (repeatable)
   --no-audio          disable audio                                  --no-stdin       do not read serial RX from stdin
+  --audio-wav FILE    write the rendered audio to a 48 kHz 16-bit mono WAV (also with --headless / --fast)
+  --audio-edge-log FILE  log every audio pin edge as 'cycle level' (timing checks)
 ```
 
 Numbers accept `0x` prefixes. Exit status: 0 normal (frame count reached, window closed,
@@ -170,16 +173,29 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   on the first poll, ready afterwards), 58 (OCR with CCS), 59; unknown commands get 0x04. Data
   tokens 0xFE/0xFC/0xFD, CRC16 on data, one 0xFF before each response. MISO is 1 when CS is
   high or no image is attached.
-* **Audio** (`audio.c`): GPIO.AUDIO edges are box-filtered into 48 kHz mono samples once per
-  frame (250 clocks per sample exactly), high-passed like the board's coupling capacitor and
-  queued to SDL. Off with `--no-audio`, `--fast` or `--headless`.
+* **Audio** (`io.c`, `audio.c`): the AUDIO register (byte offset 10, write-only) loads an 8-bit
+  rotating shift register whose bit 7 is the audio pin. It rotates left at each line start (the
+  HSYNC leading edge) and then every 24 slots = 96 CPU clocks, 8 slots per line; the slot
+  counter restarts at HSYNC, so the 8th timed rotation never happens and the HSYNC rotation
+  takes its place. A write replaces the register at once (a rotation due in the same cycle is
+  suppressed) and a line without a write repeats the previous byte, as on the CPLD. Note that
+  the byte streams out bit 7 first only if it is written in the first slot (within 96 clocks of
+  HSYNC); a write in slot k leaves the pattern rotated right by k at the next line start, which
+  changes bit order but not density. The shifter is evaluated lazily in time order (rotations
+  are applied up to each write, each line start and the end of each frame) and every change of
+  bit 7 goes to the renderer as a cycle-stamped edge. The edges are box-filtered into 48 kHz mono
+  samples once per frame (250 clocks per sample exactly, an exact integral however many edges
+  fall in a sample, which is what the board's RC low-pass does to the ~126 kHz PDM stream),
+  high-passed like the coupling capacitor, and queued to SDL (off with `--no-audio`, `--fast` or
+  `--headless`) and/or written to `--audio-wav FILE`, which works in every mode and receives
+  every sample from cycle 0. GPIO bit 2 (the rev 4 audio bit) is stored but does nothing.
 
 ## Test
 
 `make -C emu test` assembles `test/test.S` (vectors with SSP = SYS_STACK_TOP and PC in ROM),
 runs it with `--headless --fast --frames 120 --serial-type ABCDEF --serial-type-delay 1
 --serial-log ... --dump-mem 0x800 96` plus an SD image whose block 0 carries a signature, and
-`test/check.sh` verifies (44 checks): RAM pattern, ID register, the gradient fill runs, the
+`test/check.sh` verifies (56 checks): RAM pattern, ID register, the gradient fill runs, the
 DUART init sequence from the spec (IVR 0x0F at reset, MR1A/MR2A read back through the pointer,
 SRA = TXRDY+TXEMT after enable), "HELLO\n" sent by polling TXRDY appears on stdout and in the
 serial log (and SRA reads 0 while a byte shifts with another in the holding register), a word
@@ -195,7 +211,11 @@ between VBLANKs are 262/312/262 across SW_PAL and SW_NTSC, a read of 0x400000 pr
 one bus error whose frame carries fault address 0x400000 and access info 0x0015 (read,
 supervisor data), the SD card answers CMD0/CMD8/ACMD41/CMD58/CMD17 and block 0 matches (MISO
 read through INTSTAT.SDMISO), stdout equals the serial log, the end-of-run summary counts 6 bytes
-in with 2 overruns, and the total cycle count is a whole number of frames.
+in with 2 overruns, and the total cycle count is a whole number of frames. The PDM shifter is
+checked from `--audio-edge-log`: after one write of 0xB1 every line produces 4 edges, alternating,
+three of the four gaps per line are exactly 96/192/288 clocks and the one spanning the line start
+is a 1..3 slot run plus the line-start jitter; the `--audio-wav` file has a consistent RIFF header,
+48 kHz, one sample per 250 clocks of the run, and is not silent.
 
 ## Layout
 
@@ -203,13 +223,13 @@ in with 2 overruns, and the total cycle count is a whole number of frames.
 |---|---|
 | `main.c` | options, Musashi setup, per-line loop, pacing, SDL events, dumps |
 | `bus.c/h` | decode, RAM/ROM, overlay, BERR frame, side-effect-free peeks, hex dump |
-| `io.c/h` | CPLD2 registers, W1C flags, write-only shadows, IPL, soft-switch latches, `--io-trace` |
+| `io.c/h` | CPLD2 registers, W1C flags, write-only shadows, PDM audio shifter, IPL, soft-switch latches, `--io-trace` |
 | `video.c/h` | NTSC/PAL timing, live pins, RGB332 -> ARGB8888, SDL window |
 | `duart.c/h` | MC68681 model: channels, FIFOs, ISR/IMR, counter/timer, bit timing |
 | `serial.c/h` | console back end: stdout, logs, stdin raw mode, `--serial-type` |
 | `ps2.c/h` | scan code set 2 keyboard, `--type` |
 | `sdcard.c/h` | SPI-mode SDHC card |
-| `audio.c/h` | 1-bit audio renderer |
+| `audio.c/h` | audio pin renderer: edges -> 48 kHz, SDL queue, `--audio-wav`, `--audio-edge-log` |
 | `m68kconf.h` | Musashi configuration (68000 only, INT_ACK, FC macro) |
 | `musashi/` | vendored Musashi core (+ `musashi-berr-frame.patch`) |
 | `test/` | self-test ROM, linker script, `check.sh` |

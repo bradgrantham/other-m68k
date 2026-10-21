@@ -133,6 +133,7 @@ void video_line_start(int v, uint64_t cycle)
     }
     cur_line = v;
     line_start_cycle = cycle;
+    io_pdm_line_start(cycle);
     uint16_t f = INTSTAT_HSYNC;
     if (v == cur->v_active + cur->v_bottom)
         f |= INTSTAT_VBLANK;        /* leading edge of VSYNC */

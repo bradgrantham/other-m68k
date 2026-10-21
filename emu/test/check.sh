@@ -10,13 +10,14 @@ RES=0x800
 RESLEN=96
 HW_H=$(dirname "$0")/../../generated/hw.h
 
-rm -f "$B/serial.txt" "$B/stdout.txt" "$B/stderr.txt"
+rm -f "$B/serial.txt" "$B/stdout.txt" "$B/stderr.txt" "$B/edges.txt" "$B/audio.wav"
 # "ABCDEF" is fed into the DUART's channel A after frame 1, while the ROM
 # has the receiver enabled but the interrupt masked: A B C fill the FIFO,
 # D and E are lost (overrun), F waits in the shift register.
 "$EMU" --rom "$ROM" --sd "$SD" --headless --fast --no-stdin --frames 120 \
     --serial-type ABCDEF --serial-type-delay 1 \
     --serial-log "$B/serial.txt" --dump-mem $RES $RESLEN --dump-regs-on-exit --sd-trace \
+    --audio-edge-log "$B/edges.txt" --audio-wav "$B/audio.wav" \
     > "$B/stdout.txt" 2> "$B/stderr.txt"
 status=$?
 
@@ -115,6 +116,44 @@ check "DUART: stopped counter rolled past 0 (CUR = FF)" [ "$(echo "$CUR" | cut -
 check "DUART: timer mode interrupts during ~2.5 frames (40..100, got $(hexval "$CTCNT"))" \
     [ "$(hexval "$CTCNT")" -ge 40 ] && [ "$(hexval "$CTCNT")" -le 100 ]
 check "summary counts 2 overruns and nothing lost" grep -q "6 in (2 overruns, 0 lost)" "$B/stderr.txt"
+
+# PDM audio: the ROM writes 0xB1 (1011 0001) to AUDIO once.  Bit 7 is the pin; the register
+# rotates left at the HSYNC edge and then every 96 CPU clocks (24 slots), 8 slots per line.
+# Cyclically the pattern has 4 transitions, so every line produces 4 edges, and the runs are
+# 1, 2, 3 and (across the line boundary) 2 slots long: three gaps per line are exactly 96,
+# 192 or 288 clocks and the one that spans the line start is 96*r - 4 clocks (764-clock
+# lines) plus the emulator's line-start jitter (the instruction that overruns a line is
+# charged to the next one).  Which run spans the boundary depends on the slot the write
+# landed in, so only the counts are checked.
+NEDGES=$(wc -l < "$B/edges.txt")
+EXACT=$(awk 'NR > 2 { d = $1 - prev; if (d == 96 || d == 192 || d == 288) n++ } { prev = $1 } END { print n + 0 }' "$B/edges.txt")
+WRAPS=$(awk 'NR > 2 { d = $1 - prev; if (d != 96 && d != 192 && d != 288) n++ } { prev = $1 } END { print n + 0 }' "$B/edges.txt")
+BADWRAP=$(awk 'NR > 2 { d = $1 - prev; if (d != 96 && d != 192 && d != 288 && (d < 60 || d > 320)) n++ } { prev = $1 } END { print n + 0 }' "$B/edges.txt")
+FIRSTLVL=$(awk 'NR == 1 { print $2 }' "$B/edges.txt")
+ALTERN=$(awk 'NR > 1 && $2 == prev { bad++ } { prev = $2 } END { print bad + 0 }' "$B/edges.txt")
+LINES_TOTAL=$(( 120 * 262 + PALFRAMES * (312 - 262) ))
+check "PDM: edge log written ($NEDGES edges)" [ "$NEDGES" -gt 100000 ]
+check "PDM: first edge is the write (pin 0 -> 1)" [ "$FIRSTLVL" = "1" ]
+check "PDM: edges alternate level" [ "$ALTERN" = "0" ]
+check "PDM: 4 edges per line ($NEDGES for $LINES_TOTAL lines)" \
+    [ "$NEDGES" -ge $(( LINES_TOTAL * 4 - 4 * 262 )) ] && [ "$NEDGES" -le $(( LINES_TOTAL * 4 )) ]
+check "PDM: three gaps per line are exactly 96/192/288 clocks ($EXACT)" \
+    [ "$EXACT" -ge $(( LINES_TOTAL * 3 - 3 * 262 )) ] && [ "$EXACT" -le $(( LINES_TOTAL * 3 + PALFRAMES * 312 + 2 * 262 )) ]
+# (on PAL lines, 768 clocks, the spanning gap is an exact 288 and is counted above instead)
+check "PDM: about one gap per line spans the line start ($WRAPS, $PALFRAMES PAL frames)" \
+    [ "$WRAPS" -ge $(( LINES_TOTAL - PALFRAMES * 312 - 2 * 262 )) ] && [ "$WRAPS" -le $(( LINES_TOTAL + 2 )) ]
+check "PDM: every spanning gap is a run of 1..3 slots plus jitter (bad: $BADWRAP)" [ "$BADWRAP" = "0" ]
+# WAV: RIFF header, sizes consistent with the file, one sample per 250 clocks, non-silent
+WAVLEN=$(wc -c < "$B/audio.wav")
+RIFF=$(head -c 4 "$B/audio.wav"); WAVE=$(dd if="$B/audio.wav" bs=1 skip=8 count=4 2>/dev/null)
+le32() { od -An -tu4 -j "$1" -N 4 "$B/audio.wav" | tr -d ' '; }
+RIFFSZ=$(le32 4); RATE=$(le32 24); DATASZ=$(le32 40)
+check "WAV: RIFF/WAVE header" [ "$RIFF" = "RIFF" ] && [ "$WAVE" = "WAVE" ]
+check "WAV: 48000 Hz" [ "$RATE" = "48000" ]
+check "WAV: sizes match the file ($WAVLEN bytes)" [ "$RIFFSZ" -eq $(( WAVLEN - 8 )) ] && [ "$DATASZ" -eq $(( WAVLEN - 44 )) ]
+check "WAV: one sample per 250 clocks ($(( DATASZ / 2 )) samples for $CYCLES cycles)" \
+    [ $(( DATASZ / 2 )) -ge $(( CYCLES / 250 - 1 )) ] && [ $(( DATASZ / 2 )) -le $(( CYCLES / 250 + 1 )) ]
+check "WAV: not silent" [ "$(od -An -tx1 -j 44 "$B/audio.wav" | tr -d ' \n' | tr -d 0 | head -c 1 | wc -c)" -eq 1 ]
 
 if [ $fail -eq 0 ]; then
     echo "ALL TESTS PASSED"

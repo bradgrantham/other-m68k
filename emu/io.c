@@ -4,8 +4,17 @@
  * region).  CPLD2 has no UDS/LDS, so byte accesses are undefined on the real
  * board; here a byte read returns its half of the word and a byte write
  * updates only that half of the shadow (the least surprising choice for
- * software).  INTEN, SDIO, GPIO and USERIO.OUT are write-only on the board
- * (they read as 0); the emulator keeps the written values as the pin state.
+ * software).  INTEN, SDIO, GPIO, AUDIO and USERIO.OUT are write-only on the
+ * board (they read as 0); the emulator keeps the written values as the pin state.
+ *
+ * AUDIO (spec rev 5) loads an 8-bit rotating shift register whose bit 7 is the
+ * audio pin.  CPLD2 rotates it left at the HSYNC leading edge and then every 24
+ * bus slots (PDM_BIT_CLOCKS CPU clocks); the counter restarts at HSYNC, so the
+ * 8th timed rotation never happens and the HSYNC rotation takes its place.  A
+ * write replaces the register at once and suppresses a rotation at the same
+ * cycle.  The shifter is evaluated lazily: rotations are applied in time order
+ * up to each write and up to each line start / frame end, emitting an edge to
+ * the audio renderer whenever bit 7 changes.
  */
 #include <stdio.h>
 #include <string.h>
@@ -35,7 +44,14 @@ static int pending_pal;
 #define W1C_MASK  (INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2ERR)
 #define INTEN_MASK (INTEN_VBLANK | INTEN_HSYNC | INTEN_PS2 | INTEN_DUART)
 #define SDIO_OUT_MASK (SDIO_CS | SDIO_CLK | SDIO_MOSI)
-#define GPIO_MASK (GPIO_PS2CLK | GPIO_PS2DAT | GPIO_AUDIO | GPIO_LED0 | GPIO_LED1)
+#define GPIO_MASK (GPIO_PS2CLK | GPIO_PS2DAT | GPIO_LED0 | GPIO_LED1)   /* bit 2 retired in rev 5 */
+
+/* PDM audio shifter */
+#define PDM_BIT_CLOCKS (24 * SLOT_CPU_CLOCKS)   /* 96 CPU clocks per bit, 8 bits per line */
+static uint8_t  pdm_reg;
+static uint64_t pdm_line;       /* start cycle of the current line (HSYNC leading edge) */
+static int      pdm_k;          /* timed rotations applied so far in this line (0..7) */
+static int      pdm_valid;      /* a line start has been seen */
 
 static void io_trace(const char *what, uint32_t offset, uint16_t val)
 {
@@ -55,6 +71,9 @@ void io_reset(void)
     pending_page = 0;
     pending_pal = 0;
     cur_ipl = -1;
+    pdm_reg = 0;
+    pdm_k = 0;
+    pdm_valid = 0;
     sd_pins(sdio & SDIO_CS, (sdio & SDIO_CLK) != 0, (sdio & SDIO_MOSI) != 0);
     io_update_ipl();
 }
@@ -172,6 +191,7 @@ uint16_t io_peek16(uint32_t offset)
     case IO_INTEN_OFFSET:   return 0;                   /* write-only */
     case IO_SDIO_OFFSET:    return 0;                   /* write-only */
     case IO_GPIO_OFFSET:    return 0;                   /* write-only */
+    case IO_AUDIO_OFFSET:   return 0;                   /* write-only */
     case IO_PS2DATA_OFFSET: return ps2data;
     case IO_USERIO_OFFSET:  return userio_value();
     case IO_ID_OFFSET:      return IO_ID_RESET;
@@ -206,11 +226,57 @@ static uint16_t lane_merge(uint16_t old, uint16_t val, int lanes)
 
 static void gpio_write(uint16_t val)
 {
-    uint16_t old = gpio;
     gpio = val & GPIO_MASK;
-    uint16_t changed = old ^ gpio;
-    if (changed & GPIO_AUDIO)
-        audio_edge(emu_cycles(), (gpio & GPIO_AUDIO) != 0);
+}
+
+/* ---- PDM audio shifter ----------------------------------------------------- */
+
+static void pdm_rotate(uint64_t t)
+{
+    uint8_t n = (uint8_t)((pdm_reg << 1) | (pdm_reg >> 7));
+    if ((n ^ pdm_reg) & 0x80)
+        audio_edge(t, (n >> 7) & 1);
+    pdm_reg = n;
+}
+
+/* Apply the timed rotations that fall strictly before `until`. */
+void io_pdm_advance(uint64_t until)
+{
+    if (!pdm_valid)
+        return;
+    while (pdm_k < 7) {
+        uint64_t t = pdm_line + (uint64_t)(pdm_k + 1) * PDM_BIT_CLOCKS;
+        if (t >= until)
+            break;
+        pdm_rotate(t);
+        pdm_k++;
+    }
+}
+
+void io_pdm_line_start(uint64_t cycle)
+{
+    io_pdm_advance(cycle);          /* whatever the previous line still owed */
+    pdm_line = cycle;
+    pdm_k = 0;
+    pdm_valid = 1;
+    pdm_rotate(cycle);              /* the HSYNC-edge rotation */
+}
+
+static void pdm_write(uint8_t val)
+{
+    uint64_t now = emu_cycles();
+    io_pdm_advance(now);
+    /* a rotation due at exactly this cycle is suppressed by the write */
+    while (pdm_valid && pdm_k < 7 && pdm_line + (uint64_t)(pdm_k + 1) * PDM_BIT_CLOCKS == now)
+        pdm_k++;
+    if ((val ^ pdm_reg) & 0x80)
+        audio_edge(now, (val >> 7) & 1);
+    pdm_reg = val;
+}
+
+uint8_t io_pdm_reg(void)
+{
+    return pdm_reg;
 }
 
 void io_write16(uint32_t offset, uint16_t val, int lanes)
@@ -238,6 +304,9 @@ void io_write16(uint32_t offset, uint16_t val, int lanes)
         break;
     case IO_PS2DATA_OFFSET:
         break;                      /* read only */
+    case IO_AUDIO_OFFSET:
+        pdm_write((uint8_t)lane_merge(pdm_reg, val, lanes));
+        break;
     case IO_USERIO_OFFSET:
         userio = lane_merge(userio, val, lanes) & USERIO_OUT_MASK;
         break;

@@ -241,6 +241,9 @@ static void usage(FILE *f)
         "  --dump-regs-on-exit print the CPU registers at exit\n"
         "  --dump-mem ADDR LEN hex dump memory at exit (repeatable)\n"
         "  --no-audio          disable audio output\n"
+        "  --audio-wav FILE    write the rendered audio (48 kHz, 16-bit mono WAV) to FILE;\n"
+        "                      works with --headless and --fast too\n"
+        "  --audio-edge-log FILE  log every audio pin edge as 'cycle level' (debugging)\n"
         "  --no-stdin          do not read serial RX bytes from stdin\n"
         "Keys: F11 reset button, F12 or Pause NMI button, others -> PS/2 keyboard.\n"
         "Serial (DUART channel A) output goes to stdout; diagnostics go to stderr.\n");
@@ -308,6 +311,8 @@ static void parse_args(int argc, char **argv)
             opts.dump_mem_count++;
         }
         else if (!strcmp(a, "--no-audio")) opts.no_audio = 1;
+        else if (!strcmp(a, "--audio-wav")) opts.audio_wav_path = need_arg(argc, argv, &i);
+        else if (!strcmp(a, "--audio-edge-log")) opts.audio_edge_log_path = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--no-stdin")) opts.no_stdin = 1;
         else if (!strcmp(a, "--help") || !strcmp(a, "-h")) {
             usage(stdout);
@@ -386,7 +391,9 @@ int main(int argc, char **argv)
     }
     if (video_init(opts.scale, opts.headless) != 0)
         return 1;
-    audio_init(!opts.headless && !opts.fast && !opts.no_audio);
+    if (audio_init(!opts.headless && !opts.fast && !opts.no_audio,
+                   opts.audio_wav_path, opts.audio_edge_log_path) != 0)
+        return 1;
 
     m68k_init();
     m68k_set_cpu_type(M68K_CPU_TYPE_68000);
@@ -422,6 +429,7 @@ int main(int argc, char **argv)
             break;
         frames_done++;
 
+        io_pdm_advance(cycle_base);     /* rotations of the last line before rendering */
         audio_frame(cycle_base);
         if (!opts.headless) {
             handle_events();

@@ -1,15 +1,20 @@
-/* 1-bit audio.
+/* Audio pin renderer.
  *
- * The bus layer reports every GPIO.AUDIO transition with its cycle stamp.
- * Once per frame the waveform is box-filtered into 48 kHz mono samples
- * (CPU_CLOCK_HZ / 48000 = 250 clocks per sample, exact), passed through a
- * one-pole high-pass standing in for the board's DC-blocking capacitor, and
- * queued to SDL.  If the host falls behind the queue is trimmed so latency
- * stays around a few frames.
+ * io.c reports every transition of the audio pin (the PDM shifter's bit 7,
+ * up to 8 per video line) with its cycle stamp.  Once per frame the waveform
+ * is box-filtered into 48 kHz mono samples (CPU_CLOCK_HZ / 48000 = 250 clocks
+ * per sample, exact; the integration is exact for any number of edges per
+ * sample, so the ~126 kHz PDM stream is averaged like the board's RC low-pass
+ * does), passed through a one-pole high-pass standing in for the DC-blocking
+ * capacitor, and queued to SDL and/or written to a WAV file (--audio-wav).
+ * If the host falls behind, the SDL queue is trimmed so latency stays around a
+ * few frames; the WAV file always receives every sample.  --audio-edge-log
+ * writes each edge as "cycle level" for timing checks.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include <SDL.h>
 
 #include "hw.h"
@@ -33,11 +38,58 @@ static uint64_t render_pos;         /* next sample starts here */
 static double hp_prev_in, hp_prev_out;
 static int16_t *buf;
 static size_t buf_cap;
+static FILE *wav;
+static uint64_t wav_samples;
+static FILE *edge_log;
 
-int audio_init(int on)
+static void put32(FILE *f, uint32_t v)
+{
+    unsigned char b[4] = { (unsigned char)v, (unsigned char)(v >> 8), (unsigned char)(v >> 16), (unsigned char)(v >> 24) };
+    fwrite(b, 1, 4, f);
+}
+
+static void put16(FILE *f, uint16_t v)
+{
+    unsigned char b[2] = { (unsigned char)v, (unsigned char)(v >> 8) };
+    fwrite(b, 1, 2, f);
+}
+
+static void wav_header(FILE *f, uint32_t nsamples)
+{
+    uint32_t data_bytes = nsamples * 2;
+    fseek(f, 0, SEEK_SET);
+    fwrite("RIFF", 1, 4, f); put32(f, 36 + data_bytes); fwrite("WAVE", 1, 4, f);
+    fwrite("fmt ", 1, 4, f); put32(f, 16);
+    put16(f, 1);                        /* PCM */
+    put16(f, 1);                        /* mono */
+    put32(f, SAMPLE_RATE);
+    put32(f, SAMPLE_RATE * 2);          /* byte rate */
+    put16(f, 2);                        /* block align */
+    put16(f, 16);                       /* bits per sample */
+    fwrite("data", 1, 4, f); put32(f, data_bytes);
+}
+
+int audio_init(int sdl_on, const char *wav_path, const char *edge_log_path)
 {
     enabled = 0;
-    if (!on)
+    if (wav_path) {
+        wav = fopen(wav_path, "wb");
+        if (!wav) {
+            fprintf(stderr, "m68k-emu: --audio-wav %s: %s\n", wav_path, strerror(errno));
+            return -1;
+        }
+        wav_header(wav, 0);
+        enabled = 1;
+    }
+    if (edge_log_path) {
+        edge_log = fopen(edge_log_path, "w");
+        if (!edge_log) {
+            fprintf(stderr, "m68k-emu: --audio-edge-log %s: %s\n", edge_log_path, strerror(errno));
+            return -1;
+        }
+        enabled = 1;
+    }
+    if (!sdl_on)
         return 0;
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         fprintf(stderr, "m68k-emu: SDL audio init failed: %s (audio disabled)\n", SDL_GetError());
@@ -65,6 +117,15 @@ void audio_shutdown(void)
         SDL_CloseAudioDevice(dev);
         dev = 0;
     }
+    if (wav) {
+        wav_header(wav, (uint32_t)wav_samples);
+        fclose(wav);
+        wav = NULL;
+    }
+    if (edge_log) {
+        fclose(edge_log);
+        edge_log = NULL;
+    }
     enabled = 0;
 }
 
@@ -90,6 +151,8 @@ void audio_edge(uint64_t cycle, int lvl)
     edges[edge_count].level = lvl;
     edge_count++;
     level = lvl;
+    if (edge_log)
+        fprintf(edge_log, "%llu %d\n", (unsigned long long)cycle, lvl);
 }
 
 void audio_frame(uint64_t now)
@@ -99,8 +162,8 @@ void audio_frame(uint64_t now)
         render_pos = now;
         return;
     }
-    if (render_pos == 0)
-        render_pos = now - (now % CLOCKS_PER_SAMPLE);
+    /* render_pos starts at 0, so the first frame is rendered too (the WAV then
+     * holds exactly one sample per 250 clocks from power-up) */
     size_t nsamples = (size_t)((now - render_pos) / CLOCKS_PER_SAMPLE);
     if (nsamples > buf_cap) {
         buf_cap = nsamples;
@@ -146,6 +209,13 @@ void audio_frame(uint64_t now)
         edge_count -= keep;
     }
 
+    if (wav && nsamples) {
+        for (size_t s = 0; s < nsamples; s++)
+            put16(wav, (uint16_t)buf[s]);
+        wav_samples += nsamples;
+    }
+    if (!dev)
+        return;
     if (SDL_GetQueuedAudioSize(dev) > MAX_QUEUED_BYTES)
         return;                     /* host is behind: skip this frame's audio */
     if (nsamples)

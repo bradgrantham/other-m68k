@@ -101,6 +101,10 @@ _start:
 	/* Glue ID. */
 	move.w	IO_ID_ADDR,RES_ID
 
+	/* PDM audio: pattern 1011 0001 shifts out 8 bits per line, bit 7 first
+	 * (check.sh verifies the edge timing from --audio-edge-log). */
+	move.w	#0xB1,IO_AUDIO_ADDR
+
 	/* LED0 on (GPIO is write-only: keep a shadow). */
 	move.w	#GPIO_IDLE+GPIO_LED0_MASK,GPIO_SHADOW
 	move.w	GPIO_SHADOW,IO_GPIO_ADDR
@@ -439,8 +443,7 @@ sd_fail:
 /* Level-1 autovector: count, sample INTSTAT, clear the flag. */
 vec_vblank:
 	addq.l	#1,RES_VBLANKS
-	eori.w	#GPIO_AUDIO_MASK,GPIO_SHADOW	/* 30 Hz square wave on AUDIO */
-	move.w	GPIO_SHADOW,IO_GPIO_ADDR
+	move.w	GPIO_SHADOW,IO_GPIO_ADDR	/* (audio left on its PDM pattern) */
 	move.w	IO_INTSTAT_ADDR,RES_INTSTAT
 	move.w	#INTSTAT_VBLANK_MASK,IO_INTSTAT_ADDR
 	rte

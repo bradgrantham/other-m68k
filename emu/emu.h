@@ -29,6 +29,8 @@ struct emu_opts {
     int exit_on_berr;
     int dump_regs;
     int no_audio;
+    const char *audio_wav_path;      /* --audio-wav: rendered 48 kHz stream */
+    const char *audio_edge_log_path; /* --audio-edge-log: every audio pin edge */
     int no_stdin;
     struct { uint32_t addr, len; } dump_mem[8];
     int dump_mem_count;

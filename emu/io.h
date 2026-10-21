@@ -33,6 +33,12 @@ int  io_ps2_ready(void);                   /* PS2RDY still set (byte unread) */
  * register is write-only for the CPU; this is the emulator's view of the pins. */
 uint16_t io_gpio(void);
 
+/* PDM audio shifter (AUDIO register): HSYNC leading edge at `cycle`; apply the
+ * rotations due before `until` (call before rendering audio); current register. */
+void io_pdm_line_start(uint64_t cycle);
+void io_pdm_advance(uint64_t until);
+uint8_t io_pdm_reg(void);
+
 /* Soft-switch requests pending for the next frame. */
 int  io_pending_page(void);                /* 0 or 1 */
 int  io_pending_pal(void);                 /* 0 = NTSC, 1 = PAL */
