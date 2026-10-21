@@ -4,7 +4,7 @@
 peripherals: 1 MB RAM, the 1 MB ROM window (two SST39SF040 flash chips, in-system
 programmable) with the reset overlay, the CPLD2 registers, the soft
 switches, the 320x240 RGB332 framebuffer in an SDL2 window, the 68681 DUART (channel A is the
-serial console), the PS/2 keyboard, an SDHC card in SPI mode, the 8-bit PDM audio shifter (spec rev 5)
+serial console), the PS/2 keyboard, an SDHC card on the native 4-bit SD bus (spec rev 7), the 8-bit PDM audio shifter (spec rev 5)
 and the NMI/reset buttons.
 Addresses, bits and timing constants come from `generated/hw.h` / `generated/emu_map.h`; nothing
 is hard-coded that the spec defines.
@@ -31,6 +31,7 @@ m68k-emu --rom fw/build/rom.bin [options]
   --type STR          type STR on the PS/2 keyboard (\n = Enter)     --type-delay N   ... starting after N frames (default 120)
   --serial-type STR   feed STR into the serial port (\n = CR)         --serial-type-delay N  ... after N frames (default 120)
   --sd-trace          log SD commands to stderr                      --exit-on-berr   exit with status 2 on the first bus error
+  --sd-sdsc           emulate a byte-addressed SDSC card (CSD v1)
   --io-trace          log CPLD2 and DUART register accesses, soft switches and serial RX arrivals with cycle stamps
   --dump-regs-on-exit                                                --dump-mem ADDR LEN   hex dump at exit (repeatable)
   --no-audio          disable audio                                  --no-stdin       do not read serial RX from stdin
@@ -108,9 +109,10 @@ rate other than `SERIAL_BAUD` the emulator says so once on stderr (data still fl
 * IO region: the eight 16-bit registers repeat every 16 bytes (A1..A3 select). CPLD2 has no
   UDS/LDS, so byte accesses are undefined on hardware; here a byte read returns its half of
   the word (with the register's read side effects) and a byte write updates only that half of
-  the emulator's shadow. INTEN, SDIO, GPIO and USERIO.OUT are write-only and read as 0 (USERIO
-  reads the pin levels in bits 11..8, which follow the open-drain drive since nothing external
-  is attached); offset 10 has no register (reads 0, writes ignored); ID reads `IO_ID_RESET`.
+  the emulator's shadow. INTEN, GPIO and AUDIO are write-only and read as 0. SDIO (spec rev 7)
+  stores six open-drain drive bits for the card lines (1 = released) and reads back the line
+  levels, the AND of the host's drive and the card's; offset 12 (the old USERIO) has no
+  register (reads 0, writes ignored); ID reads `IO_ID_RESET`.
   32-bit accesses are two word accesses, high word first.
 * SWITCHES region: a write at offsets 0/2/4/6 performs PAGE0/PAGE1/NTSC/PAL; reads return
   0xFFFF.
@@ -167,12 +169,24 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   time, only while PS2RDY is clear (the register is a single holding latch). Host-to-device
   traffic on GPIO.PS2CLK/PS2DAT is not emulated; the lines read back as the GPIO drives them
   (pulled up when released).
-* **SD card** (`sdcard.c`): SPI mode 0 slave on the SDIO bits (MOSI sampled on the rising CLK
-  edge, MISO updated after the falling edge). SDHC, block addressed: CMD0, 1, 8 (R7), 9 (CSD
-  v2 with C_SIZE from the image size), 10 (CID), 12, 13, 16, 17, 18, 24, 25, 55, ACMD41 (idle
-  on the first poll, ready afterwards), 58 (OCR with CCS), 59; unknown commands get 0x04. Data
-  tokens 0xFE/0xFC/0xFD, CRC16 on data, one 0xFF before each response. MISO is 1 when CS is
-  high or no image is attached.
+* **SD card** (`sdcard.c`): a card on the native SD bus (not SPI), clocked by the host's
+  writes to SDIO.CLK: it samples CMD and DAT0..3 on the rising edge and changes its own outputs
+  after the falling edge, so a host that lowers CLK, reads SDIO, then raises CLK sees the card's
+  bits at the right time. Every line is open drain: the card drives 0 or releases, and SDIO reads
+  the AND of both sides. Commands are 48-bit frames with CRC7, which the card checks (bad CRC: no
+  response, COM_CRC_ERROR in the next one; unknown command or wrong state: no response,
+  ILLEGAL_COMMAND in the next one). Supported: CMD0 (no response), CMD2 (CID), CMD3 (RCA 0x1234,
+  R6), CMD7, CMD8 (R7 echo), CMD9 (CSD v2 sized from the image, v1 with `--sd-sdsc`), CMD10,
+  CMD12, CMD13, CMD16 (512 only), CMD17, CMD18, CMD24, CMD25, CMD55, ACMD6 (bus width 1 or 4),
+  ACMD41 (busy on the first poll, ready on the second; an SDHC card needs CMD8 first and HCS set,
+  as real cards do; OCR then has CCS), ACMD51 (SCR). Timing: response start bit 8 clocks after
+  the command's end bit (Ncr), read data start bit 8 clocks after the response (Nac), CRC status
+  token 2 clocks after a written block's end bit, then DAT0 busy for 16 clocks. Data blocks are
+  512 bytes: 1 bit per clock on DAT0, or after ACMD6 a nibble per clock on DAT3..0 (DAT3 = MSB,
+  high nibble of a byte first), each line followed by its own CRC16-CCITT and an end bit; a write
+  reaches the image only when every CRC is right (token 010), otherwise token 101. Block
+  addressing (SDHC) by default; `--sd-sdsc` makes a byte-addressed SDSC card. `--sd-trace` logs
+  every command, state change and block transfer.
 * **Audio** (`io.c`, `audio.c`): the AUDIO register (byte offset 10, write-only) loads an 8-bit
   rotating shift register whose bit 7 is the audio pin. It rotates left at each line start (the
   HSYNC leading edge) and then every 24 slots = 96 CPU clocks, 8 slots per line; the slot
@@ -195,7 +209,7 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
 `make -C emu test` assembles `test/test.S` (vectors with SSP = SYS_STACK_TOP and PC in ROM),
 runs it with `--headless --fast --frames 120 --serial-type ABCDEF --serial-type-delay 1
 --serial-log ... --dump-mem 0x800 96` plus an SD image whose block 0 carries a signature, and
-`test/check.sh` verifies (56 checks): RAM pattern, ID register, the gradient fill runs, the
+`test/check.sh` verifies (57 checks of the ROM run, plus `test/sdtest`, a host-side unit test of the card model: CRC7 and CRC16, 1-bit and 4-bit reads and writes, the CRC status token and busy, bad-CRC and illegal commands, out-of-range and CMD18/CMD12; 50 checks): RAM pattern, ID register, the gradient fill runs, the
 DUART init sequence from the spec (IVR 0x0F at reset, MR1A/MR2A read back through the pointer,
 SRA = TXRDY+TXEMT after enable), "HELLO\n" sent by polling TXRDY appears on stdout and in the
 serial log (and SRA reads 0 while a byte shifts with another in the holding register), a word
@@ -209,8 +223,9 @@ during the three-frame VBLANK wait, VBLANK autovector interrupts are counted (an
 the handler shows VSYNCPIN without DEPIN), lines per frame measured by counting HSYNC flags
 between VBLANKs are 262/312/262 across SW_PAL and SW_NTSC, a read of 0x400000 produces exactly
 one bus error whose frame carries fault address 0x400000 and access info 0x0015 (read,
-supervisor data), the SD card answers CMD0/CMD8/ACMD41/CMD58/CMD17 and block 0 matches (MISO
-read through INTSTAT.SDMISO), stdout equals the serial log, the end-of-run summary counts 6 bytes
+supervisor data), the SD card (native bus, 1-bit) gives CMD0 no response, answers CMD8 with the R7 echo, ACMD41
+twice (ready with CCS on the second poll), CMD2, CMD3 (RCA 0x1234), CMD7 and CMD17, and block 0
+matches, stdout equals the serial log, the end-of-run summary counts 6 bytes
 in with 2 overruns, and the total cycle count is a whole number of frames. The PDM shifter is
 checked from `--audio-edge-log`: after one write of 0xB1 every line produces 4 edges, alternating,
 three of the four gaps per line are exactly 96/192/288 clocks and the one spanning the line start
@@ -228,7 +243,7 @@ is a 1..3 slot run plus the line-start jitter; the `--audio-wav` file has a cons
 | `duart.c/h` | MC68681 model: channels, FIFOs, ISR/IMR, counter/timer, bit timing |
 | `serial.c/h` | console back end: stdout, logs, stdin raw mode, `--serial-type` |
 | `ps2.c/h` | scan code set 2 keyboard, `--type` |
-| `sdcard.c/h` | SPI-mode SDHC card |
+| `sdcard.c/h` | native-bus SD card (1- and 4-bit data, CRC7/CRC16, state machine) |
 | `audio.c/h` | audio pin renderer: edges -> 48 kHz, SDL queue, `--audio-wav`, `--audio-edge-log` |
 | `m68kconf.h` | Musashi configuration (68000 only, INT_ACK, FC macro) |
 | `musashi/` | vendored Musashi core (+ `musashi-berr-frame.patch`) |

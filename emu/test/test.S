@@ -19,7 +19,7 @@
 	.equ RES_ID,       RES_BASE+18     /* .w ID register */
 	.equ RES_UNEXP,    RES_BASE+20     /* .w 0xDEAD / 0xAE00 on unexpected exceptions */
 	.equ RES_INTSTAT,  RES_BASE+22     /* .w INTSTAT sampled inside the VBLANK handler */
-	.equ RES_SDR1,     RES_BASE+24     /* .b x4: R1 of CMD0, CMD8, ACMD41 (final), CMD58 */
+	.equ RES_SDR1,     RES_BASE+24     /* .b x4: R7 index (08), ACMD41 polls, CMD7 R1 index, CMD17 R1 index */
 	.equ RES_SDOCR,    RES_BASE+28     /* .l OCR */
 	.equ RES_SDDATA,   RES_BASE+32     /* 16 bytes: start of block 0 */
 	.equ RES_LINES0,   RES_BASE+48     /* .w lines per frame measured (NTSC) */
@@ -48,12 +48,13 @@
 	.equ GPIO_SHADOW,  0x000900        /* .w GPIO is write-only: software shadow */
 	.equ RXBUF_PTR,    0x000904        /* .l fill pointer into RES_RXBUF */
 	.equ SD_BUF,       0x001000        /* 512-byte block buffer */
+	.equ RESP_BUF,     0x001201        /* 17-byte response buffer (odd, so the fields after the index byte are word aligned) */
 
 	.equ SD_OK_CMD0,   0x0001
 	.equ SD_OK_CMD8,   0x0002
 	.equ SD_OK_ACMD41, 0x0004
-	.equ SD_OK_CMD58,  0x0008
-	.equ SD_OK_CMD17,  0x0010
+	.equ SD_OK_IDENT,  0x0008
+	.equ SD_OK_CMD7,   0x0010
 	.equ SD_OK_DATA,   0x0020
 
 	.equ GPIO_IDLE,    IO_GPIO_RESET   /* PS/2 released */
@@ -295,134 +296,193 @@ count_lines:
 	rts
 
 /* ---------------------------------------------------------------------- */
-/* spi_byte: d0.b out -> d0.b in.  a0 = IO_SDIO_ADDR, d6 = CS bit (0 =
- * selected).  Mode 0: set MOSI with CLK low, raise CLK, sample MISO (via
- * INTSTAT.SDMISO: SDIO is write-only), lower CLK.  Clobbers d1-d5. */
-spi_byte:
-	moveq	#7,%d2
-	moveq	#0,%d3
-spi_bit:
-	move.w	%d6,%d1
-	add.b	%d0,%d0				/* MSB -> C */
-	bcc.s	1f
-	ori.w	#SDIO_MOSI_MASK,%d1
-1:	move.w	%d1,(%a0)			/* data out, CLK low */
-	move.w	%d1,%d5
-	ori.w	#SDIO_CLK_MASK,%d5
-	move.w	%d5,(%a0)			/* CLK high: card samples MOSI */
-	move.w	IO_INTSTAT_ADDR,%d4
-	add.b	%d3,%d3
-	btst	#INTSTAT_SDMISO_BIT,%d4
-	beq.s	2f
-	addq.b	#1,%d3
-2:	move.w	%d1,(%a0)			/* CLK low */
-	dbra	%d2,spi_bit
-	move.b	%d3,%d0
+/* ---- SD card on the native bus (spec rev 7), 1-bit data ----
+ * SDIO bits: DAT3 0, CLK 1, CMD 2, DAT0 3, DAT1 4, DAT2 5; 1 = released, 0 = driven low.
+ * sd_tick: d0.w = drive bits (CLK ignored).  Lowers CLK with them, samples the lines into
+ * d1.w (the card changes its outputs after the falling edge), raises CLK (the card samples
+ * on the rising edge).  a0 = IO_SDIO_ADDR.  Clobbers d2. */
+sd_tick:
+	move.w	%d0,%d2
+	andi.w	#0x3D,%d2
+	move.w	%d2,(%a0)			/* CLK low */
+	move.w	(%a0),%d1			/* line levels */
+	ori.w	#SDIO_CLK_MASK,%d2
+	move.w	%d2,(%a0)			/* CLK high */
 	rts
 
-/* sd_cmd: a1 -> 6 command bytes.  Sends them, polls up to 8 bytes for a
- * response (first byte != 0xFF) and returns it in d0.b (0xFF = none). */
-sd_cmd:
+/* sd_send: a1 -> 48-bit command frame (6 bytes, CRC7 and end bit included), MSB first.
+ * Clobbers d0-d4, d7. */
+sd_send:
 	moveq	#5,%d7
-1:	move.b	(%a1)+,%d0
-	bsr	spi_byte
+1:	move.b	(%a1)+,%d3
+	moveq	#7,%d4
+2:	move.w	#0x3F,%d0
+	add.b	%d3,%d3				/* MSB -> C */
+	bcs.s	3f
+	andi.w	#0x3B,%d0			/* CMD low */
+3:	bsr	sd_tick
+	dbra	%d4,2b
 	dbra	%d7,1b
-	moveq	#7,%d7
-2:	moveq	#-1,%d0
-	bsr	spi_byte
-	cmp.b	#0xFF,%d0
-	bne.s	3f
-	dbra	%d7,2b
-3:	rts
+	rts
+
+/* sd_resp: d5.w = response length in bits (48 or 136), a2 -> buffer.  Waits up to 64
+ * clocks for the start bit, then stores the frame MSB first (start bit included).
+ * d0.l = 0, or -1 on timeout.  Clobbers d1-d4, d6, d7. */
+sd_resp:
+	moveq	#63,%d7
+1:	move.w	#0x3F,%d0
+	bsr	sd_tick
+	btst	#SDIO_CMD_BIT,%d1
+	beq.s	2f
+	dbra	%d7,1b
+	moveq	#-1,%d0
+	rts
+2:	move.w	%d5,%d7
+	subq.w	#2,%d7				/* d5-1 more bits */
+	moveq	#0,%d6				/* accumulator, start bit = 0 already in */
+	moveq	#1,%d3				/* bits in the accumulator */
+3:	move.w	#0x3F,%d0
+	bsr	sd_tick
+	add.b	%d6,%d6
+	btst	#SDIO_CMD_BIT,%d1
+	beq.s	4f
+	addq.b	#1,%d6
+4:	addq.w	#1,%d3
+	cmpi.w	#8,%d3
+	bne.s	5f
+	move.b	%d6,(%a2)+
+	moveq	#0,%d3
+	moveq	#0,%d6
+5:	dbra	%d7,3b
+	moveq	#0,%d0
+	rts
+
+/* sd_read1: one 512-byte block in 1-bit mode into SD_BUF (start bit on DAT0 within 1000
+ * clocks, 4096 data bits, 16 CRC bits and the end bit are clocked but not checked).
+ * d0.l = 0 / -1.  Clobbers d1-d4, d6, d7, a2. */
+sd_read1:
+	move.w	#999,%d7
+1:	move.w	#0x3F,%d0
+	bsr	sd_tick
+	btst	#SDIO_DAT0_BIT,%d1
+	beq.s	2f
+	dbra	%d7,1b
+	moveq	#-1,%d0
+	rts
+2:	lea	SD_BUF,%a2
+	move.w	#511,%d7
+3:	moveq	#7,%d4
+	moveq	#0,%d6
+4:	move.w	#0x3F,%d0
+	bsr	sd_tick
+	add.b	%d6,%d6
+	btst	#SDIO_DAT0_BIT,%d1
+	beq.s	5f
+	addq.b	#1,%d6
+5:	dbra	%d4,4b
+	move.b	%d6,(%a2)+
+	dbra	%d7,3b
+	moveq	#16,%d7				/* 16 CRC bits + end bit */
+6:	move.w	#0x3F,%d0
+	bsr	sd_tick
+	dbra	%d7,6b
+	moveq	#0,%d0
+	rts
+
+/* sd_cmd48: a1 -> frame; sends it and reads a 48-bit response into RESP_BUF.  d0.l = 0/-1. */
+sd_cmd48:
+	bsr	sd_send
+	lea	RESP_BUF,%a2
+	moveq	#48,%d5
+	bra	sd_resp
 
 sd_test:
 	lea	IO_SDIO_ADDR,%a0
-	/* 80 clocks with CS high. */
-	moveq	#SDIO_CS_MASK,%d6
-	moveq	#9,%d7
-1:	moveq	#-1,%d0
-	bsr	spi_byte
+	moveq	#79,%d7				/* 80 clocks, everything released */
+1:	move.w	#0x3F,%d0
+	bsr	sd_tick
 	dbra	%d7,1b
-	moveq	#0,%d6				/* select */
 
-	/* CMD0 -> 0x01 */
+	/* CMD0: must get NO response */
 	lea	cmd0,%a1
-	bsr	sd_cmd
-	move.b	%d0,RES_SDR1+0
-	cmp.b	#0x01,%d0
-	bne	sd_fail
+	bsr	sd_cmd48
+	tst.l	%d0
+	beq	sd_fail
 	ori.w	#SD_OK_CMD0,RES_SD
 
-	/* CMD8 -> 0x01 + 00 00 01 AA */
+	/* CMD8 -> R7: index 8, echo 0x000001AA */
 	lea	cmd8,%a1
-	bsr	sd_cmd
-	move.b	%d0,RES_SDR1+1
-	cmp.b	#0x01,%d0
+	bsr	sd_cmd48
+	tst.l	%d0
 	bne	sd_fail
-	moveq	#3,%d7
-1:	moveq	#-1,%d0
-	bsr	spi_byte
-	dbra	%d7,1b
-	cmp.b	#0xAA,%d0
+	move.b	RESP_BUF,RES_SDR1+0
+	cmpi.b	#0x08,RESP_BUF
+	bne	sd_fail
+	cmpi.b	#0x01,RESP_BUF+3
+	bne	sd_fail
+	cmpi.b	#0xAA,RESP_BUF+4
 	bne	sd_fail
 	ori.w	#SD_OK_CMD8,RES_SD
 
-	/* CMD55 + ACMD41 until R1 == 0 (at most 100 tries) */
-	move.w	#99,%d7
+	/* CMD55 + ACMD41 (HCS) until OCR bit 31, at most 10 times */
+	moveq	#9,%d7
 acmd41_loop:
 	move.w	%d7,-(%sp)
 	lea	cmd55,%a1
-	bsr	sd_cmd
+	bsr	sd_cmd48
 	lea	acmd41,%a1
-	bsr	sd_cmd
+	bsr	sd_cmd48
 	move.w	(%sp)+,%d7
-	move.b	%d0,RES_SDR1+2
-	tst.b	%d0
-	beq.s	acmd41_ok
+	tst.l	%d0
+	bne	sd_fail
+	addq.b	#1,RES_SDR1+1			/* polls */
+	btst	#7,RESP_BUF+1			/* OCR bit 31: ready */
+	bne.s	acmd41_ok
 	dbra	%d7,acmd41_loop
 	bra	sd_fail
 acmd41_ok:
+	move.l	RESP_BUF+1,RES_SDOCR
 	ori.w	#SD_OK_ACMD41,RES_SD
 
-	/* CMD58 -> 0x00 + OCR (CCS set) */
-	lea	cmd58,%a1
-	bsr	sd_cmd
-	move.b	%d0,RES_SDR1+3
-	tst.b	%d0
+	/* CMD2 -> R2 (136 bits), CMD3 -> R6 with RCA 0x1234 */
+	lea	cmd2,%a1
+	bsr	sd_send
+	lea	RESP_BUF,%a2
+	move.w	#136,%d5
+	bsr	sd_resp
+	tst.l	%d0
 	bne	sd_fail
-	lea	RES_SDOCR,%a2
-	moveq	#3,%d7
-1:	moveq	#-1,%d0
-	bsr	spi_byte
-	move.b	%d0,(%a2)+
-	dbra	%d7,1b
-	btst	#6,RES_SDOCR
-	beq	sd_fail
-	ori.w	#SD_OK_CMD58,RES_SD
+	cmpi.b	#0x3F,RESP_BUF
+	bne	sd_fail
+	lea	cmd3,%a1
+	bsr	sd_cmd48
+	tst.l	%d0
+	bne	sd_fail
+	cmpi.w	#0x1234,RESP_BUF+1
+	bne	sd_fail
+	ori.w	#SD_OK_IDENT,RES_SD
 
-	/* CMD17 block 0 -> 0x00, then 0xFE + 512 bytes + CRC */
-	lea	cmd17,%a1
-	bsr	sd_cmd
-	tst.b	%d0
+	/* CMD7 (RCA 0x1234) -> R1, state tran */
+	lea	cmd7,%a1
+	bsr	sd_cmd48
+	tst.l	%d0
 	bne	sd_fail
-	ori.w	#SD_OK_CMD17,RES_SD
-	move.w	#999,%d7
-1:	moveq	#-1,%d0
-	bsr	spi_byte
-	cmp.b	#0xFE,%d0
-	beq.s	2f
-	dbra	%d7,1b
-	bra	sd_fail
-2:	lea	SD_BUF,%a2
-	move.w	#511,%d7
-3:	moveq	#-1,%d0
-	bsr	spi_byte
-	move.b	%d0,(%a2)+
-	dbra	%d7,3b
-	moveq	#-1,%d0
-	bsr	spi_byte			/* CRC */
-	moveq	#-1,%d0
-	bsr	spi_byte
+	move.b	RESP_BUF,RES_SDR1+2
+	cmpi.b	#0x07,RESP_BUF
+	bne	sd_fail
+	ori.w	#SD_OK_CMD7,RES_SD
+
+	/* CMD17 block 0 -> R1, then the block on DAT0 */
+	lea	cmd17,%a1
+	bsr	sd_cmd48
+	tst.l	%d0
+	bne	sd_fail
+	move.b	RESP_BUF,RES_SDR1+3
+	cmpi.b	#0x11,RESP_BUF
+	bne	sd_fail
+	bsr	sd_read1
+	tst.l	%d0
+	bne	sd_fail
 	ori.w	#SD_OK_DATA,RES_SD
 	lea	SD_BUF,%a2
 	lea	RES_SDDATA,%a3
@@ -431,10 +491,10 @@ acmd41_ok:
 	dbra	%d7,4b
 
 sd_fail:
-	/* Deselect and clock once. */
-	moveq	#SDIO_CS_MASK,%d6
-	moveq	#-1,%d0
-	bsr	spi_byte
+	moveq	#7,%d7				/* leave the bus released, 8 clocks */
+1:	move.w	#0x3F,%d0
+	bsr	sd_tick
+	dbra	%d7,1b
 	rts
 
 /* ---------------------------------------------------------------------- */
@@ -502,5 +562,7 @@ cmd0:	.byte	0x40,0x00,0x00,0x00,0x00,0x95
 cmd8:	.byte	0x48,0x00,0x00,0x01,0xAA,0x87
 cmd55:	.byte	0x77,0x00,0x00,0x00,0x00,0x65
 acmd41:	.byte	0x69,0x40,0x00,0x00,0x00,0x77
-cmd58:	.byte	0x7A,0x00,0x00,0x00,0x00,0xFD
-cmd17:	.byte	0x51,0x00,0x00,0x00,0x00,0xFF
+cmd2:	.byte	0x42,0x00,0x00,0x00,0x00,0x4D
+cmd3:	.byte	0x43,0x00,0x00,0x00,0x00,0x21
+cmd7:	.byte	0x47,0x12,0x34,0x00,0x00,0x59
+cmd17:	.byte	0x51,0x00,0x00,0x00,0x00,0x55

@@ -8,6 +8,7 @@ OBJDUMP = $(CROSS)objdump
 GEN     = ../../generated
 B       = build
 EMU     = ../build/m68k-emu
+HOSTCC ?= cc
 
 .PHONY: all check clean rom
 
@@ -33,7 +34,11 @@ $(B)/sd.img: | $(B)
 	printf 'M68K-SD-TEST-BLOCK0\n' > $@
 	truncate -s 1M $@
 
-check: $(B)/test.bin $(B)/test.lst $(B)/sd.img
+# host-side unit test of the native-mode SD card model
+$(B)/sdtest: sdtest.c ../sdcard.c ../sdcard.h $(GEN)/hw.h | $(B)
+	$(HOSTCC) -std=gnu11 -O1 -g -Wall -Wextra -I$(GEN) -I.. -o $@ sdtest.c ../sdcard.c
+
+check: $(B)/test.bin $(B)/test.lst $(B)/sd.img $(B)/sdtest
 	@test -x $(EMU) || { echo "test: build the emulator first (make -C emu)"; exit 1; }
 	./check.sh $(EMU) $(B)
 

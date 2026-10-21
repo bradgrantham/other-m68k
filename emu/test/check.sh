@@ -76,10 +76,16 @@ check "VBLANK interrupts counted (>= 50)" [ "$(hexval "$VBLANKS")" -ge 50 ]
 check "VBLANK interrupts counted (<= 120)" [ "$(hexval "$VBLANKS")" -le 120 ]
 check "INTSTAT in handler: VBLANK flag + VSYNCPIN, no DEPIN" \
     [ $(( $(hexval "$INTSTAT") & 0x6001 )) -eq $(( 0x2001 )) ]
-check "SD: CMD0/CMD8/ACMD41/CMD58/CMD17/data all OK (flags $SDFLAGS)" [ "$SDFLAGS" = "003F" ]
-check "SD: OCR has CCS" [ "$(echo "$OCR" | cut -c1-2)" = "C0" ]
+# SD, native bus: CMD0 (no response), CMD8 R7, CMD55/ACMD41 until ready, CMD2, CMD3, CMD7, CMD17 (1-bit)
+check "SD: CMD0/CMD8/ACMD41/CMD2+3/CMD7/CMD17 data all OK (flags $SDFLAGS)" [ "$SDFLAGS" = "003F" ]
+check "SD: R7 index, 2 ACMD41 polls, CMD7 and CMD17 R1 indexes (got $SDR1)" [ "$SDR1" = "08020711" ]
+check "SD: OCR ready with CCS" [ "$(echo "$OCR" | cut -c1-2)" = "C0" ]
 check "SD: block 0 contents" [ "$SDDATA" = "$(printf 'M68K-SD-TEST-BLO' | od -An -tx1 | tr -d ' \n' | tr 'a-f' 'A-F')" ]
-check "SD trace lists the 8 commands" [ "$(grep -c 'sd: .*CMD' "$B/stderr.txt")" -eq 8 ]
+check "SD trace lists the 10 commands and the block read" [ "$(grep -c 'm68k-emu: sd: ' "$B/stderr.txt")" -eq 11 ]
+# host-side unit test of the card model (CRC7/CRC16, 1- and 4-bit reads and writes, errors)
+"$B/sdtest" > "$B/sdtest.txt" 2>&1; sdstatus=$?
+cat "$B/sdtest.txt"
+if [ $sdstatus -ne 0 ] || grep -q '^FAIL' "$B/sdtest.txt"; then fail=1; fi
 check "lines per frame: NTSC 262 before the switch" [ "$(hexval "$LINES0")" -eq 262 ]
 check "lines per frame: PAL 312 after SW_PAL" [ "$(hexval "$LINES1")" -eq 312 ]
 check "lines per frame: NTSC 262 after SW_NTSC" [ "$(hexval "$LINES2")" -eq 262 ]

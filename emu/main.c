@@ -236,6 +236,7 @@ static void usage(FILE *f)
         "  --serial-type STR   feed STR into the serial port (DUART channel A, \\n = CR)\n"
         "  --serial-type-delay N  ... after N frames (default 120)\n"
         "  --sd-trace          log SD card commands to stderr\n"
+        "  --sd-sdsc           emulate a byte-addressed SDSC card (CSD v1) instead of SDHC\n"
         "  --io-trace          log CPLD2 register accesses and soft switches to stderr\n"
         "  --exit-on-berr      exit with status 2 on the first bus error\n"
         "  --dump-regs-on-exit print the CPU registers at exit\n"
@@ -298,6 +299,7 @@ static void parse_args(int argc, char **argv)
         else if (!strcmp(a, "--serial-type")) opts.serial_type_text = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--serial-type-delay")) opts.serial_type_delay = (int)parse_num(need_arg(argc, argv, &i), "frame count");
         else if (!strcmp(a, "--sd-trace")) opts.sd_trace = 1;
+        else if (!strcmp(a, "--sd-sdsc")) opts.sd_sdsc = 1;
         else if (!strcmp(a, "--io-trace")) opts.io_trace = 1;
         else if (!strcmp(a, "--exit-on-berr")) opts.exit_on_berr = 1;
         else if (!strcmp(a, "--dump-regs-on-exit")) opts.dump_regs = 1;
@@ -379,7 +381,7 @@ int main(int argc, char **argv)
     signal(SIGTERM, on_signal);
     signal(SIGHUP, on_signal);
 
-    if (sd_init(opts.sd_path, opts.sd_trace) != 0)
+    if (sd_init(opts.sd_path, opts.sd_trace, opts.sd_sdsc) != 0)
         return 1;
 
     if (!opts.headless) {

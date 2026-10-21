@@ -4,8 +4,11 @@
  * region).  CPLD2 has no UDS/LDS, so byte accesses are undefined on the real
  * board; here a byte read returns its half of the word and a byte write
  * updates only that half of the shadow (the least surprising choice for
- * software).  INTEN, SDIO, GPIO, AUDIO and USERIO.OUT are write-only on the
- * board (they read as 0); the emulator keeps the written values as the pin state.
+ * software).  INTEN, GPIO and AUDIO are write-only on the board (they read as 0);
+ * the emulator keeps the written values as the pin state.  SDIO (spec rev 7) holds
+ * six open-drain drive bits for the SD card lines and reads back the line levels,
+ * the AND of the host's drive and the card's (sdcard.c).  Offset 12 (the old USERIO)
+ * has no register.
  *
  * AUDIO (spec rev 5) loads an 8-bit rotating shift register whose bit 7 is the
  * audio pin.  CPLD2 rotates it left at the HSYNC leading edge and then every 24
@@ -34,7 +37,6 @@ static uint16_t inten;
 static uint16_t sdio;
 static uint16_t gpio;
 static uint16_t ps2data;
-static uint16_t userio;
 static int nmi_held;
 static int cur_ipl = -1;
 static int pending_page;
@@ -43,7 +45,7 @@ static int pending_pal;
 #define FLAG_MASK (INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2RDY | INTSTAT_PS2ERR)
 #define W1C_MASK  (INTSTAT_VBLANK | INTSTAT_HSYNC | INTSTAT_PS2ERR)
 #define INTEN_MASK (INTEN_VBLANK | INTEN_HSYNC | INTEN_PS2 | INTEN_DUART)
-#define SDIO_OUT_MASK (SDIO_CS | SDIO_CLK | SDIO_MOSI)
+#define SDIO_OUT_MASK (SDIO_DAT3 | SDIO_CLK | SDIO_CMD | SDIO_DAT0 | SDIO_DAT1 | SDIO_DAT2)
 #define GPIO_MASK (GPIO_PS2CLK | GPIO_PS2DAT | GPIO_LED0 | GPIO_LED1)   /* bit 2 retired in rev 5 */
 
 /* PDM audio shifter */
@@ -67,14 +69,13 @@ void io_reset(void)
     sdio = IO_SDIO_RESET;
     gpio = IO_GPIO_RESET;
     ps2data = 0;
-    userio = IO_USERIO_RESET;
     pending_page = 0;
     pending_pal = 0;
     cur_ipl = -1;
     pdm_reg = 0;
     pdm_k = 0;
     pdm_valid = 0;
-    sd_pins(sdio & SDIO_CS, (sdio & SDIO_CLK) != 0, (sdio & SDIO_MOSI) != 0);
+    sd_bus(sdio);
     io_update_ipl();
 }
 
@@ -163,8 +164,6 @@ static uint16_t intstat_value(void)
         v |= INTSTAT_DUARTIRQ;
     if (nmi_held)
         v |= INTSTAT_NMIBTN;
-    if (sd_miso())
-        v |= INTSTAT_SDMISO;
     /* PS/2 lines are open-drain with pull-ups: high unless the GPIO drives
      * them low (the keyboard is idle between frames). */
     if (gpio & GPIO_PS2CLK)
@@ -177,23 +176,15 @@ static uint16_t intstat_value(void)
     return v;
 }
 
-static uint16_t userio_value(void)
-{
-    /* OUT is write-only.  Nothing external drives the header pins, so the IN
-     * nibble reads back the open-drain drive (pulled up when released). */
-    return (uint16_t)((userio & USERIO_OUT_MASK) << USERIO_IN_SHIFT);
-}
-
 uint16_t io_peek16(uint32_t offset)
 {
     switch (offset & 0xE) {
     case IO_INTSTAT_OFFSET: return intstat_value();
     case IO_INTEN_OFFSET:   return 0;                   /* write-only */
-    case IO_SDIO_OFFSET:    return 0;                   /* write-only */
+    case IO_SDIO_OFFSET:    return (uint16_t)(sdio & sd_lines());  /* line levels */
     case IO_GPIO_OFFSET:    return 0;                   /* write-only */
     case IO_AUDIO_OFFSET:   return 0;                   /* write-only */
     case IO_PS2DATA_OFFSET: return ps2data;
-    case IO_USERIO_OFFSET:  return userio_value();
     case IO_ID_OFFSET:      return IO_ID_RESET;
     default:                return 0;                   /* unassigned: no register */
     }
@@ -297,7 +288,7 @@ void io_write16(uint32_t offset, uint16_t val, int lanes)
         break;
     case IO_SDIO_OFFSET:
         sdio = lane_merge(sdio, val, lanes) & SDIO_OUT_MASK;
-        sd_pins((sdio & SDIO_CS) != 0, (sdio & SDIO_CLK) != 0, (sdio & SDIO_MOSI) != 0);
+        sd_bus(sdio);
         break;
     case IO_GPIO_OFFSET:
         gpio_write(lane_merge(gpio, val, lanes));
@@ -306,9 +297,6 @@ void io_write16(uint32_t offset, uint16_t val, int lanes)
         break;                      /* read only */
     case IO_AUDIO_OFFSET:
         pdm_write((uint8_t)lane_merge(pdm_reg, val, lanes));
-        break;
-    case IO_USERIO_OFFSET:
-        userio = lane_merge(userio, val, lanes) & USERIO_OUT_MASK;
         break;
     case IO_ID_OFFSET:
         break;                      /* read only */

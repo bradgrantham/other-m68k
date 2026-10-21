@@ -12,12 +12,12 @@ the top-level `make emu` works. See README.md for usage, the timing model and th
 |---|---|
 | `main.c` | options, Musashi init, per-scanline loop with overshoot carry, real-time pacing, SDL events (F11 reset, F12/Pause NMI), trace/break hook, register and memory dumps, `--type` (PS/2) and `--serial-type` (DUART) injection |
 | `bus.c/h` | decode from `generated/hw.h`, RAM/ROM, reset overlay, 68000 group-0 BERR frame, rate-limited BERR log, double-fault HALT detection, DUART region (odd-byte registers, word/even-byte warnings), disassembler peeks |
-| `io.c/h` | CPLD2 registers (INTSTAT W1C + live pins incl. DUARTIRQ, write-only INTEN/SDIO/GPIO/AUDIO/USERIO.OUT kept as shadows, PS2DATA, USERIO.IN, ID), the rev 5 PDM audio shifter (8 rotations per line, lazily evaluated, cycle-exact edges), IPL recomputation with the level-3 DUART source, soft-switch latches, `--io-trace` |
+| `io.c/h` | CPLD2 registers (INTSTAT W1C + live pins incl. DUARTIRQ, write-only INTEN/GPIO/AUDIO kept as shadows, SDIO open-drain drive bits with line read-back (rev 7), PS2DATA, ID; offset 12 unassigned since USERIO went), the rev 5 PDM audio shifter (8 rotations per line, lazily evaluated, cycle-exact edges), IPL recomputation with the level-3 DUART source, soft-switch latches, `--io-trace` |
 | `duart.c/h` | MC68681: two channels (MR1/MR2 pointer, CSR, CR, SR, 3-deep RX FIFO + shift register, TX holding + shift register with cycle-timed completion), ISR/IMR, IVR, ACR, counter/timer (counter and timer modes, X1 and X1/16 and TxC sources, START/STOP commands, CUR/CLR), IP/IPCR/OPCR/OPR, data-sheet baud table, reset state |
 | `serial.c/h` | console back end: stdout + `--serial-log` for channel A, `--duart-b-log` for channel B, stdin raw mode, `--serial-type` queue |
 | `video.c/h` | NTSC/PAL tables, line/flag timing, live HSYNC/DE/VSYNC pins, RGB332 -> ARGB8888, SDL window, title with LEDs |
 | `ps2.c/h` | scan code set 2 keyboard with E0/F0, 1 ms per byte, `--type` |
-| `sdcard.c/h` | SPI mode 0 SDHC card: CMD0/1/8/9/10/12/13/16/17/18/24/25/55/58/59, ACMD41 |
+| `sdcard.c/h` | native-bus SD card (spec rev 7): CMD0/2/3/7/8/9/10/12/13/16/17/18/24/25/55, ACMD6/41/51; CRC7 checked, CRC16 per data line, 1- and 4-bit data, state machine with status bits; SDHC (default) or SDSC (`--sd-sdsc`) |
 | `audio.c/h` | audio pin edges -> 48 kHz mono, SDL queue, `--audio-wav` (all modes, from cycle 0), `--audio-edge-log` |
 | `m68kconf.h` | 68000-only Musashi config |
 | `musashi/` | vendored core with `musashi-berr-frame.patch` applied |
@@ -41,8 +41,9 @@ SERRX/SERRXOVR/SERTXBUSY/SERRXPIN INTSTAT bits (none of them exist on the rev 2 
   shows VBLANK + VSYNCPIN with DEPIN clear.
 * Reading 0x400000 gives one BERR; the stacked frame carries fault address 0x400000 and
   access info 0x0015 (read, FC 5); the handler can RTE to a patched PC.
-* SD init sequence and CMD17 of block 0 from a 1 MB image succeed (MISO through
-  INTSTAT.SDMISO), OCR has CCS.
+* SD native-bus init (CMD0, CMD8, ACMD41 x2, CMD2, CMD3, CMD7) and a 1-bit CMD17 of block 0
+  from a 1 MB image succeed in the test ROM; `test/sdtest` exercises the card model from a host
+  program (4-bit reads/writes with CRC16s, the CRC status token, bad-CRC and illegal commands).
 * The real firmware (`fw/build/rom.bin` from commit cc49c7b / d4e453c, the DUART port) boots:
   POST, banner ("ID 6802  NTSC  DUART 38400 8N1") and monitor prompt appear on stdout; `help`
   fed in with `--serial-type 'help\n' --serial-type-delay 150` or piped on stdin is answered.
@@ -83,7 +84,7 @@ SERRX/SERRXOVR/SERTXBUSY/SERRXPIN INTSTAT bits (none of them exist on the rev 2 
   present at frame end.  `--pal` sets PALJMP only.
 * stdout = serial (channel A) bytes only; everything else on stderr.  Exit codes 0/1/2/3.
 * Not modelled: RAM slot-alignment penalty (documented), PS/2 host-to-device bit-bang (lines
-  read back as driven), ACMD13/CMD6 and other rarely used SD commands (return 0x04), DUART
+  read back as driven), ACMD13/CMD6 and other rarely used SD commands (no response, ILLEGAL_COMMAND), DUART
   parity/framing/break detection, CTS/RTS, loopback/multidrop, input-port change interrupts,
   OP-pin clock outputs, channel B receive.
 
@@ -109,8 +110,8 @@ SERRX/SERRXOVR/SERTXBUSY/SERRXPIN INTSTAT bits (none of them exist on the rev 2 
 5. `HARDWARE.md`/spec say the IO region is "16-bit word access only"; the behaviour of byte
    accesses should be stated (this emulator: lane-masked halves) or the firmware forbidden
    from using them.
-6. `SDIO` reset value 0x0003 leaves CLK high; SPI mode 0 wants CLK idle low.  Harmless (the
-   driver lowers it) but 0x0001 would be the natural reset value.
+6. (resolved in spec rev 7: SDIO resets to 0x003F, every line released, CLK idle high as the
+   native SD bus allows.)
 7. `docs/architecture.md` section 8 says the 68681 model offers "baud-independent delivery";
    the emulator now times transmit completion and receive arrival by the bit rate, so that
    phrase could be dropped.

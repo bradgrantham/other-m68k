@@ -25,6 +25,7 @@ struct emu_opts {
     int type_delay;
     int serial_type_delay;
     int sd_trace;
+    int sd_sdsc;                /* emulate a byte-addressed SDSC card */
     int io_trace;
     int exit_on_berr;
     int dump_regs;
