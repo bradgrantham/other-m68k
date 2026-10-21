@@ -1,40 +1,62 @@
 # Rev C ideas (collected after the rev B4 order, 2026-10-20)
 
-Nothing here is designed yet. The user's current preference is **VGA** (below); the
-composite/S-video section further down is the fallback if a TV output must stay.
+Nothing here is designed yet. Decision 2026-10-21: **stay with composite video at 320
+pixels**; VGA was considered (section at the end, kept for the record) and dropped as
+the wrong class of output for this machine.
 
-## VGA (preferred direction)
+## Audio: 8-bit PDM shifter in CPLD2 (feasibility checked 2026-10-21, fits)
 
-Drop the AD724, its crystal and trim capacitor, and the RCA jack. CPLD2's RGB bits drive
-three resistor ladders into 75 ohm (0.7 V full scale); HSYNC/VSYNC go to the HD-15 as
-TTL straight from CPLD1. Fewer parts than composite, no artefacts, and every monitor or
-cheap VGA-to-HDMI adapter accepts 640x480 at 60 Hz.
+Today GPIO.AUDIO is one flip-flop toggled by software, so sampled sound is 1 bit at the
+line rate (15.7 kHz) and costs the CPU most of a line per sample (the HSYNC ISR with a C
+callback measured ~470 of the 762 clocks per line in the emulator). The rev C change:
+a write-only 8-bit AUDIO register that CPLD2 shifts out MSB first, one bit every 24 bus
+slots (192 of the 1528 clk24 per line, so 8 bits per line = 126 kHz PDM), resynchronised
+to HSYNC so the error never accumulates. The byte rotates rather than shifting in zeros,
+so a late or missed ISR repeats the previous byte instead of dropping to silence. The CPU
+cost is unchanged (one byte write per line) while the output becomes a 126 kHz 1-bit
+stream, enough for 8-bit samples at 15.7 kHz with the existing RC low-pass.
 
-Clocking: a 25.000 MHz oscillator (640x480 at 59.5 Hz; monitors lock to it) keeps the
-CPU at exactly 12.5 MHz, the MC68000P12's rating. 25.175 MHz would put the P12 0.7 %
-over spec. A slot stays 8 fast clocks = 318 ns = 8 VGA pixels. Line doubling needs no
-line buffer: the video address counter simply repeats each framebuffer line, so the
-fetch rate per output line is unchanged.
+Fitter result against the rev 4 CPLD2 source with the board's pin assignments kept
+(`-preassign keep`), byte offset 10 used for the register, pin 25 still the audio output:
 
-Modes with the present one-word-per-slot bus (16 bits per 8 pixels):
+| | rev 4 CPLD2 | with PDM shifter |
+|---|---|---|
+| macrocells | 107/128 | 120/128 |
+| flip-flops | 73 | 85 |
+| nodes + foldbacks | 107/128 | 127/128 |
+| I/O pins | 60/64 | 60/64 |
 
-| mode | bits/pixel | colours | bytes | notes |
-|---|---|---|---|---|
-| 640x480 | 1 | fg/bg registers | 38400 | 80x60 text with the 8x8 font, or 80x30 line-doubled |
-| 640x480 | 2 | 4 fixed | 76800 | |
-| 320x240 doubled | 4 | 16 fixed (RGBI) | 38400 | |
-| 160x120 quadrupled | 8 | RGB332 | 19200 | |
+It fits, but at 99 % of the nodes: nothing else of substance can be added to CPLD2 with
+it, and the holding latch that would let the ISR write at any point in the line (another
+8 flip-flops) does not fit. Without the latch the write replaces the shift register at
+once, so the ISR should write early in the line (it runs from the HSYNC interrupt, which
+it does naturally; the bit boundary jitters by the interrupt latency, once per line).
+If the gpio AUDIO bit must keep working for old software, a mux adds one product term.
+The Verilog delta is in the "PDM shifter" snippet below; the variant source lives
+outside the repo until rev C work starts.
 
-Keeping **320x240x8** (the rev B mode) needs two video words per slot: either a
-12-fast-clock slot (CPU RAM access every 6 CPU clocks instead of 4, about 30 % slower
-for code in RAM, code in ROM unaffected) or a tighter 8-clock schedule with three SRAM
-accesses (feasible with 55 ns SRAM, about 106 ns each, but little margin). Decide this
-first; it shapes CPLD1.
+```verilog
+reg [7:0] aud_sh;    // PDM shifter, MSB is the pin
+reg [4:0] aud_cnt;   // slots since the last shift (24 slots = 1/8 line)
+wire sel_audio = (a[3:1] == 3'd5);          // byte offset 10
+assign audio = aud_sh[7];
+...
+if (wr_en && sel_audio) aud_sh <= d[7:0];
+if (hs_rise) aud_cnt <= 5'd0;
+else if (e0) begin
+    if (aud_cnt == 5'd23) begin
+        aud_cnt <= 5'd0;
+        if (!(wr_en & sel_audio)) aud_sh <= {aud_sh[6:0], aud_sh[7]};
+    end else aud_cnt <= aud_cnt + 5'd1;
+end
+```
 
-A programmable palette still does not fit the CPLDs (16 x 8 bits = 128 flip-flops);
-fixed RGBI mappings do.
+Also worth doing in the same rev, for the ISR cost: clear the HSYNC flag automatically on
+the level-4 interrupt acknowledge (saves the INTSTAT write, ~20 clocks) and keep audio in
+its own register so no GPIO shadow is needed. With those a hand-written ISR is about
+150 clocks per line (20 % of the CPU) instead of 470.
 
-## Composite fallback
+## Composite video
 
 ## Video outputs
 
@@ -87,3 +109,34 @@ TV's Y path (5-6 MHz on S-video, 3-4 MHz on composite with the chroma notch) wil
 them. 80-column text will be readable on S-video and in the monochrome mode, and as poor
 as CGA-on-a-TV on colour composite. A font with 2-pixel strokes is worse on colour
 composite (3.58 MHz detail sits exactly on the subcarrier).
+
+## VGA (considered and dropped 2026-10-21)
+
+Drop the AD724, its crystal and trim capacitor, and the RCA jack. CPLD2's RGB bits drive
+three resistor ladders into 75 ohm (0.7 V full scale); HSYNC/VSYNC go to the HD-15 as
+TTL straight from CPLD1. Fewer parts than composite, no artefacts, and every monitor or
+cheap VGA-to-HDMI adapter accepts 640x480 at 60 Hz.
+
+Clocking: a 25.000 MHz oscillator (640x480 at 59.5 Hz; monitors lock to it) keeps the
+CPU at exactly 12.5 MHz, the MC68000P12's rating. 25.175 MHz would put the P12 0.7 %
+over spec. A slot stays 8 fast clocks = 318 ns = 8 VGA pixels. Line doubling needs no
+line buffer: the video address counter simply repeats each framebuffer line, so the
+fetch rate per output line is unchanged.
+
+Modes with the present one-word-per-slot bus (16 bits per 8 pixels):
+
+| mode | bits/pixel | colours | bytes | notes |
+|---|---|---|---|---|
+| 640x480 | 1 | fg/bg registers | 38400 | 80x60 text with the 8x8 font, or 80x30 line-doubled |
+| 640x480 | 2 | 4 fixed | 76800 | |
+| 320x240 doubled | 4 | 16 fixed (RGBI) | 38400 | |
+| 160x120 quadrupled | 8 | RGB332 | 19200 | |
+
+Keeping **320x240x8** (the rev B mode) needs two video words per slot: either a
+12-fast-clock slot (CPU RAM access every 6 CPU clocks instead of 4, about 30 % slower
+for code in RAM, code in ROM unaffected) or a tighter 8-clock schedule with three SRAM
+accesses (feasible with 55 ns SRAM, about 106 ns each, but little margin). Decide this
+first; it shapes CPLD1.
+
+A programmable palette still does not fit the CPLDs (16 x 8 bits = 128 flip-flops);
+fixed RGBI mappings do.
