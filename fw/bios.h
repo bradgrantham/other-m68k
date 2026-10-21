@@ -9,6 +9,7 @@
 #include "duart.h"
 #include "syscalls.h"
 #include "bios_syscalls.h"
+#include "audio.h"
 
 #ifndef FW_VERSION
 #define FW_VERSION "dev"
@@ -129,7 +130,7 @@ void irq_restore(uint16_t sr);
 void irq_vblank(void);
 void irq_ps2(void);
 void irq_duart(void);
-void irq_hsync(void);
+void irq_hsync(void);                   /* irq_hsync.S */
 
 /* ---- exception.c ---- */
 struct exc_frame {

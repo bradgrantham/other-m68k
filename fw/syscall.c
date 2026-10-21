@@ -42,9 +42,10 @@ static int user_str_ok(const char *s, uint32_t max)
 void user_cleanup(void)
 {
     fs_close_all();
+    audio_flush();                          /* before irq_reset_user: an empty queue lets INTEN.HSYNC drop */
     irq_reset_user();
     bios_video_set_page(0);
-    gpio_write((uint16_t)(gpio_shadow & ~(GPIO_LED0 | GPIO_LED1 | GPIO_AUDIO)));
+    gpio_write((uint16_t)(gpio_shadow & ~(GPIO_LED0 | GPIO_LED1)));
     con_cursor_show(0);
 }
 
@@ -272,7 +273,15 @@ int bios_set_audio_cb(void *cb)
 {
     uint16_t sr = irq_disable();
     audio_cb = (irq_hook_fn)cb;
-    irq_update_inten();
+    irq_update_inten();                     /* also recomputes audio_state.slow */
     irq_restore(sr);
     return 0;
+}
+
+/* Spec rev 5: queue 8-bit samples for the PDM player. n == 0 asks for the free space. */
+int bios_audio_write(const uint8_t *samples, unsigned n)
+{
+    if (n == 0) return (int)audio_free();
+    if (!user_range_ok(samples, n)) return E_FAULT;
+    return (int)audio_push(samples, n);
 }

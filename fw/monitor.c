@@ -297,12 +297,16 @@ static void cmd_ramtest(void)
 
 static void cmd_beep(void)
 {
-    for (int i = 0; i < 200; i++) {         /* 1 kHz for 200 ms */
-        gpio_set(GPIO_AUDIO);
+    /* 1 kHz for 200 ms: all-ones and all-zeros patterns straight into the PDM shifter
+     * (rev 5), which repeats a pattern until it is replaced, so this is the old 1-bit
+     * square wave. Back to the idle (mid-level) pattern afterwards. */
+    for (int i = 0; i < 200; i++) {
+        IO_AUDIO = 0xFF;
         delay_us(500);
-        gpio_clear(GPIO_AUDIO);
+        IO_AUDIO = 0x00;
         delay_us(500);
     }
+    IO_AUDIO = AUDIO_IDLE_PATTERN;
 }
 
 static void cmd_info(void)

@@ -1,4 +1,4 @@
-/* Interrupt service routines (autovectors 25..28) and user hook management.
+/* Interrupt service routines (autovectors 25..27; 28 = HSYNC is in irq_hsync.S) and user hook management.
  * NMI (vector 31) goes through the exception path and lands in the monitor. */
 #include "bios.h"
 
@@ -8,10 +8,15 @@ irq_hook_fn irq_user_hook[8];
 irq_hook_fn audio_cb;
 uint16_t inten_shadow;      /* INTEN is write-only (reads 0); every write goes through here */
 
+/* INTEN.HSYNC is on while there is a reason for the line interrupt: an audio callback, a
+ * level-4 user hook, or samples waiting in the PDM queue. irq_hsync.S clears the bit itself
+ * (through inten_shadow) when the queue runs dry on the fast path. */
 void irq_update_inten(void)
 {
     uint16_t en = INTEN_VBLANK | INTEN_PS2 | INTEN_DUART;
-    if (audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL]) en |= INTEN_HSYNC;
+    audio_update_mode();
+    if (audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL] || audio_state.head != audio_state.tail)
+        en |= INTEN_HSYNC;
     inten_shadow = en;
     IO_INTEN = en;
 }
@@ -73,9 +78,5 @@ __attribute__((interrupt_handler)) void irq_duart(void)
     if (irq_user_hook[IRQ_DUART_LEVEL]) irq_user_hook[IRQ_DUART_LEVEL]();
 }
 
-__attribute__((interrupt_handler)) void irq_hsync(void)
-{
-    IO_INTSTAT = INTSTAT_HSYNC;
-    if (audio_cb) audio_cb();
-    if (irq_user_hook[IRQ_HSYNC_LEVEL]) irq_user_hook[IRQ_HSYNC_LEVEL]();
-}
+/* Level 4 (HSYNC) is irq_hsync.S: the PDM sample player, with the audio callback and the
+ * level-4 hook called from its slow path. */

@@ -10,6 +10,23 @@ builds `libsys.a` and `hello/plasma/ls/cat/fstest.elf/.srec`. `.data+.bss` is 0x
 (ends at 0x1994), leaving ~9.8 KB of supervisor stack. See README.md for usage, the exact
 emulator commands and their output.
 
+## Spec rev 5: PDM audio (2026-10-21)
+
+* `IO_AUDIO` (offset 10) loads CPLD2's 8-bit rotating PDM shifter (8 bits per video line);
+  `GPIO.AUDIO` is gone. New syscall 30 `audio_write` queues 8-bit samples; `audio.c` encodes
+  them at queue time with the 64 KB ROM table `pdm_table` (`tools/pdmtab.py` -> `build/pdmtab.bin`,
+  `.incbin` in `pdmtab.S`), and the level-4 handler is now `irq_hsync.S`: 254 clocks per line on
+  the fast path (hand count in the source; `sdk/examples/abench.c` measures 254.1 in the emulator),
+  self-disabling through `inten_shadow` when the queue empties. ROM use went from 38 KB to 102 KB
+  of 128 KB; BIOS RAM from 5.7 KB to 9.8 KB (5.4 KB of supervisor stack left).
+* Host tests: `test/test_audio.c` checks the table against the reference algorithm (density
+  over 32 lines = v7/128 for every level), queue clipping, wrap of the free-running indices, the
+  INTEN hand-shake and the slow/fast mode flag (489 checks in all now).
+* Callback paths got slightly dearer (empty callback 337 clocks per line instead of 278)
+  because they run on the handler's slow path; the queue player is the fast one.
+* Not yet verified by ear: the emulator's shifter model is being added separately; `tune.elf`
+  was checked for note printing, run time (785 chunks = 25.6 s) and INTEN on/off in `--io-trace`.
+
 ## Stage 2 (what was added)
 
 * `sd.c/h`, `sdspi.S`: SPI mode 0 bit-bang on SDIO (`sdio_shadow`, MISO from

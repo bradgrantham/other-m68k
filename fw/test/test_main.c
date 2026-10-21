@@ -197,6 +197,7 @@ int main(int argc, char **argv)
     test_console();
     test_hexdump();
     test_sd();
+    test_audio();
     test_elf(argc > 2 ? argv[2] : 0);
     test_fs(argc > 1 ? argv[1] : 0);
     printf("%d checks, %d failures\n", checks, fails);

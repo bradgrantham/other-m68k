@@ -26,6 +26,8 @@ The `.srec` files are for the serial upload path.
 | `examples/ls.c` | `sys_opendir`/`sys_readdir`/`sys_closedir`, prints `argv`; `run ls.elf [path]` |
 | `examples/cat.c` | stdio `fopen`/`fread` on SD files (-> `sys_open`/`sys_read`); `run cat.elf FILE...` |
 | `examples/fstest.c` | writes `TEST.TXT` with stdio (`O_CREAT`, `O_APPEND`), reads it back with the raw calls, reports OK/FAIL; `run fstest.elf exec ls.elf` then chains with `sys_exec` |
+| `examples/tune.c` | plays "Ode to Joy" (two synthesised voices, square + triangle) through `sys_audio_write`, 512 samples at a time, printing the notes; any key stops; `tune` at the prompt |
+| `examples/abench.c` | measures the CPU left to a program with each audio path active (BIOS queue player, empty/C/asm `sys_set_audio_cb` callbacks), in clocks per video line; `abench` at the prompt |
 | `examples/bmpview.c` | BMP viewer: streaming separable box scaler + Floyd-Steinberg dither to RGB332 on page 1; also shows raw 320x240 RGB332 blobs; `make host-bmpview` builds it for the host (see below) |
 
 Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
@@ -59,7 +61,14 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
 * The program runs in user mode: it cannot change SR or use privileged instructions.
   Interrupt hooks are installed with `sys_set_irq_handler(level, fn)` (levels 1-4; the hook
   is a plain `void fn(void)` called from the BIOS ISR in supervisor mode) and
-  `sys_set_audio_cb(fn)` (15.7 kHz from HSYNC).
+  `sys_set_audio_cb(fn)` (once per video line from HSYNC; the callback owns `IO_AUDIO`).
+* Sound (spec rev 5): `sys_audio_write(samples, n)` queues unsigned 8-bit samples (128 =
+  silence) that the BIOS plays one per video line (15707 Hz NTSC) through the PDM shifter; it
+  is non-blocking and returns how many it took (the queue holds 4096, a quarter second), so
+  loop until everything is accepted, calling `sys_wait_vblank()` when it returns short.
+  `sys_audio_write(p, 0)` returns the free space. Playing costs the program about a third
+  of the CPU (254 of the 764 clocks in each line go to the interrupt); silence costs nothing.
+  See `examples/tune.c`.
 * Returning from `main` or calling `exit()` ends in `sys_exit`, which prints `[exit N]` and
   returns to the monitor. Page 0 is the console; a program that draws on it should
   `sys_con_clear()` before exiting.

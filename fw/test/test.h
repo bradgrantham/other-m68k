@@ -14,5 +14,6 @@ extern int fails, checks;
 void test_sd(void);
 void test_elf(const char *hello_elf);
 void test_fs(const char *image);
+void test_audio(void);
 
 #endif
