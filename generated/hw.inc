@@ -334,4 +334,6 @@
 	.equ SYS_key_event, 27
 	.equ SYS_sleep_ms, 28
 	.equ SYS_set_audio_cb, 29
-	.equ SYS_audio_write, 30
+	.equ SYS_audio_start, 30
+	.equ SYS_audio_next, 31
+	.equ SYS_audio_last, 32

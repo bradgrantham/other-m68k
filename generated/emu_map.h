@@ -83,7 +83,9 @@ static const char *const emu_syscall_names[] = {
     "key_event",
     "sleep_ms",
     "set_audio_cb",
-    "audio_write",
+    "audio_start",
+    "audio_next",
+    "audio_last",
 };
 
 #endif

@@ -39,6 +39,8 @@
 #define E_NOSYS -38
 #define KEY_RELEASE 256
 #define KEY_EXTENDED 512
+#define AUDIO_BUF_MAX 512
+#define AUDIO_NBUF 3
 
 /* ---- ABI structures ---- */
 struct video_info {
@@ -99,8 +101,10 @@ enum {
     SYS_key_event = 27,
     SYS_sleep_ms = 28,
     SYS_set_audio_cb = 29,
-    SYS_audio_write = 30,
-    SYS_COUNT = 31
+    SYS_audio_start = 30,
+    SYS_audio_next = 31,
+    SYS_audio_last = 32,
+    SYS_COUNT = 33
 };
 
 /* ---- user-side prototypes (implemented by generated/syscall_stubs.S) ---- */
@@ -133,7 +137,9 @@ int sys_con_info(struct con_info * info); /* Console columns, rows, cursor posit
 int sys_exec(const char * path, const char * args); /* Load and run another ELF executable from the SD card with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor. */
 int sys_key_event(void); /* Next raw keyboard event: bit 8 = release, bits 7..0 = PS/2 set-2 scan code (E0-prefixed codes have bit 9 set); -1 if none. */
 void sys_sleep_ms(uint32_t ms); /* Delay for approximately ms milliseconds. */
-int sys_set_audio_cb(void * cb); /* Install a function called from the HSYNC interrupt once per video line (15.7 kHz NTSC) in supervisor mode; it takes over the AUDIO register (the sample queue is not serviced while a callback is installed) and should write one PDM pattern per call. NULL disables and returns the register to the queue player. */
-int sys_audio_write(const uint8_t * samples, unsigned n); /* Queue n unsigned 8-bit samples (0 = minimum, 128 = silence level, 255 = maximum; 7 bits are used) to be played one per video line (15.7 kHz NTSC, 15.6 kHz PAL) by the BIOS HSYNC interrupt through the PDM encoder. Non-blocking: returns the number of samples accepted (0..n), which is less than n when the 4096-byte queue is full; call again later (one video frame drains 262 samples). n == 0 returns the free space in the queue. The HSYNC interrupt is enabled while the queue holds data and switched off when it runs dry, after writing the silence pattern, so idle audio costs no CPU; while playing, the interrupt costs about a third of the CPU. E_FAULT if samples is not in user RAM. */
+int sys_set_audio_cb(void * cb); /* Install a function called from the HSYNC interrupt once per video line (15.7 kHz NTSC) in supervisor mode; it takes over the AUDIO register (the buffer stream of audio_start/next/last is not serviced while a callback is installed, and audio_start fails while one is) and should write one PDM pattern per call. NULL disables. */
+uint8_t * sys_audio_start(unsigned bufsize); /* Begin streaming PDM pattern bytes to the AUDIO register, one byte per video line (15.7 kHz NTSC, 15.6 kHz PAL). The BIOS owns AUDIO_NBUF buffers of AUDIO_BUF_MAX bytes; bufsize (1..AUDIO_BUF_MAX) is how many bytes of each the program will fill and the hardware will play. Resets the stream (anything queued is dropped, the output goes to the idle pattern) and returns the first buffer to fill. Non-blocking. Returns NULL if bufsize is out of range or an audio callback is installed. The bytes are raw hardware patterns: encode samples with the SDK's pdm_encode (first-order sigma-delta) or write patterns directly. Playback starts at the first audio_next. */
+uint8_t * sys_audio_next(const uint8_t * filled, int block); /* Hand the BIOS a buffer the program has filled (one obtained from audio_start or a previous audio_next) and get the next buffer to fill. Buffers play in the order handed in; the HSYNC interrupt is enabled while any are queued. If no buffer is free: block != 0 waits (interrupts enabled) until the one being played finishes, which paces the program to the audio rate; block == 0 returns NULL at once and the program retries later (the handed buffer is still accepted). filled == NULL hands nothing in and only tries to obtain a free buffer. Returns NULL also when the stream is not started, or when filled is not one of the BIOS buffers. */
+int sys_audio_last(const uint8_t * filled, int block); /* Hand in the final buffer (filled may be NULL for none) and end the stream. block != 0 waits until everything queued has played; block == 0 returns at once and the queued buffers finish playing on their own. When the last byte has played the handler writes the idle pattern 0xAA and disables the HSYNC interrupt, so idle audio costs no CPU. Returns 0, or E_INVAL if the stream was not started. Exiting the program does the same without waiting. */
 
 #endif /* SYSCALLS_H */

@@ -258,11 +258,28 @@ sys_set_audio_cb:
 	trap #15
 	rts
 
-	.globl sys_audio_write
-	.type sys_audio_write, @function
-sys_audio_write:
+	.globl sys_audio_start
+	.type sys_audio_start, @function
+sys_audio_start:
+	move.l 4(%sp),%d1
+	moveq #30,%d0
+	trap #15
+	rts
+
+	.globl sys_audio_next
+	.type sys_audio_next, @function
+sys_audio_next:
 	move.l 4(%sp),%a0
 	move.l 8(%sp),%d1
-	moveq #30,%d0
+	moveq #31,%d0
+	trap #15
+	rts
+
+	.globl sys_audio_last
+	.type sys_audio_last, @function
+sys_audio_last:
+	move.l 4(%sp),%a0
+	move.l 8(%sp),%d1
+	moveq #32,%d0
 	trap #15
 	rts

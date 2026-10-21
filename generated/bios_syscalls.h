@@ -33,6 +33,8 @@ int bios_exec(const char * path, const char * args);
 int bios_key_event(void);
 void bios_sleep_ms(uint32_t ms);
 int bios_set_audio_cb(void * cb);
-int bios_audio_write(const uint8_t * samples, unsigned n);
+uint8_t * bios_audio_start(unsigned bufsize);
+uint8_t * bios_audio_next(const uint8_t * filled, int block);
+int bios_audio_last(const uint8_t * filled, int block);
 
 #endif

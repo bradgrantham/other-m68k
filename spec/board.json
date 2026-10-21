@@ -1,7 +1,7 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 5,
+    "revision": 6,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
@@ -820,7 +820,7 @@
   },
   "audio": {
     "enabled": true,
-    "desc": "AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> RC low-pass -> divider -> DC-blocking cap -> 3.5mm jack. Sampled audio: one 8-bit unsigned sample per video line (15.7 kHz NTSC, 15.6 kHz PAL) queued with audio_write; the BIOS HSYNC interrupt encodes each sample to a PDM pattern through a ROM sigma-delta table (8-bit accumulator, 7-bit sample) and writes it to AUDIO. The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click."
+    "desc": "AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> 1 k / 10 nF RC low-pass -> 10 k : 2.2 k divider -> 10 uF DC-blocking cap -> 3.5mm jack. Sampled audio: the program hands the BIOS buffers of PDM pattern bytes (audio_start / audio_next / audio_last, AUDIO_NBUF buffers of up to AUDIO_BUF_MAX bytes, producer/consumer, optionally blocking so the program is paced to the line rate); the BIOS HSYNC interrupt writes one byte per line (15.7 kHz NTSC, 15.6 kHz PAL) and does no other per-sample work. Encoding 8-bit unsigned samples (128 = silence) into patterns is the program's job, normally through the SDK's pdm_init/pdm_encode (first-order sigma-delta, 8-bit accumulator x 7-bit sample table built in RAM). The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click."
   },
   "power": {
     "input": "USB-C receptacle, 5V only (5.1k CC pull-downs)",
@@ -1221,23 +1221,51 @@
           "cb"
         ]
       ],
-      "desc": "Install a function called from the HSYNC interrupt once per video line (15.7 kHz NTSC) in supervisor mode; it takes over the AUDIO register (the sample queue is not serviced while a callback is installed) and should write one PDM pattern per call. NULL disables and returns the register to the queue player."
+      "desc": "Install a function called from the HSYNC interrupt once per video line (15.7 kHz NTSC) in supervisor mode; it takes over the AUDIO register (the buffer stream of audio_start/next/last is not serviced while a callback is installed, and audio_start fails while one is) and should write one PDM pattern per call. NULL disables."
     },
     {
       "num": 30,
-      "name": "audio_write",
+      "name": "audio_start",
+      "ret": "uint8_t *",
+      "args": [
+        [
+          "unsigned",
+          "bufsize"
+        ]
+      ],
+      "desc": "Begin streaming PDM pattern bytes to the AUDIO register, one byte per video line (15.7 kHz NTSC, 15.6 kHz PAL). The BIOS owns AUDIO_NBUF buffers of AUDIO_BUF_MAX bytes; bufsize (1..AUDIO_BUF_MAX) is how many bytes of each the program will fill and the hardware will play. Resets the stream (anything queued is dropped, the output goes to the idle pattern) and returns the first buffer to fill. Non-blocking. Returns NULL if bufsize is out of range or an audio callback is installed. The bytes are raw hardware patterns: encode samples with the SDK's pdm_encode (first-order sigma-delta) or write patterns directly. Playback starts at the first audio_next."
+    },
+    {
+      "num": 31,
+      "name": "audio_next",
+      "ret": "uint8_t *",
+      "args": [
+        [
+          "const uint8_t *",
+          "filled"
+        ],
+        [
+          "int",
+          "block"
+        ]
+      ],
+      "desc": "Hand the BIOS a buffer the program has filled (one obtained from audio_start or a previous audio_next) and get the next buffer to fill. Buffers play in the order handed in; the HSYNC interrupt is enabled while any are queued. If no buffer is free: block != 0 waits (interrupts enabled) until the one being played finishes, which paces the program to the audio rate; block == 0 returns NULL at once and the program retries later (the handed buffer is still accepted). filled == NULL hands nothing in and only tries to obtain a free buffer. Returns NULL also when the stream is not started, or when filled is not one of the BIOS buffers."
+    },
+    {
+      "num": 32,
+      "name": "audio_last",
       "ret": "int",
       "args": [
         [
           "const uint8_t *",
-          "samples"
+          "filled"
         ],
         [
-          "unsigned",
-          "n"
+          "int",
+          "block"
         ]
       ],
-      "desc": "Queue n unsigned 8-bit samples (0 = minimum, 128 = silence level, 255 = maximum; 7 bits are used) to be played one per video line (15.7 kHz NTSC, 15.6 kHz PAL) by the BIOS HSYNC interrupt through the PDM encoder. Non-blocking: returns the number of samples accepted (0..n), which is less than n when the 4096-byte queue is full; call again later (one video frame drains 262 samples). n == 0 returns the free space in the queue. The HSYNC interrupt is enabled while the queue holds data and switched off when it runs dry, after writing the silence pattern, so idle audio costs no CPU; while playing, the interrupt costs about a third of the CPU. E_FAULT if samples is not in user RAM."
+      "desc": "Hand in the final buffer (filled may be NULL for none) and end the stream. block != 0 waits until everything queued has played; block == 0 returns at once and the queued buffers finish playing on their own. When the last byte has played the handler writes the idle pattern 0xAA and disables the HSYNC interrupt, so idle audio costs no CPU. Returns 0, or E_INVAL if the stream was not started. Exiting the program does the same without waiting."
     }
   ],
   "abi": {
@@ -1352,7 +1380,9 @@
       "E_NAMETOOLONG": -36,
       "E_NOSYS": -38,
       "KEY_RELEASE": 256,
-      "KEY_EXTENDED": 512
+      "KEY_EXTENDED": 512,
+      "AUDIO_BUF_MAX": 512,
+      "AUDIO_NBUF": 3
     },
     "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host. User program entry: USP points at {return address (exit stub), argc, argv} as for a C `_start(argc, argv)`; argv[0] is the path as given to `run`/`exec`, further words split on blanks (at most 16 words, 255 bytes). The monitor's `go` enters with argc 0 and argv[0] NULL. Filenames are 8.3 (FatFs with LFN off), case-insensitive; E_NAMETOOLONG for anything else. Pointers passed to syscalls must lie in user RAM (USER_BASE..RAM_END, framebuffers included) or the call fails with E_FAULT."
   },
