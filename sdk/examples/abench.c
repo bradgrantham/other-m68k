@@ -1,12 +1,15 @@
-/* abench: how much CPU the HSYNC audio paths leave for the program (spec rev 5).
- * Counts iterations of a fixed loop over 12 VBLANK ticks (0.2 s) for: no callback; an
- * empty callback; a C callback that pops a pre-made pattern from a ring and writes
- * IO_AUDIO; the same in asm; and the BIOS queue player (irq_hsync.S fast path) draining
- * a full queue. 12 ticks = 3141 lines, so a 4096-sample queue does not run dry. */
+/* abench: how much CPU the HSYNC audio paths leave for the program (spec rev 6).
+ * Counts iterations of a fixed loop over a few VBLANK ticks for: no audio; an empty
+ * callback; a C callback that pops a pre-made pattern from a ring and writes IO_AUDIO;
+ * the same in asm; and the BIOS stream (irq_hsync.S fast path) playing three queued
+ * 512-byte buffers. The stream case runs over 5 ticks = 1310 lines, inside the 1536
+ * queued bytes, so nothing else touches the BIOS during the window. Also times
+ * pdm_init and pdm_encode from the SDK. */
 #include <stdio.h>
 #include <stdint.h>
 #include "syscalls.h"
 #include "hw.h"
+#include "pdm.h"
 
 #define TICKS 12
 #define LINES_PER_TICK 262                   /* NTSC */
@@ -37,12 +40,12 @@ __asm__(
 "    rts\n");
 extern void cb_asm(void);
 
-static uint32_t measure(void)
+static uint32_t measure(int ticks)
 {
     uint32_t t0 = sys_ticks(), n = 0;
     while (sys_ticks() == t0) ;
     t0 = sys_ticks();
-    while (sys_ticks() - t0 < TICKS) {
+    while (sys_ticks() - t0 < (uint32_t)ticks) {
         for (int i = 0; i < 64; i++) buf[(n + i) & 4095] += (uint8_t)i;   /* touch memory, a little arithmetic */
         n++;
     }
@@ -63,35 +66,43 @@ int main(void)
 {
     for (int i = 0; i < 4096; i++) buf[i] = (uint8_t)(i * 37);
     sys_set_audio_cb(0);
-    uint32_t base = measure();
+    uint32_t base = measure(TICKS);
     printf("no audio      : %lu iterations / %d ticks (100.0%%)\n", (unsigned long)base, TICKS);
     struct { const char *name; void (*fn)(void); } cases[] = {
         { "empty callback", cb_empty }, { "C callback    ", cb_c }, { "asm callback  ", cb_asm } };
     for (unsigned k = 0; k < 3; k++) {
         samples = 0;
         sys_set_audio_cb(cases[k].fn);
-        uint32_t r = measure();
+        uint32_t r = measure(TICKS);
         sys_set_audio_cb(0);
         report(cases[k].name, base, r);
     }
-    /* BIOS queue player: fill the queue (a ramp, so the encoder does real work) and measure
-     * while the ISR drains it. The sys_audio_write itself is outside the window. */
-    for (int i = 0; i < 4096; i++) buf[i] = (uint8_t)(i >> 4);
-    unsigned off = 0;
-    while (off < 4096) { int r = sys_audio_write(buf + off, 4096 - off); if (r <= 0) break; off += (unsigned)r; }
-    uint32_t r = measure();
-    report("queue player  ", base, r);
-    while (sys_audio_write(buf, 0) < 4096) sys_wait_vblank();
-    /* and the producer side: what one chunk of 512 samples costs to encode and queue */
+    /* BIOS stream: queue all three buffers of silence patterns, measure while the fast
+     * handler plays them (5 ticks fit inside the 1536 queued lines), then let it finish. */
+    uint32_t base5 = measure(5);
+    uint8_t *b = sys_audio_start(AUDIO_BUF_MAX);
+    for (int k = 0; k < AUDIO_NBUF && b; k++) {
+        for (int i = 0; i < AUDIO_BUF_MAX; i++) b[i] = pdm_silence();
+        b = sys_audio_next(b, 0);                /* the last hand-in returns NULL: none free */
+    }
+    uint32_t r = measure(5);
+    report("BIOS stream   ", base5, r);
+    sys_audio_last(0, 1);
+    /* the SDK encoder: table build time, then clocks per sample of pdm_encode */
     uint32_t t0 = sys_ticks();
     while (sys_ticks() == t0) ;
     t0 = sys_ticks();
-    uint32_t pushed = 0;
-    while (sys_ticks() - t0 < TICKS) {
-        int n = sys_audio_write(buf, 512);
-        if (n > 0) pushed += (uint32_t)n;
-    }
-    printf("sys_audio_write: %lu samples queued in %d ticks while playing\n", (unsigned long)pushed, TICKS);
-    while (sys_audio_write(buf, 0) < 4096) sys_wait_vblank();
+    pdm_init();
+    uint32_t tb = sys_ticks() - t0;
+    printf("pdm_init      : %lu ticks (%lu ms)\n", (unsigned long)tb, (unsigned long)tb * 1000 / 60);
+    static uint8_t pat[4096];
+    t0 = sys_ticks();
+    while (sys_ticks() == t0) ;
+    t0 = sys_ticks();
+    uint32_t n = 0;
+    while (sys_ticks() - t0 < TICKS) { pdm_encode(pat, buf, 4096); n += 4096; }
+    /* 12 ticks = 12 * 764 * 262 clocks, minus nothing else running */
+    uint32_t per = (uint32_t)((uint64_t)TICKS * 764 * 262 / n);
+    printf("pdm_encode    : %lu samples in %d ticks, about %lu clocks per sample\n", (unsigned long)n, TICKS, (unsigned long)per);
     return 0;
 }

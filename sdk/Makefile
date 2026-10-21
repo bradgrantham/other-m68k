@@ -1,4 +1,4 @@
-# other-m68k SDK: libsys.a (syscall stubs + newlib shim), crt0, and example programs.
+# other-m68k SDK: libsys.a (syscall stubs + newlib shim + PDM audio encoder), crt0, and example programs.
 # See README.md. Add a program: put foo.c in examples/ and add it to EXAMPLES.
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
@@ -30,7 +30,7 @@ check-sources:
 $(B):
 	mkdir -p $(B)
 
-$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o
+$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o $(B)/pdm.o
 	$(AR) rcs $@ $^
 
 $(B)/syscall_stubs.o: $(GEN)/syscall_stubs.S | $(B)
@@ -46,6 +46,7 @@ $(B)/%.o: examples/%.c | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(B)/bmpview.o: CFLAGS += -O2        # pixel loops: speed over size
+$(B)/pdm.o: CFLAGS += -O2            # table build and encoder: speed over size
 
 $(B)/%.elf: $(B)/%.o $(B)/crt0.o $(B)/libsys.a user.ld $(GEN)/user.ld
 	$(CC) $(LDFLAGS) -o $@ $(B)/crt0.o $< $(LDLIBS)

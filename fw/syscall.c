@@ -42,7 +42,7 @@ static int user_str_ok(const char *s, uint32_t max)
 void user_cleanup(void)
 {
     fs_close_all();
-    audio_flush();                          /* before irq_reset_user: an empty queue lets INTEN.HSYNC drop */
+    audio_stop();                           /* before irq_reset_user: nothing playing lets INTEN.HSYNC drop */
     irq_reset_user();
     bios_video_set_page(0);
     gpio_write((uint16_t)(gpio_shadow & ~(GPIO_LED0 | GPIO_LED1)));
@@ -281,15 +281,24 @@ int bios_set_audio_cb(void *cb)
 {
     uint16_t sr = irq_disable();
     audio_cb = (irq_hook_fn)cb;
-    irq_update_inten();                     /* also recomputes audio_state.slow */
+    irq_update_inten();                     /* also picks the fast or slow level-4 handler */
     irq_restore(sr);
     return 0;
 }
 
-/* Spec rev 5: queue 8-bit samples for the PDM player. n == 0 asks for the free space. */
-int bios_audio_write(const uint8_t *samples, unsigned n)
+/* Spec rev 6: PDM pattern streaming by buffer hand-off (audio.c). The buffers are BIOS
+ * memory, so there is nothing to range-check: audio_next/last accept only their own. */
+uint8_t *bios_audio_start(unsigned bufsize)
 {
-    if (n == 0) return (int)audio_free();
-    if (!user_range_ok(samples, n)) return E_FAULT;
-    return (int)audio_push(samples, n);
+    return audio_start(bufsize);
+}
+
+uint8_t *bios_audio_next(const uint8_t *filled, int block)
+{
+    return audio_next(filled, block);
+}
+
+int bios_audio_last(const uint8_t *filled, int block)
+{
+    return audio_last(filled, block);
 }

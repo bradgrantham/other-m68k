@@ -9,13 +9,13 @@ irq_hook_fn audio_cb;
 uint16_t inten_shadow;      /* INTEN is write-only (reads 0); every write goes through here */
 
 /* INTEN.HSYNC is on while there is a reason for the line interrupt: an audio callback, a
- * level-4 user hook, or samples waiting in the PDM queue. irq_hsync.S clears the bit itself
- * (through inten_shadow) when the queue runs dry on the fast path. */
+ * level-4 user hook, or an audio buffer playing or queued. irq_hsync.S clears the bit itself
+ * (through inten_shadow) when the stream runs out of buffers on the fast path. */
 void irq_update_inten(void)
 {
     uint16_t en = INTEN_VBLANK | INTEN_PS2 | INTEN_DUART;
     audio_update_mode();
-    if (audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL] || audio_state.head != audio_state.tail)
+    if (audio_cb || irq_user_hook[IRQ_HSYNC_LEVEL] || audio_active())
         en |= INTEN_HSYNC;
     inten_shadow = en;
     IO_INTEN = en;

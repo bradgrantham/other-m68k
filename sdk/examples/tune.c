@@ -1,20 +1,22 @@
-/* tune: plays "Ode to Joy" through the BIOS PDM sample player (spec rev 5).
+/* tune: plays "Ode to Joy" through the BIOS audio stream (spec rev 6).
  *
  * Two voices are synthesised as unsigned 8-bit samples at the video line rate (15707 Hz
  * NTSC; PAL is 0.5 % slower, which only shifts the pitch by that much): a square-wave
- * melody with a decaying envelope and a triangle bass one or two octaves down. Samples go
- * to the BIOS 512 at a time with sys_audio_write; when the 4096-byte queue is full the
- * program waits a frame. Phases are 32-bit accumulators, increments 32.0 fixed point from
- * a one-octave table shifted down, so the inner loop is adds, compares and shifts only.
- * Any key stops it. */
+ * melody with a decaying envelope and a triangle bass one or two octaves down. Each
+ * 512-sample buffer (33 ms) is encoded to PDM patterns with pdm_encode and handed to the
+ * BIOS with sys_audio_next(buf, 1), which blocks until a buffer is free: the BIOS paces
+ * the program to the line rate and the level-4 interrupt streams the bytes. Phases are
+ * 32-bit accumulators, increments 32.0 fixed point from a one-octave table shifted down,
+ * so the inner loop is adds, compares and shifts only. Any key stops it. */
 #include <stdio.h>
 #include <stdint.h>
 #include "syscalls.h"
+#include "pdm.h"
 
 #define SAMPLE_RATE  15707u                 /* NTSC lines per second */
 #define BPM          150u
 #define SIXTEENTH    (SAMPLE_RATE * 60u / (BPM * 4u))   /* samples per sixteenth note */
-#define CHUNK        512
+#define BUFSIZE      512                    /* samples per hand-off, 33 ms: two buffers of slack cover a printf line at 38400 baud */
 
 /* phase increment per sample for MIDI notes 108..119 (C8..B8) at SAMPLE_RATE */
 static const uint32_t octave8[12] = {
@@ -72,28 +74,33 @@ static void voice_next(struct voice *v, int announce)
     }
 }
 
-static uint8_t buf[CHUNK];
+static uint8_t samples[BUFSIZE];
 
 int main(void)
 {
     struct voice mel = { melody, N_MEL, 0, 0, 0, 0, 0, 0 };
     struct voice bas = { bass, N_BAS, 0, 0, 0, 0, 0, 0 };
     printf("tune: Ode to Joy at %u bpm, %u Hz samples. Any key stops.\n", BPM, SAMPLE_RATE);
+    uint32_t t0 = sys_ticks();
+    pdm_init();
+    printf("pdm_init: %lu ms\n", (unsigned long)(sys_ticks() - t0) * 1000 / 60);
+    uint8_t *buf = sys_audio_start(BUFSIZE);
+    if (!buf) { printf("sys_audio_start failed\n"); return 1; }
     voice_next(&mel, 1);
     voice_next(&bas, 0);
     int stop = 0;
-    unsigned chunk_no = 0;
+    unsigned buf_no = 0;
     while (!mel.done && !stop) {
-        /* envelope: melody decays towards a floor every chunk (~33 ms), bass stays */
+        /* envelope: melody decays towards a floor every buffer (~33 ms), bass stays */
         if (mel.amp > 12) mel.amp -= 1;
         int a1 = mel.amp;
         unsigned i = 0;
-        while (i < CHUNK) {
-            unsigned run = CHUNK - i;
+        while (i < BUFSIZE) {
+            unsigned run = BUFSIZE - i;
             if (mel.left < run) run = mel.left;
             if (bas.left < run) run = bas.left;
             uint32_t p1 = mel.phase, p2 = bas.phase, i1 = mel.inc, i2 = bas.inc;
-            uint8_t *o = buf + i;
+            uint8_t *o = samples + i;
             for (unsigned k = 0; k < run; k++) {
                 p1 += i1; p2 += i2;
                 int v = (int32_t)p1 < 0 ? a1 : -a1;        /* square */
@@ -108,21 +115,16 @@ int main(void)
             if (mel.left == 0) voice_next(&mel, 1);
             if (bas.left == 0) voice_next(&bas, 0);
         }
-        /* hand the chunk to the BIOS; wait a frame whenever the queue is full */
-        unsigned off = 0;
-        while (off < CHUNK) {
-            int r = sys_audio_write(buf + off, CHUNK - off);
-            if (r < 0) { printf("sys_audio_write: %d\n", r); return 1; }
-            off += (unsigned)r;
-            if (off < CHUNK) {
-                if (sys_pollchar() >= 0) { stop = 1; break; }
-                sys_wait_vblank();
-            }
-        }
-        chunk_no++;
+        pdm_encode(buf, samples, BUFSIZE);
+        /* hand the buffer to the BIOS and block until the next one is free */
+        buf = sys_audio_next(buf, 1);
+        if (!buf) { printf("sys_audio_next failed\n"); return 1; }
+        buf_no++;
+        if (sys_pollchar() >= 0) stop = 1;
     }
-    /* let the queue drain (the BIOS switches the interrupt off by itself) */
-    while (sys_audio_write(buf, 0) < 4096 && !stop) sys_wait_vblank();
-    printf("\n%s after %u chunks.\n", stop ? "stopped" : "done", chunk_no);
+    /* let the queued buffers play out; the BIOS then goes to the idle pattern and switches
+     * the interrupt off by itself */
+    sys_audio_last(0, 1);
+    printf("\n%s after %u buffers.\n", stop ? "stopped" : "done", buf_no);
     return 0;
 }

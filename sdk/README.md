@@ -6,7 +6,7 @@ or `sys_exec` from another program. Output goes to the video console and the ser
 input comes from the PS/2 keyboard and the serial port; files live on the FAT32 SD card.
 
 ```
-make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest}.elf + .srec
+make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench}.elf + .srec
 ```
 
 The `.elf` files are what `run` loads (ELF32 big-endian m68k, one `PT_LOAD` segment at
@@ -21,13 +21,14 @@ The `.srec` files are for the serial upload path.
 | `user.ld` | one load region from `../generated/user.ld`; `__bss_start/__bss_end/_end/__heap_start` |
 | `newlib_shim.c` | the libgloss-style functions this newlib calls (`write read sbrk open close lseek fstat isatty kill getpid _exit stat link unlink times gettimeofday`, no leading underscore) mapped onto TRAP #15; translates newlib's `O_CREAT/O_TRUNC/O_APPEND` values to the ABI's |
 | `../generated/syscall_stubs.S` | `sys_*` functions (`#include "syscalls.h"`); compiled into `build/libsys.a` |
+| `pdm.c`, `pdm.h` | PDM encoder for the audio stream (`#include "pdm.h"`, in `build/libsys.a`): `pdm_init` builds a 64 KB first-order sigma-delta table in `.bss` (0.4 s), `pdm_encode(dst, samples, n)` turns unsigned 8-bit samples into pattern bytes (83 clocks each) with the accumulator carried across calls, `pdm_reset`, `pdm_silence` |
 | `examples/hello.c` | printf, `sys_video_info`, `sys_mem_info`, `sys_con_info`, wait for a key |
 | `examples/plasma.c` | double-buffered RGB332 effect in 4x4 blocks, page flip + `sys_wait_vblank`, any key exits |
 | `examples/ls.c` | `sys_opendir`/`sys_readdir`/`sys_closedir`, prints `argv`; `run ls.elf [path]` |
 | `examples/cat.c` | stdio `fopen`/`fread` on SD files (-> `sys_open`/`sys_read`); `run cat.elf FILE...` |
 | `examples/fstest.c` | writes `TEST.TXT` with stdio (`O_CREAT`, `O_APPEND`), reads it back with the raw calls, reports OK/FAIL; `run fstest.elf exec ls.elf` then chains with `sys_exec` |
-| `examples/tune.c` | plays "Ode to Joy" (two synthesised voices, square + triangle) through `sys_audio_write`, 512 samples at a time, printing the notes; any key stops; `tune` at the prompt |
-| `examples/abench.c` | measures the CPU left to a program with each audio path active (BIOS queue player, empty/C/asm `sys_set_audio_cb` callbacks), in clocks per video line; `abench` at the prompt |
+| `examples/tune.c` | plays "Ode to Joy" (two synthesised voices, square + triangle): 512-sample buffers encoded with `pdm_encode` and handed to the BIOS with a blocking `sys_audio_next`, printing the notes; any key stops; `tune` at the prompt |
+| `examples/abench.c` | measures the CPU left to a program with each audio path active (BIOS stream, empty/C/asm `sys_set_audio_cb` callbacks) in clocks per video line, plus `pdm_init` time and `pdm_encode` cost; `abench` at the prompt |
 | `examples/bmpview.c` | BMP viewer: streaming separable box scaler + Floyd-Steinberg dither to RGB332 on page 1; also shows raw 320x240 RGB332 blobs; `make host-bmpview` builds it for the host (see below) |
 
 Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
@@ -65,13 +66,15 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   is a plain `void fn(void)` called from the BIOS ISR in supervisor mode, at the interrupt's
   own level, so higher levels can still interrupt it) and
   `sys_set_audio_cb(fn)` (once per video line from HSYNC; the callback owns `IO_AUDIO`).
-* Sound (spec rev 5): `sys_audio_write(samples, n)` queues unsigned 8-bit samples (128 =
-  silence) that the BIOS plays one per video line (15707 Hz NTSC) through the PDM shifter; it
-  is non-blocking and returns how many it took (the queue holds 4096, a quarter second), so
-  loop until everything is accepted, calling `sys_wait_vblank()` when it returns short.
-  `sys_audio_write(p, 0)` returns the free space. Playing costs the program about a third
-  of the CPU (254 of the 764 clocks in each line go to the interrupt); silence costs nothing.
-  See `examples/tune.c`.
+* Sound (spec rev 6): the BIOS streams bytes to the PDM shifter, one per video line (15707 Hz
+  NTSC), from buffers you fill. `b = sys_audio_start(n)` (n up to `AUDIO_BUF_MAX` = 512)
+  returns the first buffer; fill it with pattern bytes (`pdm_encode` from unsigned 8-bit
+  samples, 128 = silence) and `b = sys_audio_next(b, 1)` hands it in and blocks until the next
+  of the `AUDIO_NBUF` = 3 buffers is free, so the loop runs at the audio rate; `block == 0`
+  returns NULL instead when none is free (the handed buffer still plays). `sys_audio_last(b,
+  1)` hands in the last one and waits for the end. Streaming costs the program about a third
+  of the CPU (242 of the 764 clocks in each line go to the interrupt) plus 83 clocks per sample
+  for `pdm_encode`; silence costs nothing. See `examples/tune.c`.
 * Returning from `main` or calling `exit()` ends in `sys_exit`, which prints `[exit N]` and
   returns to the monitor. Page 0 is the console; a program that draws on it should
   `sys_con_clear()` before exiting.

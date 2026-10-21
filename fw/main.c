@@ -42,7 +42,7 @@ void bios_main(void)
     SW_PAGE0_SET();
     video_page = 0;
     con_init((uint8_t *)FB_PAGE0_ADDR);
-    audio_init();                           /* idle pattern into the PDM shifter, empty queue */
+    audio_init();                           /* idle pattern into the PDM shifter, no stream */
     irq_init();
     serial_puts("\n");
     print_banner();

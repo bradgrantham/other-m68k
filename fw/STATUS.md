@@ -10,22 +10,28 @@ builds `libsys.a` and `hello/plasma/ls/cat/fstest.elf/.srec`. `.data+.bss` is 0x
 (ends at 0x1994), leaving ~9.8 KB of supervisor stack. See README.md for usage, the exact
 emulator commands and their output.
 
-## Spec rev 5: PDM audio (2026-10-21)
+## Spec rev 6: audio by buffer hand-off (2026-10-21)
 
-* `IO_AUDIO` (offset 10) loads CPLD2's 8-bit rotating PDM shifter (8 bits per video line);
-  `GPIO.AUDIO` is gone. New syscall 30 `audio_write` queues 8-bit samples; `audio.c` encodes
-  them at queue time with the 64 KB ROM table `pdm_table` (`tools/pdmtab.py` -> `build/pdmtab.bin`,
-  `.incbin` in `pdmtab.S`), and the level-4 handler is now `irq_hsync.S`: 254 clocks per line on
-  the fast path (hand count in the source; `sdk/examples/abench.c` measures 254.1 in the emulator),
-  self-disabling through `inten_shadow` when the queue empties. ROM use went from 38 KB to 102 KB
-  of 128 KB; BIOS RAM from 5.7 KB to 9.8 KB (5.4 KB of supervisor stack left).
-* Host tests: `test/test_audio.c` checks the table against the reference algorithm (density
-  over 32 lines = v7/128 for every level), queue clipping, wrap of the free-running indices, the
-  INTEN hand-shake and the slow/fast mode flag (489 checks in all now).
-* Callback paths got slightly dearer (empty callback 337 clocks per line instead of 278)
-  because they run on the handler's slow path; the queue player is the fast one.
-* Not yet verified by ear: the emulator's shifter model is being added separately; `tune.elf`
-  was checked for note printing, run time (785 chunks = 25.6 s) and INTEN on/off in `--io-trace`.
+* The rev 5 sample queue (`audio_write`, 64 KB ROM encoder table) is gone. The BIOS now owns
+  three 512-byte pattern buffers and streams them: `audio_start(bufsize)` / `audio_next(filled,
+  block)` / `audio_last(filled, block)` (syscalls 30-32), a producer/consumer FIFO of buffer
+  indices between the syscall and the level-4 handler; a blocking `audio_next` paces the
+  program to the line rate. PDM encoding moved to the SDK (`sdk/pdm.c`: table built in user
+  RAM in 0.4 s, `pdm_encode` 83 clocks per sample). ROM use is back to 39 KB; BIOS RAM is
+  0x1C70 bytes (8 KB of supervisor stack).
+* `irq_hsync.S` has two handlers and `audio_update_mode()` switches autovector 28 between
+  them, so the fast path has no mode test: 242 clocks per line by hand count, 240.6 measured
+  by `abench` (68.5 % of the CPU left while streaming). Callbacks: empty 272, C 423, asm 358.
+* Verified in the emulator: `tune.elf` (Ode to Joy, 785 buffers of 512) makes 401,920 AUDIO
+  writes over 401,918 lines with no gap over 908 clocks (no underrun), INTEN.HSYNC goes on
+  once and off once, and a reconstruction of the pin through the board's RC filter from
+  `--audio-edge-log` detects exactly the expected note sequence (the earlier "semitone flat"
+  reading was a time-base bug in the analysis script, not in the firmware).
+* Host tests: `test/test_audio.c` drives the C line service by hand: start argument checks,
+  ownership checks on hand-in, in-order playback, underrun (holds the pattern, interrupt off,
+  stream stays open), blocking `audio_next` and `audio_last` through the host wait hook,
+  immediate close with nothing queued, smaller bufsize, `audio_stop`, handler selection
+  (354 checks in all now).
 
 ## Review fixes (2026-10-21)
 
