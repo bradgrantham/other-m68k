@@ -194,6 +194,7 @@ static void cmd_help(void)
             "dir [path]     list directory\n"
             "cat file       print a file\n"
             "run file [args] load ELF and run\n"
+            "name [args]    any other word runs NAME.ELF from the card\n"
             "flashid        flash chip IDs\n"
             "flash file     reprogram the ROM from an image file, then `reboot`\n");
 }
@@ -399,32 +400,77 @@ static void cmd_flash(int argc, char **argv)
     flash_update(argv[1]);
 }
 
-/* `run file [args...]`: rest is the raw remainder of the line after the command word. */
-static void cmd_run(char *rest)
+/* Load `path` and run it with the raw argument string `args`.  Returns the loader's error
+ * (E_NOENT if there is no such file) without printing when `quiet_noent` is set, so the
+ * caller can fall back to "unknown command". */
+static int run_file(const char *path, char *args, int quiet_noent)
 {
     static struct exec_image img;
-    while (*rest == ' ' || *rest == '\t') rest++;
-    if (!*rest) { kprintf("run file [args]\n"); return; }
-    char *args = rest;
-    while (*args && *args != ' ' && *args != '\t') args++;
-    if (*args) *args++ = 0;
-    while (*args == ' ' || *args == '\t') args++;
-    int rc = exec_prepare(rest, &img);
+    int rc = exec_prepare(path, &img);
     if (rc == 0) rc = exec_load(&img);
-    if (rc) { kprintf("run %s: %s\n", rest, fs_strerror(rc)); return; }
+    if (rc) {
+        if (!(quiet_noent && rc == E_NOENT)) kprintf("run %s: %s\n", path, fs_strerror(rc));
+        return rc;
+    }
     kprintf("run %s: %06x-%06x entry %06x\n", img.path, img.lowest, img.highest - 1, img.entry);
     last_entry = img.entry;
     con_cursor_show(0);
     user_launch(img.entry, img.path, args);
+    return 0;   /* not reached: the program returns through the monitor's longjmp */
+}
+
+/* Split `rest` (the raw line after the command word) into the first word and the rest. */
+static char *first_word(char *rest, char **args)
+{
+    while (*rest == ' ' || *rest == '\t') rest++;
+    char *a = rest;
+    while (*a && *a != ' ' && *a != '\t') a++;
+    if (*a) *a++ = 0;
+    while (*a == ' ' || *a == '\t') a++;
+    *args = a;
+    return rest;
+}
+
+/* `run file [args...]`: rest is the raw remainder of the line after the command word. */
+static void cmd_run(char *rest)
+{
+    char *args;
+    char *path = first_word(rest, &args);
+    if (!*path) { kprintf("run file [args]\n"); return; }
+    run_file(path, args, 0);
+}
+
+static int ends_with_elf(const char *s)
+{
+    size_t n = strlen(s);
+    if (n < 4) return 0;
+    const char *e = s + n - 4;
+    return e[0] == '.' && (e[1] | 0x20) == 'e' && (e[2] | 0x20) == 'l' && (e[3] | 0x20) == 'f';
+}
+
+/* An unknown command word NAME is tried as NAME.ELF on the card: `bmpview adobe2.bmp` is
+ * `run bmpview.elf adobe2.bmp`.  Only a missing file falls through to "unknown command";
+ * any other loader error (no card, bad ELF, too big) is reported as `run` would. */
+static void run_unknown(char *rest)
+{
+    static char path[LINE_MAX + 4];
+    char *args;
+    char *word = first_word(rest, &args);
+    strcpy(path, word);
+    if (!ends_with_elf(word)) strcpy(path + strlen(word), ".elf");
+    if (run_file(path, args, 1) == E_NOENT)
+        kprintf("unknown command '%s' (try help, or %s on the card)\n", word, path);
 }
 
 static void execute(char *line)
 {
+    static char raw[LINE_MAX];
     char *argv[12];
     if (!strncmp(line, "run", 3) && (line[3] == 0 || line[3] == ' ' || line[3] == '\t')) {
         cmd_run(line + 3);
         return;
     }
+    strcpy(raw, line);                  /* split() cuts the line into words */
     int argc = split(line, argv, 12);
     if (!argc) return;
     const char *c = argv[0];
@@ -451,7 +497,7 @@ static void execute(char *line)
     else if (!strcmp(c, "flashid")) cmd_flashid();
     else if (!strcmp(c, "flash")) cmd_flash(argc, argv);
     else if (!strcmp(c, "reboot")) cpu_reboot();
-    else kprintf("unknown command '%s' (try help)\n", c);
+    else run_unknown(raw);
 }
 
 void monitor_main(void)

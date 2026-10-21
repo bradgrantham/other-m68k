@@ -11,3 +11,4 @@ fw/build/
 sdk/build/
 *.img
 !spec/*.json
+*.img.gz

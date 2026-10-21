@@ -307,6 +307,7 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 | `dir [path]` (`ls`) | list a directory: name, size or `<DIR>` |
 | `cat file` (`type`) | print a file (CRs dropped; files over 1 KB stop on a key) |
 | `run file [args...]` | load an ELF into user RAM and run it with `argv` (see "ELF loader") |
+| `name [args...]` | any word that is not a built-in command runs `NAME.ELF` from the card with the rest of the line as arguments: `bmpview adobe2.bmp` is `run bmpview.elf adobe2.bmp`. Only a missing file gives "unknown command"; other loader errors are reported as by `run`. Built-ins win: `ls` is the monitor's directory listing, `run ls.elf` the program. |
 
 ### S-record upload
 
