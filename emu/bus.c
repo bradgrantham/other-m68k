@@ -1,6 +1,6 @@
 /* Address decode, RAM/ROM, overlay, bus error -- the CPLD1 side of the glue.
  *
- * Regions (generated/hw.h): RAM 0x000000 (256 KB, overlaid by ROM at reset),
+ * Regions (generated/hw.h): RAM 0x000000 (1 MB, overlaid by ROM at reset),
  * ROM 0xE00000 (1 MB window: two SST39SF040 flash chips, see "flash" below),
  * IO 0xF00000 (CPLD2 registers), SWITCHES 0xF10000
  * (CPLD1 soft switches), DUART 0xF20000 (68681 on D0..D7, odd addresses,

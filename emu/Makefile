@@ -64,7 +64,10 @@ $(BUILD)/softfloat.o: $(MUSASHI)/softfloat/softfloat.c m68kconf.h | $(BUILD)
 
 # --- own sources ---
 $(BUILD)/%.o: %.c $(wildcard *.h) m68kconf.h $(BUILD)/m68kops.h | $(BUILD)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+# header dependencies (generated/hw.h and emu_map.h change with the spec)
+-include $(wildcard $(BUILD)/*.d)
 
 test: all
 	$(MAKE) -C test

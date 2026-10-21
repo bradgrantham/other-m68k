@@ -2,8 +2,8 @@
  * /CE tied low, /OE = ROMOE, /WE = ROMWE from CPLD1 on any write in the ROM region.
  * Addresses and chip facts come from generated/hw.h (spec "flash").
  *
- * The image is read from the SD card into user RAM (USER_BASE.., 128 KB: this spans
- * framebuffer page 1, so the display is switched to page 0 first), checked (size and
+ * The image is read from the SD card into user RAM (USER_BASE.., 128 KB, followed by the
+ * RAM routine; all inside the user region, below both framebuffer pages), checked (size and
  * the mkrom.py word sum), then handed to the RAM-resident routine in flashram.S which,
  * with interrupts masked, erases/programs/verifies the flash one FLASH_SECTOR_BYTES
  * sector at a time and jumps through the new image's reset vectors.  Nothing may run
@@ -20,7 +20,7 @@ extern const uint8_t flash_ram_start[], flash_ram_end[];
 #define RAM_CODE_MAX 1024
 typedef int (*flash_ram_fn)(struct flash_op *);
 
-_Static_assert(USER_BASE + ROM_IMAGE_SIZE + RAM_CODE_MAX <= FB_PAGE0_ADDR, "image staging area overlaps the displayed page");
+_Static_assert(USER_BASE + ROM_IMAGE_SIZE + RAM_CODE_MAX <= USER_END, "image staging area leaves the user region (framebuffers)");
 _Static_assert(ROM_IMAGE_SIZE % FLASH_SECTOR_BYTES == 0, "image is not a whole number of sectors");
 _Static_assert(sizeof(struct flash_op) == FO_SIZE, "flash_op layout");
 
@@ -102,7 +102,6 @@ static int read_image(const char *path)
 
 void flash_update(const char *path)
 {
-    if (video_page != 0) bios_video_set_page(0);
     if (read_image(path) < 0) return;
     flash_ram_fn fn = load_ram_code();
     if (!fn) { kprintf("flash: RAM routine too large\n"); return; }

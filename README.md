@@ -6,7 +6,7 @@ emulator, all generated from one specification.
 | | |
 |---|---|
 | CPU | MC68000 at 12 MHz (24 MHz oscillator divided in the glue) |
-| RAM | 256 KB: 2x KM681000 128Kx8 SRAM, word wide, time-sliced with the video fetch |
+| RAM | 1 MB: 2x AS6C4008-55PCN 512Kx8 SRAM, word wide, time-sliced with the video fetch |
 | ROM | 128 KB: 2x M27C512 EPROM, word wide, overlaid at address 0 at reset |
 | Video | memory-mapped 320x240, 8 bpp RGB332 framebuffer, two pages; AD724 composite encoder, NTSC (PAL by build option) |
 | Glue | two ATF1508AS CPLDs ("MMU" and "I/O + shifter"), two 74AHCT245 bus transceivers |

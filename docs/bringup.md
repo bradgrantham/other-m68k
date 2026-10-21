@@ -20,8 +20,8 @@ assumes the previous ones pass.
   GPIO register proves the I/O path through the transceivers.
 
 ## 3. RAM
-* Fit the SRAMs. Boot the real ROM. The POST runs the RAM test before using a stack and
-  reports over serial; LED codes in `fw/README.md` tell you how far it got without serial.
+* Fit the SRAMs. Boot the real ROM. The POST runs the RAM test (1 MB, about 4 s, three dots) before
+  using a stack and reports over serial; LED codes in `fw/README.md` tell you how far it got without serial.
 
 ## 4. Video
 * The banner appears. Check the four alignment cases with a scope if the picture has

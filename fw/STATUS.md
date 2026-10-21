@@ -49,7 +49,7 @@ emulator commands and their output.
 
 * `flash.c/h`, `flash_layout.h`, `flashram.S`: in-system update of the two SST39SF040
   (`flashid`, `flash FILE`, `reboot`; `cpu_reboot` in crt0.S). The image is staged at
-  `USER_BASE` (128 KB, through FB page 1), size and word sum checked, chip IDs checked, then a
+  `USER_BASE` (128 KB, inside the user region), size and word sum checked, chip IDs checked, then a
   position-independent routine copied to `USER_BASE + ROM_IMAGE_SIZE` erases/programs/verifies
   the 16 sectors with interrupts masked and jumps through the new reset vectors. Nothing may run
   from the flash after the first erase (first attempt printed progress from C and read garbled
@@ -119,7 +119,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | file | status |
 |---|---|
 | `crt0.S` | vectors (256 entries, `.rept`-generated 10-byte stubs, asserted size), `_start`, `post_return` (vector copy, .data/.bss), `exception_common` (group-0 decode), `trap15_handler`, `run_user`, `user_exit_stub`, `monitor_restart`, `cpu_reset`, `irq_disable/restore` |
-| `post.S` | ROM word sum, RAM test (address, 55/AA/00/FF longs, byte lanes both ways), failure report + blink; registers only |
+| `post.S` | ROM word sum, RAM test (address, inverted address, byte lanes with both write orders), failure report + blink; registers only |
 | `duart.S`, `duart.h` | `duart_reset_init` (stack-less 68681 channel A set-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values |
 | `memops.S`, `string.c` | memset/memcpy/memmove (long moves when alignment allows), str*/memcmp |
 | `main.c` | `bios_main`, banner, `putchar_both` (console + serial, `\n` -> CRLF) |
@@ -137,11 +137,13 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 
 ## Design as built (differences from the original plan)
 
-* The byte-lane RAM pass writes 8 bytes per loop iteration (the first cut filled only half
-  of RAM: caught by the emulator run).
+* Every RAM-test loop handles 16 bytes per iteration so the `dbf` count fits 16 bits for 1 MB
+  (rev 4; the first cut filled only half of RAM: caught by the emulator run). Rev 4 also cut
+  the four fixed long patterns to one inverted-address pass and the two byte-lane passes to one
+  with the write order swapped between the halves of RAM, keeping full cell coverage.
 * Fills/verifies use plain `move.l`/`cmp.l` unrolled x4 instead of `movem`: on this bus every
   word is one slot-aligned bus cycle either way, so `movem` buys almost nothing. POST takes
-  about 1.7 s at 12 MHz. The same applies to the console scroll (~35 ms).
+  about 4 s for 1 MB at 12 MHz (50 M clocks measured in the emulator). The same applies to the console scroll (~35 ms).
 * `md` dumps are only key-abortable when longer than 256 bytes; a short `md` must not consume
   the first character of the next typed line (the emulator types ahead).
 * Keyboard ASCII ring is 256 B (64 B overflowed when the emulator typed through a long,
@@ -158,7 +160,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 ## Verified in the emulator, stage 1 features (revision-1 ROM; POST, banner, help, info,
 ## S-records, go and exit re-checked with the DUART emulator during the stage 2 runs)
 
-* POST: `ROM sum 0000 OK`, `RAM ....... OK`; banner; `help`, `info`, `ticks`, `md`, `mb/mw/ml`,
+* POST: `ROM sum 0000 OK`, `RAM ... OK`; banner; `help`, `info`, `ticks`, `md`, `mb/mw/ml`,
   `fill`, `led`, `page`, `dir` (stage 2 message), unknown command.
 * `ml 400000 0` -> `Exception 2: Bus error ... fault 00400000 write FC=5`, monitor continues;
   `regs` repeats it.

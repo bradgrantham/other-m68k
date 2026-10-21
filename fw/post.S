@@ -54,7 +54,17 @@ post_run:
 	lea	7f,%a4
 	jmp	post_puts
 7:
-	/* pass 1: address in address, longs */
+	/* Three write sweeps over the whole RAM, each followed by a verify sweep ('.'): about
+	 * 45 M clocks, 3.7 s for 1 MB at 12 MHz.  Every loop body handles 16 bytes so the dbf
+	 * count fits 16 bits up to 1 MB.
+	 *   1. address in address (longs): address-line and aliasing faults;
+	 *   2. inverted address (longs): with 1, every cell has held both states of every bit;
+	 *   3. byte lanes: 0x55 on even (upper, D15..D8) bytes, 0xAA on odd, written as bytes.
+	 *      The 68000 drives a byte on both halves of the data bus, so a stuck WEU/WEL lets
+	 *      the first write of a pair clobber the other byte and the second repair it: the
+	 *      lower half of RAM writes even then odd (catches WEU stuck), the upper half odd
+	 *      then even (catches WEL stuck).  Verified as 0x55AA55AA longs. */
+	/* pass 1: address in address */
 	lea	RAM_BASE,%a1
 	move.w	#(RAM_SIZE / 16) - 1,%d1
 10:	move.l	%a1,(%a1)+
@@ -63,61 +73,116 @@ post_run:
 	move.l	%a1,(%a1)+
 	dbf	%d1,10b
 	lea	RAM_BASE,%a1
-	move.w	#(RAM_SIZE / 4) - 1,%d1
-11:	move.l	(%a1),%d0
-	cmp.l	%a1,%d0
-	bne	fail_addr
-	addq.l	#4,%a1
+	move.w	#(RAM_SIZE / 16) - 1,%d1
+11:	move.l	%a1,%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
+	move.l	%a1,%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
+	move.l	%a1,%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
+	move.l	%a1,%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
 	dbf	%d1,11b
 	moveq	#'.',%d0
 	lea	12f,%a6
 	jmp	post_putc
 12:
-	/* pass 2: four long patterns */
-	lea	patterns,%a2
-	moveq	#3,%d5
-13:	move.l	(%a2)+,%d4
+	/* pass 2: inverted address */
 	lea	RAM_BASE,%a1
 	move.w	#(RAM_SIZE / 16) - 1,%d1
-15:	move.l	%d4,(%a1)+
-	move.l	%d4,(%a1)+
-	move.l	%d4,(%a1)+
-	move.l	%d4,(%a1)+
-	dbf	%d1,15b
-	lea	16f,%a3
-	jmp	verify_longs
-16:	dbf	%d5,13b
-
-30:	/* pass 3: byte lanes. 0x55 on even (upper, D15..D8) bytes, 0xAA on odd, then inverse. */
+13:	move.l	%a1,%d0
+	not.l	%d0
+	move.l	%d0,(%a1)+
+	move.l	%a1,%d0
+	not.l	%d0
+	move.l	%d0,(%a1)+
+	move.l	%a1,%d0
+	not.l	%d0
+	move.l	%d0,(%a1)+
+	move.l	%a1,%d0
+	not.l	%d0
+	move.l	%d0,(%a1)+
+	dbf	%d1,13b
 	lea	RAM_BASE,%a1
-	move.w	#(RAM_SIZE / 8) - 1,%d1
-31:	move.b	#0x55,(%a1)+		/* 8 bytes per iteration */
-	move.b	#0xAA,(%a1)+
-	move.b	#0x55,(%a1)+
-	move.b	#0xAA,(%a1)+
-	move.b	#0x55,(%a1)+
-	move.b	#0xAA,(%a1)+
-	move.b	#0x55,(%a1)+
-	move.b	#0xAA,(%a1)+
+	move.w	#(RAM_SIZE / 16) - 1,%d1
+14:	move.l	%a1,%d4
+	not.l	%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
+	move.l	%a1,%d4
+	not.l	%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
+	move.l	%a1,%d4
+	not.l	%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
+	move.l	%a1,%d4
+	not.l	%d4
+	cmp.l	(%a1)+,%d4
+	bne	fail_pat
+	dbf	%d1,14b
+	moveq	#'.',%d0
+	lea	15f,%a6
+	jmp	post_putc
+15:
+	/* pass 3: byte lanes.  Lower half: even byte then odd byte. */
+	lea	RAM_BASE,%a1
+	moveq	#0x55,%d2
+	move.b	#0xAA,%d3
+	move.w	#(RAM_SIZE / 32) - 1,%d1
+30:	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	move.b	%d2,(%a1)+
+	move.b	%d3,(%a1)+
+	dbf	%d1,30b
+	/* upper half: odd byte then even byte */
+	move.w	#(RAM_SIZE / 32) - 1,%d1
+31:	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
+	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
+	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
+	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
+	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
+	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
+	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
+	move.b	%d3,1(%a1)
+	move.b	%d2,(%a1)+
+	addq.l	#1,%a1
 	dbf	%d1,31b
 	move.l	#0x55AA55AA,%d4
 	lea	32f,%a3
 	jmp	verify_longs
-32:	lea	RAM_BASE,%a1
-	move.w	#(RAM_SIZE / 8) - 1,%d1
-33:	move.b	#0xAA,(%a1)+
-	move.b	#0x55,(%a1)+
-	move.b	#0xAA,(%a1)+
-	move.b	#0x55,(%a1)+
-	move.b	#0xAA,(%a1)+
-	move.b	#0x55,(%a1)+
-	move.b	#0xAA,(%a1)+
-	move.b	#0x55,(%a1)+
-	dbf	%d1,33b
-	move.l	#0xAA55AA55,%d4
-	lea	34f,%a3
-	jmp	verify_longs
-34:
+32:
 	lea	str_ok,%a5
 	lea	35f,%a4
 	jmp	post_puts
@@ -144,12 +209,7 @@ verify_longs:
 2:	jmp	(%a3)
 
 /* ---- failure: "RAM FAIL @aaaaaaaa exp xxxxxxxx got yyyyyyyy", then blink forever ---- */
-fail_addr:				/* a1 = address, expected = a1, got = d0 */
-	move.l	%a1,%d4
-	move.l	%d0,%d6
-	move.l	%a1,%d3
-	bra	fail
-fail_pat:				/* a1 = address + 4, expected = d4 */
+fail_pat:				/* a1 = address + 4, expected = d4 (all passes) */
 	subq.l	#4,%a1
 	move.l	(%a1),%d6
 	move.l	%a1,%d3
@@ -188,8 +248,6 @@ blink:	bchg	#GPIO_LED0_BIT,%d7	/* alternate LED0 / LED1 at ~2 Hz */
 
 	.section .rodata
 	.align	2
-patterns:
-	.long	0x55555555, 0xAAAAAAAA, 0x00000000, 0xFFFFFFFF
 str_hello:	.asciz	"\r\n\r\nother-m68k POST\r\n"
 str_romsum:	.asciz	"ROM sum "
 str_ok:		.asciz	" OK\r\n"

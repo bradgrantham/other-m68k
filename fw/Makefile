@@ -44,10 +44,13 @@ $(B):
 	mkdir -p $(B)
 
 $(B)/%.o: %.S | $(B)
-	$(AS) $(ASFLAGS) -c -o $@ $<
+	$(AS) $(ASFLAGS) -MMD -MP -c -o $@ $<
 
 $(B)/%.o: %.c | $(B)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
+
+# header dependencies (generated/hw.h and friends change with the spec)
+-include $(wildcard $(B)/*.d)
 
 # FatFs R0.15 (fatfs/, configured by fatfs/ffconf.h); vendor code, warnings not our business.
 $(B)/ff.o: $(FATFS) fatfs/ffconf.h | $(B)

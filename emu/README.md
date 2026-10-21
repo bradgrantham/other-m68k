@@ -1,7 +1,7 @@
 # other-m68k emulator
 
 `m68k-emu` runs the board's ROM on a Musashi 68000 core with a model of the two CPLDs and the
-peripherals: 256 KB RAM, the 1 MB ROM window (two SST39SF040 flash chips, in-system
+peripherals: 1 MB RAM, the 1 MB ROM window (two SST39SF040 flash chips, in-system
 programmable) with the reset overlay, the CPLD2 registers, the soft
 switches, the 320x240 RGB332 framebuffer in an SDL2 window, the 68681 DUART (channel A is the
 serial console), the PS/2 keyboard, an SDHC card in SPI mode, 1-bit audio and the NMI/reset buttons.

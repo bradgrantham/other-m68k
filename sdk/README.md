@@ -54,8 +54,8 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   differ from newlib's `<fcntl.h>`; do not include both in one file (the shim does the
   translation for `open()`).
 * Heap: `sbrk` hands out `__heap_start` .. `mem_info.user_end - 16 KB`; the top 16 KB of the
-  user region is the stack (USP starts at 0x1A7FC). Framebuffer page 1
-  (0x1A800-0x2D3FF) is free RAM if you do not double buffer.
+  user region is the stack (USP starts at 0xDA7FC; the user region is 0x4000-0xDA7FF, 858 KB).
+  Framebuffer page 1 (0xDA800-0xED3FF) is free RAM if you do not double buffer.
 * The program runs in user mode: it cannot change SR or use privileged instructions.
   Interrupt hooks are installed with `sys_set_irq_handler(level, fn)` (levels 1-4; the hook
   is a plain `void fn(void)` called from the BIOS ISR in supervisor mode) and

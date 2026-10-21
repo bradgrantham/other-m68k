@@ -45,8 +45,8 @@ of the 1 MB window (`ROM_SIZE`) is not part of the image.
   vectors point into the ROM being rewritten). On an erase/program timeout or a verify mismatch
   the routine prints which sector failed and stops the CPU: reset and retry `flash` if the
   monitor still boots, otherwise program the chips in the TL866. `flash` stages the image at
-  `USER_BASE` (through framebuffer page 1; the display is switched to page 0), so it clobbers
-  user RAM. The same image (`rom.bin`) serves the emulator, `flash` and, split, the TL866.
+  `USER_BASE` (128 KB plus the 1 KB routine, all inside the user region below both framebuffer
+  pages), so it clobbers user RAM. The same image (`rom.bin`) serves the emulator, `flash` and, split, the TL866.
 
   Tested in the emulator: `--rom A.bin --sd sd.img --type "flashid\nflash ROM.BIN\ny" --rom-save out.bin`
   with a `ROM.BIN` built with another `FW_VERSION`: the dots, the new banner, and `out.bin`
@@ -56,7 +56,7 @@ Run in the emulator:
 
 ```
 emu/build/m68k-emu --rom fw/build/rom.bin                       # window + PS/2 keyboard
-emu/build/m68k-emu --rom fw/build/rom.bin --headless --frames 300 --type "help\n"
+emu/build/m68k-emu --rom fw/build/rom.bin --headless --frames 500 --type "help\n"
 ```
 
 The serial port is the emulator's stdin/stdout (`--serial-log FILE` keeps a copy;
@@ -70,11 +70,11 @@ S=/tmp/sdimg; mkdir -p $S
 for p in hello plasma ls cat fstest; do cp sdk/build/$p.elf $S/$(echo $p | tr a-z A-Z).ELF; done
 sh fw/test/mkimage.sh $S/sd.img 64 $S/*.ELF fw/test/data/README.TXT     # mkfs.vfat + mcopy
 ./emu/build/m68k-emu --rom fw/build/rom.bin --sd $S/sd.img --headless --frames 1500 \
-    --serial-log $S/run.log --type "sd\ndir\nrun hello.elf\nx\n" --type-delay 200 \
+    --serial-log $S/run.log --type "sd\ndir\nrun hello.elf\nx\n" --type-delay 350 \
     --no-audio --no-stdin
 ```
 
-`--type-delay 200` leaves the POST (~100 frames) time to finish before typing starts; the
+`--type-delay 350` leaves the POST (~250 frames: the 1 MB RAM test) time to finish before typing starts; the
 trailing `x` is the key `hello` waits for. Expected log (abridged):
 
 ```
@@ -112,7 +112,7 @@ plus loading the 35 KB `hello.elf` takes about 2.5 s of emulated time.
 | LEDs | meaning |
 |---|---|
 | LED0 on | reset reached `_start`; DUART programmed; ROM checksum running |
-| LED0 + LED1 on | RAM test running (~1.7 s) |
+| LED0 + LED1 on | RAM test running (~4 s for 1 MB) |
 | LED1 on | RAM passed; C initialisation (vectors, .data/.bss, console, interrupts) |
 | both off | monitor idle / running normally |
 | LED0 / LED1 alternating at ~2 Hz forever | RAM test failed (details on serial) |
@@ -136,13 +136,18 @@ POST serial output, 38400 8N1 (`SERIAL_BAUD`):
 ```
 other-m68k POST
 ROM sum 0000 OK          <- 16-bit word sum of the whole ROM, must be 0000
-RAM ....... OK           <- one dot per pass: address-in-address, 55, AA, 00, FF, byte lanes x2
+RAM ... OK               <- one dot per pass: address-in-address, inverted address, byte lanes
 ```
 
 A RAM failure prints `RAM FAIL @aaaaaaaa exp xxxxxxxx got yyyyyyyy` and blinks forever.
-The byte-lane passes write 0x55 to even (D15..D8) and 0xAA to odd (D7..D0) bytes with
-byte moves and verify as longs, then the inverse, so a stuck WEU/WEL shows up as
-`exp 55AA55AA got ...`.
+Pass 1 writes every long's address into it (address-line and aliasing faults), pass 2 the
+inverted address (with pass 1 every cell has held both states of every bit), pass 3 writes
+0x55 to even (D15..D8) and 0xAA to odd (D7..D0) bytes with byte moves and verifies as longs.
+The 68000 drives a byte on both halves of the data bus, so a stuck WEU/WEL lets the first
+write of a pair clobber the other byte and the second repair it: the lower half of RAM
+writes even then odd (catches WEU stuck), the upper half odd then even (catches WEL stuck);
+either shows up as `exp 55AA55AA got ...`. The three sweeps take about 50 M clocks, 4 s at
+12 MHz.
 
 After the POST the banner shows board name, firmware version, the stored checksum word,
 RAM size, ID register (0x6802 on the DUART board), NTSC/PAL (PAL is selected with the soft
@@ -155,9 +160,9 @@ switch when `INTSTAT.PALJMP` is set) and the DUART baud rate.
 | 0x000000-0x0003FF | vector table, copied from ROM after the RAM test (programs may hook vectors) |
 | 0x000400-0x001994 | BIOS `.data` + `.bss` (input rings 512+256+128 B, console shadow text 1200 B, exception record, FATFS + file table ~1.3 KB, 512 B block buffer) |
 | 0x001994-0x004000 | supervisor stack, grows down from `SYS_STACK_TOP` (0x4000) |
-| 0x004000-0x01A7FF | user program; USP starts at 0x01A7FC |
-| 0x01A800-0x02D3FF | framebuffer page 1 (user programs may use it as RAM if they do not double buffer) |
-| 0x02D400-0x03FFFF | framebuffer page 0 = the console |
+| 0x004000-0x0DA7FF | user program (858 KB); USP starts at 0x0DA7FC |
+| 0x0DA800-0x0ED3FF | framebuffer page 1 (user programs may use it as RAM if they do not double buffer) |
+| 0x0ED400-0x0FFFFF | framebuffer page 0 = the console |
 
 ROM use: about 35 KB of 128 KB (`make` prints the sizes; `mkrom` prints the bytes used);
 FatFs is roughly 12 KB of that. BIOS `.data`+`.bss` is 0x1584 bytes (ends at 0x1994; the
@@ -293,7 +298,7 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 | `led n` | LEDs (bit 0 = LED0, bit 1 = LED1) |
 | `page n` | display framebuffer page 0 or 1 |
 | `ticks` | VBLANK counter |
-| `ramtest` | destructive test of 0x4000-0x3FFFF (user RAM and both framebuffers) |
+| `ramtest` | destructive test of 0x4000-0xFFFFF (user RAM and both framebuffers) |
 | `beep` | 1 kHz for 200 ms on GPIO.AUDIO |
 | `cls` | clear the console |
 | `info` | banner, tick rate, INTSTAT, INTEN and GPIO shadows, DUART SRA, RX overruns, PS/2 errors |
@@ -307,7 +312,7 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 
 Send the `.srec` produced by the SDK (`objcopy -O srec`) over the serial port, for example
 `cat prog.srec > /dev/ttyUSB0` after the prompt appears. The monitor recognises the first
-`S<digit>` line, stops echoing, stores S1/S2/S3 data (only into 0x4000-0x3FFFF; records
+`S<digit>` line, stops echoing, stores S1/S2/S3 data (only into 0x4000-0xFFFFF; records
 outside that are counted and dropped), and finishes at the S7/S8/S9 record, printing
 `srec: N records, M bytes, start-end, entry E`. Then `go` runs it. In the emulator, pipe
 the file to stdin once the prompt is visible (the emulator reads stdin as serial RX).
