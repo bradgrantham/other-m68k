@@ -11,13 +11,14 @@
   "ZIF footprint for the listed refs.  A part may carry keepout: [[x0, y0, x1, y1, why], ...]",
   "in footprint-local mm (unrotated, y down): each becomes a KiCad rule area that forbids",
   "other footprints (DRC reports intruders) and that the auto-placer avoids.",
-  "Floorplan rev B: CPLD2 (I/O) left next to the connectors, DUART and AD724; CPLD1 (bus and",
-  "memory) right next to the SRAM pair (top right) and the two 74AHCT245 bus buffers; CPU",
-  "horizontal below both CPLDs; the two flash chips (rev 3: SST39SF040 in plain DIP-32 sockets,",
-  "no ZIF) side by side along the bottom edge under the CPU.",
-  "Edge connectors: J1 USB-C, J2 FTDI, J3 PS/2, J4 microSD on the left edge; J5 RCA and J6",
-  "audio on the bottom edge (left); J7 JTAG, J8 expansion, SW1 reset, SW2 NMI on the top edge.",
-  "J9 (logic analyzer, 2x15) on the top edge between the expansion header and the SRAMs; U8/U9 are SOIC-20 now, stacked between CPLD1 and the SRAMs; JP1 is gone (NTSC only)."
+  "Floorplan rev C2 (front = bottom edge of the sheet, back = top edge): CPLD2 (I/O) left of centre, CPLD1 (bus and",
+  "memory) right next to the SRAM pair (top right) and the two 74AHCT245 bus buffers; CPU horizontal below both",
+  "CPLDs; the two flash chips (plain DIP-32 sockets) stand vertically at the right edge next to the CPU's end.",
+  "Back edge: J1 USB-C, J2 FTDI A, J11 FTDI B, J5 RCA, J10 S-video, J7 JTAG; the AD724 video section sits under",
+  "its two jacks. Front edge: J3 PS/2, J6 audio, J4 microSD (with the 3.3 V LDO behind it), then SW1 reset and",
+  "SW2 NMI with the three LEDs (D5 power, D3 LED0, D4 LED1) behind them, so a case can expose them. J9 (logic",
+  "the CPU carries the silkscreen dedication. J9 (logic analyzer, 2x15) and J7 (JTAG) stand on the left edge with the six series arrays RN1-RN6 in a spaced column beside J9 (the auto-placer jammed them into the corner and the router could not finish there); the",
+  "DUART and its crystal keep the left-centre."
  ],
  "board": {
   "width": 180,
@@ -47,10 +48,118 @@
  },
  "texts": [
   {
-   "text": "other-m68k rev C1",
-   "x": 162,
-   "y": 84,
-   "size": 2.0
+   "text": "other-m68k rev C2",
+   "x": 97,
+   "y": 101.3,
+   "size": 1.5
+  },
+  {
+   "text": "Griffin Jr.",
+   "x": 97,
+   "y": 107,
+   "size": 5.0
+  },
+  {
+   "text": "October 2026",
+   "x": 97,
+   "y": 113.5,
+   "size": 2.5
+  },
+  {
+   "text": "I love you, Kris!",
+   "x": 97,
+   "y": 119.5,
+   "size": 2.5
+  },
+  {
+   "text": "RESET",
+   "x": 140,
+   "y": 122.7,
+   "size": 1.3
+  },
+  {
+   "text": "NMI",
+   "x": 154,
+   "y": 122.7,
+   "size": 1.3
+  },
+  {
+   "text": "PWR",
+   "x": 136,
+   "y": 111,
+   "size": 1.0
+  },
+  {
+   "text": "LED0",
+   "x": 147,
+   "y": 111,
+   "size": 1.0
+  },
+  {
+   "text": "LED1",
+   "x": 158.5,
+   "y": 111,
+   "size": 1.0
+  },
+  {
+   "text": "PS/2",
+   "x": 16.5,
+   "y": 108.5,
+   "size": 1.2
+  },
+  {
+   "text": "AUDIO",
+   "x": 36.0,
+   "y": 106.0,
+   "size": 1.2
+  },
+  {
+   "text": "SD CARD",
+   "x": 72,
+   "y": 101.5,
+   "size": 1.2
+  },
+  {
+   "text": "USB-C 5V",
+   "x": 16.0,
+   "y": 18.0,
+   "size": 1.2
+  },
+  {
+   "text": "SERIAL A",
+   "x": 34,
+   "y": 2.3,
+   "size": 1.2
+  },
+  {
+   "text": "SERIAL B",
+   "x": 52,
+   "y": 2.3,
+   "size": 1.2
+  },
+  {
+   "text": "VIDEO",
+   "x": 77.5,
+   "y": 14.5,
+   "size": 1.2
+  },
+  {
+   "text": "S-VIDEO",
+   "x": 84.5,
+   "y": 16.5,
+   "size": 1.2
+  },
+  {
+   "text": "JTAG",
+   "x": 8,
+   "y": 94.5,
+   "size": 1.0
+  },
+  {
+   "text": "LOGIC",
+   "x": 8,
+   "y": 76.4,
+   "size": 1.0
   }
  ],
  "parts": {
@@ -71,52 +180,74 @@
    "y": 120
   },
   "J1": {
-   "x": 3.62,
-   "y": 15,
-   "rot": 270
+   "x": 16,
+   "y": 3.62,
+   "rot": 180
   },
   "J2": {
-   "x": 6,
-   "y": 40,
+   "x": 34,
+   "y": 6,
+   "rot": 90
+  },
+  "J11": {
+   "x": 52,
+   "y": 6,
+   "rot": 90
+  },
+  "J5": {
+   "x": 70,
+   "y": 5,
+   "rot": 270
+  },
+  "J10": {
+   "x": 86,
+   "y": 6.5,
+   "rot": 180
+  },
+  "J7": {
+   "x": 7,
+   "y": 86,
+   "rot": 0
+  },
+  "J9": {
+   "x": 7,
+   "y": 55,
    "rot": 0
   },
   "J3": {
-   "x": 6.5,
-   "y": 62,
-   "rot": 270
-  },
-  "J4": {
-   "x": 10,
-   "y": 88,
-   "rot": 270
-  },
-  "J5": {
-   "x": 16,
-   "y": 120,
-   "rot": 90
+   "x": 18,
+   "y": 118.5,
+   "rot": 0
   },
   "J6": {
-   "x": 29,
+   "x": 36,
    "y": 119.8,
    "rot": 0
   },
-  "J7": {
-   "x": 52,
-   "y": 7,
-   "rot": 90
-  },
-  "J8": {
-   "x": 72,
-   "y": 7,
-   "rot": 90
+  "J4": {
+   "x": 56,
+   "y": 115,
+   "rot": 0
   },
   "SW1": {
-   "x": 24,
-   "y": 7
+   "x": 140,
+   "y": 118
   },
   "SW2": {
-   "x": 36,
-   "y": 7
+   "x": 154,
+   "y": 118
+  },
+  "D5": {
+   "x": 136,
+   "y": 108.5
+  },
+  "D3": {
+   "x": 147,
+   "y": 108.5
+  },
+  "D4": {
+   "x": 158,
+   "y": 108.5
   },
   "U10": {
    "x": 34,
@@ -127,20 +258,20 @@
    "y": 81.5
   },
   "U12": {
-   "x": 25,
-   "y": 81
+   "x": 52,
+   "y": 101
   },
   "U13": {
    "x": 34,
    "y": 88.5
   },
   "U11": {
-   "x": 27,
-   "y": 103
+   "x": 103,
+   "y": 19.5
   },
   "Y2": {
-   "x": 39,
-   "y": 95.5
+   "x": 90,
+   "y": 21
   },
   "U7": {
    "x": 66,
@@ -151,11 +282,11 @@
    "y": 46
   },
   "X1": {
-   "x": 89,
-   "y": 18.6
+   "x": 118,
+   "y": 17
   },
   "U1": {
-   "x": 100,
+   "x": 98,
    "y": 85.5,
    "rot": 90
   },
@@ -170,28 +301,53 @@
    "rot": 90
   },
   "U8": {
-   "x": 138,
-   "y": 50,
-   "rot": 90
+   "x": 134,
+   "y": 65.5,
+   "rot": 0
   },
   "U9": {
-   "x": 138,
-   "y": 64,
-   "rot": 90
+   "x": 134,
+   "y": 50,
+   "rot": 0
   },
   "U5": {
-   "x": 80,
-   "y": 113,
-   "rot": 90
+   "x": 150,
+   "y": 84,
+   "rot": 0
   },
   "U4": {
-   "x": 125.5,
-   "y": 113,
+   "x": 169,
+   "y": 84,
+   "rot": 0
+  },
+  "RN1": {
+   "x": 15.5,
+   "y": 38.0,
    "rot": 90
   },
-  "J9": {
-   "x": 105,
-   "y": 7,
+  "RN2": {
+   "x": 15.5,
+   "y": 44.5,
+   "rot": 90
+  },
+  "RN3": {
+   "x": 15.5,
+   "y": 51.0,
+   "rot": 90
+  },
+  "RN4": {
+   "x": 15.5,
+   "y": 57.5,
+   "rot": 90
+  },
+  "RN5": {
+   "x": 15.5,
+   "y": 64.0,
+   "rot": 90
+  },
+  "RN6": {
+   "x": 15.5,
+   "y": 70.5,
    "rot": 90
   }
  }

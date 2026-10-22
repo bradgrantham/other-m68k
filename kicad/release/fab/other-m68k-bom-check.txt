@@ -1,7 +1,7 @@
-assembled: 137 placements, 46 BOM lines; assembler-supplied chips inserted into sockets: 4; fitted by us: 4
+assembled: 142 placements, 46 BOM lines; assembler-supplied chips inserted into sockets: 4; fitted by us: 4
 
 Part numbers written from memory, not yet checked against a distributor listing:
 
 Assembled parts without an MPN: none
-Assembled parts without an LCSC number (JLCPCB matches basic passives itself): 43
-  C37, C46, D3, D4, D5, F1, FB1, J1, J2, J3, J4, J5, J6, J7, J8, J9, R24, R25, R26, R27, R28, R29, R30, R31, R32, R33, R34, R38, RN1, RN2, RN3, RN4, RN5, RN6, SW1, SW2, U8, U9, U11, U13, X1, Y1, Y2
+Assembled parts without an LCSC number (JLCPCB matches basic passives itself): 48
+  C37, C38, C39, C48, D3, D4, D5, F1, FB1, J1, J2, J3, J4, J5, J6, J7, J9, J10, J11, R24, R25, R26, R27, R28, R29, R30, R31, R32, R33, R34, R38, R39, R40, RN1, RN2, RN3, RN4, RN5, RN6, SW1, SW2, U8, U9, U11, U13, X1, Y1, Y2

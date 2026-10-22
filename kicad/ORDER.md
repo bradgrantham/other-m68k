@@ -1,15 +1,26 @@
-# Ordering other-m68k rev B from PCBWay
+# Ordering other-m68k rev C2 from PCBWay
 
-This file describes the **rev B4** order placed 2026-10-20 (git tag `rev-b`). The current
-design in this directory is **rev C1** (spec rev 7/8, 2026-10-21), not ordered: the SD card is
-wired as a native 4-bit bus (CLK, CMD, DAT0..3 straight to CPLD2 pins 15, 24, 8, 16, 58, 4
-with 10 k pull-ups to 3.3 V, the three 1.8k/3.3k level dividers removed), and the four UIO
-bits on the expansion header are gone (pins 5/7/9/11 unconnected). Six fewer resistors
-overall; everything else is as below. Rev B4 boards can be modified by hand to the rev C1
-wiring: remove the dividers, bridge CS/CLK/MOSI across, add 10 k pull-ups, and wire J4 DAT1/DAT2
-to CPLD2 pins 16 and 58. Rev C1 also changes the audio low-pass capacitor (the 0603 next to J6,
-1 k / 10 nF on B4) (C31) to 33 nF: a 4.8 kHz corner instead of 16 kHz, which cuts the PDM hiss above
-8 kHz by about 6 dB; on a B4 board swap that one capacitor.
+This file describes the **rev C2** order (2026-10-21; the rev B4 order of 2026-10-20, git tag
+`rev-b`, was stopped before fabrication). Rev C2 is the current design in this directory, spec
+rev 10:
+
+* **SD card** (rev C1, spec rev 7): native 4-bit bus. CLK, CMD, DAT0..3 run straight to CPLD2
+  pins 15, 24, 8, 16, 58, 4 with 10 k pull-ups to 3.3 V; the three 1.8k/3.3k level dividers of
+  rev B4 are gone.
+* **Audio low-pass** (rev C1): C31 is 33 nF (4.8 kHz corner) instead of 10 nF.
+* **Front and back** (rev C2): the sheet's bottom edge is the front: J3 PS/2, J6 audio, J4
+  microSD, then SW1 RESET and SW2 NMI with the LEDs D5 PWR, D3 LED0, D4 LED1 behind them, all
+  labelled on the silkscreen. The top edge is the back: J1 USB-C, J2 serial A, J11 serial B,
+  J5 composite, J10 S-video. J9 (logic analyzer) and J7 (JTAG) stand on the left edge.
+* **S-video** (rev C2): J10, a CUI MD-40SM mini-DIN 4, fed from the AD724's LUMA and CRMA
+  outputs through 220 uF and 75 ohm each (two more electrolytics and two resistors).
+* **Serial B** (rev C2): J11, a second 6-pin FTDI header on DUART channel B, replaces the 2x8
+  expansion header J8.
+* The silkscreen carries a dedication in the open area under the CPU ("Griffin Jr.",
+  "October 2026", "I love you, Kris!") and the board revision.
+
+The rev B4 notes below (quantities, stackup, assembly scope, part substitutions, power) still
+apply; the fab package in `release/fab/` is regenerated from the rev C2 board.
 
 Decisions taken 2026-10-20. Everything below is produced by `make -C kicad fab` into
 `kicad/build/fab/`; upload the Gerber zip for the boards and the PCBWay BOM + centroid for
@@ -20,7 +31,7 @@ assembly.
 | parameter | value |
 |---|---|
 | quantity | 5 bare boards, 1 of them assembled |
-| size | 180 x 125 mm, 3 mm corner radius, four M3 holes |
+| size | 180 x 125 mm, 3 mm corner radius, four M3 holes (unchanged in rev C2) |
 | layers | 4: F.Cu signal, In1 GND plane, In2 VCC plane, B.Cu signal (PCBWay standard 4-layer stackup) |
 | thickness / copper | 1.6 mm, 1 oz outer and inner |
 | finish | lead-free HASL |
@@ -37,7 +48,7 @@ assembly.
 | scope | SMD **and** through-hole: passives, LDO, AD724, supervisor, 74AHCT245 (SOIC), connectors, headers, jacks, switches, crystals, oscillator, electrolytics, every IC socket (plain DIP/PLCC sockets, no ZIF), and four memory chips that PCBWay buys and inserts into their sockets: the two AS6C4008-55PCN SRAMs (U2/U3) and the two SST39SF040 flash chips (U4/U5, inserted blank) |
 | consigned | none. U11 (AD724JRZ) is in the BOM as PCBWay-supplied; it is a last-time-buy part (DigiKey LTB date 2027-07-29, about 50 in stock at $25, Mouser/Farnell/Newark also stock it). If PCBWay's BOM review cannot source it, have them leave U11 unfitted and hand-solder it (SOIC-16W, 1.27 mm pitch). Buy spares for the bare boards while stock lasts. |
 | customer fits afterwards | `other-m68k-customer-parts.csv`: U1 MC68000P12, U6/U7 ATF1508AS-7JX84, U10 MC68681P, all into their sockets |
-| first firmware | the flash chips arrive blank: program `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0) with the TL866 (SST39SF040, 512 KB images), then later updates with the monitor's `flash ROM.BIN` from the SD card and `reboot` |
+| first firmware | the flash chips arrive blank: program `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0) with the TL866 (SST39SF040, 512 KB images, built by the top-level `make flash`; they carry the 256 KB BIOS image and the C: volume with AUTOEXEC.CMD and the example programs), then later BIOS updates with the monitor's `flash D:ROM.BIN` from the SD card (C: is left intact) |
 | not fitted | mounting holes, test pads, the crystal trim capacitor (DNP) |
 | loose parts | none (the PAL jumper is gone; no shunts) |
 

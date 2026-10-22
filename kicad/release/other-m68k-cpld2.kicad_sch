@@ -9279,7 +9279,7 @@
 				(hide yes)
 			)
 		)
-		(property "PcbNear" "U7"
+		(property "PcbNear" "SW2"
 			(at 49.53 317.5 0)
 			(effects
 				(font
@@ -9512,7 +9512,7 @@
 				(hide yes)
 			)
 		)
-		(property "PcbNear" "U7"
+		(property "PcbNear" "SW2"
 			(at 302.26 289.56 0)
 			(effects
 				(font

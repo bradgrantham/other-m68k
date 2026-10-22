@@ -220,12 +220,6 @@
    "desc": "pin header 2x5 2.54 mm",
    "assembly": "pcba"
   },
-  "Expansion|*": {
-   "mfr": "Sullins",
-   "mpn": "PRPC008DAAN-RC",
-   "desc": "pin header 2x8 2.54 mm",
-   "assembly": "pcba"
-  },
   "RESET|*": {
    "mfr": "Omron",
    "mpn": "B3F-1000",
@@ -297,6 +291,18 @@
    "mfr": "Yageo",
    "mpn": "YC164-JR-07100RL",
    "desc": "4 x 100 ohm resistor array, 4x0603 convex (1206 size); alt Panasonic EXB-38V101JV",
+   "assembly": "pcba"
+  },
+  "S-video|*": {
+   "mfr": "CUI Devices",
+   "mpn": "MD-40SM",
+   "desc": "mini-DIN 4 jack (S-video), right angle",
+   "assembly": "pcba"
+  },
+  "FTDI B (GND CTS VCC TXD RXD RTS)|*": {
+   "mfr": "Sullins",
+   "mpn": "PRPC006SAAN-RC",
+   "desc": "pin header 1x6 2.54 mm",
    "assembly": "pcba"
   }
  },

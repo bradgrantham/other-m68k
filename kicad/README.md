@@ -46,8 +46,8 @@ pictures. Page 1 is the root with the seven sheet symbols; the power-net anchors
 | 3 | memory | U2/U3 SRAM (hi/lo byte), U4/U5 SST39SF040 flash (even/odd), U8/U9 74AHCT245 (hi/lo) |
 | 4 | cpld1 | U6 ATF1508AS "MMU" with every pin labelled from `hdl/pins_cpld1_mmu.json`, X1 24 MHz oscillator, J7 JTAG, JTAG pull-ups, 8+1 decoupling capacitors |
 | 5 | cpld2 | U7 ATF1508AS "I/O", J3 PS/2, J4 microSD with its six 10 k pull-ups (native 4-bit SD bus, CPLD2 open-drain), SW2 NMI, D3/D4 LEDs, J6 audio and its filter, decoupling |
-| 6 | video | U11 AD724 (AD725 symbol), the three resistor DACs and terminations, Y2 subcarrier crystal, STND pull-up (NTSC)JMP jumpers, FB1, J5 RCA, 220 uF/75 ohm output |
-| 7 | io | U10 MC68681 DUART, Y1 3.6864 MHz, J2 FTDI, J8 expansion, U13 MCP130 + SW1 reset, DUART pull-ups |
+| 6 | video | U11 AD724 (AD725 symbol), the three resistor DACs and terminations, Y2 subcarrier crystal, STND pull-up (NTSC), FB1, J5 RCA and J10 S-video (rev C2), 220 uF/75 ohm on each of the three outputs |
+| 7 | io | U10 MC68681 DUART, Y1 3.6864 MHz, J2 FTDI (channel A), J11 FTDI (channel B, rev C2), U13 MCP130 + SW1 reset, DUART pull-ups |
 | 8 | power | J1 USB-C, F1 polyfuse, CC pull-downs, bulk capacitors, D5 power LED, U12 AP2112K-3.3, H1..H4 |
 
 Net names follow the spec (`A1..A23`, `D0..D15` CPU data bus, `MD0..MD15` SRAM-side bus,
@@ -92,9 +92,13 @@ behind FB1).
 * **JTAG header** J7 (ByteBlaster pinout): 1 TCK, 2 GND, 3 TDO, 4 VCC, 5 TMS, 6 GND,
   7 n/c, 8 GND, 9 TDI, 10 GND. Chain: header TDI -> U6 (TDI 14, TDO 71) -> U7 TDI -> U7
   TDO -> header. 10 k pull-ups on TMS and on both TDIs.
-* **Expansion header** J8 (2x8): odd row 1 +5V, 3 +3V3, 5/7/9/11 no connect (UIO0..3 until
-  spec rev 7, removed to make room in CPLD2 for the 4-bit SD bus), 13 DUART TXDB, 15 DUART
-  RXDB; every even pin GND.
+* **Serial headers** J2 (channel A) and J11 (channel B, rev C2; it replaces the 2x8 expansion
+  header J8 of rev B/C1, which by then carried only channel B and the rails): both the 6-pin
+  FTDI pinout GND, CTS, VCC, TXD, RXD, RTS with only GND, TXD and RXD connected, 5 V TTL.
+* **S-video** J10 (rev C2): the AD724's LUMA (pin 11) and CRMA (pin 9) outputs, each through
+  220 uF and 75 ohm like the composite output, to a CUI MD-40SM mini-DIN 4 (1 GND, 2 GND,
+  3 Y, 4 C; footprint `other-m68k:MiniDIN-4_CUI_MD-40SM_Horizontal`, the pre-03/2022 layout
+  of the MD-SM series datasheet, same convention as the PS/2 jack).
 * **SD card** (rev C1, spec rev 7): native 4-bit SD bus. CLK, CMD and DAT0..3 run straight
   from CPLD2 to J4, each with a 10 k pull-up to +3V3; CPLD2 drives them open-drain (low or
   released) and reads them back, so the 3.3 V pull-ups set the high level and no 5 V -> 3.3 V
@@ -208,23 +212,28 @@ distributor listing; clear the flag once it has.
   it later. Use it for mechanical clearance a footprint does not model (an extractor tool,
   a heatsink, a lever on a socket whose footprint stops at the body).
 
-Layout rev B (180 x 125 mm, 4 layers: F.Cu / GND / VCC / B.Cu, all parts on top):
+Layout rev C2 (180 x 125 mm, 4 layers: F.Cu / GND / VCC / B.Cu, all parts on top; the
+sheet's bottom edge is the machine's front, the top edge its back):
 
-* Left edge, top to bottom: J1 USB-C, J2 FTDI, J3 PS/2, J4 microSD. Bottom edge: J5 RCA
-  and J6 audio at the left. Top edge: SW1 reset, SW2 NMI, J7 JTAG, J8 expansion, J9 logic
-  analyzer (2x15, gusmanb pinout, 100 ohm series arrays RN1-RN6 beside it; see ORDER.md).
-* U10 DUART stands vertically between the connectors and CPLD2, near the FTDI header; Y1,
-  U13 and U12 below it; U11/Y2 (video) in the bottom-left corner next to the RCA jack.
-* U7 (CPLD2, I/O) left of centre next to the connectors it serves; U6 (CPLD1, bus and
-  memory) right of centre next to the SRAM pair U2/U3 (top right, horizontal) and the two
-  bus transceivers U8/U9 (SOIC-20, between U6 and the SRAMs). X1 above and between the CPLDs.
-* U1 lies horizontally under both CPLDs.
-* The two flash chips U5 (odd) and U4 (even) lie horizontally side by side along the
-  bottom edge under the CPU (rev 3: SST39SF040 in plain DIP-32 sockets; rev B had 3M ZIF
-  sockets for EPROMs there, with the levers lifting at the board edge).
+* Back edge, left to right: J1 USB-C, J2 serial A, J11 serial B, J5 RCA, J10 S-video; the
+  AD724 video section (U11, Y2, the DACs) right of the S-video jack above CPLD1, X1 next to
+  it. Front edge, left to right: J3 PS/2, J6 audio, J4 microSD (U12, the 3.3 V LDO, behind
+  it), then SW1 reset and SW2 NMI with the three LEDs D5 power, D3 LED0, D4 LED1 behind them,
+  labelled on the silkscreen, so a case can expose the front. Left edge: J9 logic analyzer
+  (2x15, gusmanb pinout, 100 ohm series arrays RN1-RN6 beside it; see ORDER.md) and J7 JTAG,
+  used with the case off.
+* U10 DUART stands vertically left of centre under the two serial headers; Y1 and U13 below it.
+* U7 (CPLD2, I/O) left of centre; U6 (CPLD1, bus and memory) right of centre next to the
+  SRAM pair U2/U3 (top right, horizontal) and the two bus transceivers U8/U9 (SOIC-20,
+  under the SRAMs). U1 lies horizontally under both CPLDs.
+* The two flash chips U5 (odd) and U4 (even) stand vertically at the right edge next to the
+  CPU's end (plain DIP-32 sockets). The free area under the CPU carries the dedication text.
 
 Rev A had CPLD1 on the left and the memory stacked down the right edge, which put the
-whole bus across the board; rev B is what made room for the memory along the bottom.
+whole bus across the board; rev B put the memory along the bottom and every connector on the
+left and top edges; rev C2 (2026-10-21) sorted the connectors into a front and a back,
+moved the buttons and LEDs to the front, added the S-video jack and replaced the expansion
+header by the second serial header.
 
 Knobs the author may want to turn: board size, which edge the video connectors use,
 whether the SMD passives should go to the bottom side under the sockets (`"side":
@@ -318,11 +327,11 @@ and then in `kicad/lib/`.
 
 * **Serial mouse (decided 2026-10-20): an adapter, not a board change.** A Microsoft/Logitech
   serial mouse (1200 baud 7N1, RS-232 levels, powered from RTS/DTR) hangs off DUART channel
-  B on the expansion header J8 (TXDB pin 13, RXDB pin 15, +5 V pin 1, GND even pins) through
-  a small MAX232 adapter: one receiver mouse TXD -> RXDB, one driver TXDB -> mouse RXD (idle
-  negative = the mouse's negative rail), the other driver(s) holding RTS and DTR positive,
-  ideally from a UIO bit so firmware can power-cycle the mouse for detection. The adapter
-  schematic and the channel-B mouse driver are on the list; the main board is unchanged.
+  B on the serial B header J11 (FTDI pinout: GND 1, TXD 4, RXD 5; rev C1 had it on the
+  expansion header) through a small MAX232 adapter: one receiver mouse TXD -> RXDB, one driver
+  TXDB -> mouse RXD (idle negative = the mouse's negative rail), the other driver(s) holding
+  RTS and DTR positive. The adapter schematic and the channel-B mouse driver are on the list;
+  the main board is unchanged.
 
 * The schematic is a generated, label-per-pin drawing: correct and ERC-clean, but not a
   pretty hand-drawn sheet. Everything connects by global label name.

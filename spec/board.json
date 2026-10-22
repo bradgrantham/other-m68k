@@ -1,14 +1,14 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 9,
+    "revision": 10,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
     "cpu_clock_div": 2,
     "slot_fast_clocks": 8,
     "slot_cpu_clocks": 4,
-    "desc": "68000 SBC: 1 MB SRAM, 1 MB flash ROM window (256 KB BIOS image + 768 KB FAT12 volume), memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 8-bit PDM audio (one byte per video line shifted out by CPLD2)."
+    "desc": "68000 SBC: 1 MB SRAM, 1 MB flash ROM window (256 KB BIOS image + 768 KB FAT12 volume), memory-mapped 320x240x8 composite and S-video colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial (two FTDI headers), 8-bit PDM audio (one byte per video line shifted out by CPLD2)."
   },
   "memory_map": [
     {
@@ -116,7 +116,7 @@
     ],
     "pixel_clocks": 2,
     "progressive": true,
-    "encoder": "AD724 (RGB in, composite out). Standard (NTSC/PAL) fixed by two pull resistors (STND, PALJMP) plus the matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP.",
+    "encoder": "AD724 (RGB in, composite out). Standard (NTSC/PAL) fixed by two pull resistors (STND, PALJMP) plus the matching subcarrier crystal; the CPLD timing table is selected by soft switch; jumper state readable in INTSTAT.PALJMP. Board rev C2 also brings the AD724's LUMA and CRMA outputs, each through 220 uF and 75 ohm like the composite output, to an S-video mini-DIN 4 (J10: 1 GND, 2 GND, 3 Y, 4 C); the three outputs are driven at once.",
     "timing": {
       "ntsc": {
         "line_clocks": 764,
@@ -777,7 +777,7 @@
   ],
   "interrupt_mode": "autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied inactive); vector = 24 + level",
   "serial": {
-    "device": "MC68681 DUART channel A on the FTDI header (channel B TXD/RXD brought to the expansion header)",
+    "device": "MC68681 DUART channel A on the FTDI header J2 (serial A); channel B on the identical FTDI header J11 (serial B, board rev C2; rev B/C1 brought it to the expansion header)",
     "baud": 38400,
     "format": "8N1",
     "xtal_hz": 3686400,
@@ -795,7 +795,7 @@
     },
     "init": "MR1A=0x13 (8 bits, no parity), MR2A=0x07 (1 stop), ACR=0x00 (baud-rate set 1), CSRA=0xCC (38.4k RX and TX), CRA=0x05 (enable RX+TX); IMR bit 1 (RXRDYA) for receive interrupts",
     "note": "38400 is the highest rate in the 68681's fixed tables: CSR code 0xC is 38.4k in set 1 (ACR[7]=0) and 19.2k in set 2 (ACR[7]=1), data sheet Table 4-5. The counter/timer or an external 16x clock could give more but are not used.",
-    "connector": "6-pin FTDI header (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected",
+    "connector": "two 6-pin FTDI headers, J2 channel A and J11 channel B (GND, CTS, VCC, TXD, RXD, RTS); 5V TTL levels, FT232H inputs are 5V tolerant; CTS/RTS not connected",
     "console": "Channel A carries the power-on self test report and the BIOS banner. After the banner the BIOS releases it: console output (monitor, exceptions, putchar/puts/write to fd 1 and 2) goes to the video console only and console input (getchar/pollchar, read from fd 0) comes from the PS/2 keyboard only. The receive interrupt keeps filling the 512-byte ring, which serial_getc and reads of /dev/ttya drain; the BIOS itself never touches the port again except for the monitor's `srec` command while it runs, and the `flash` command's RAM routine, which reports its progress and result there because the ROM holding the video console code is being rewritten.",
     "devices": [
       {

@@ -64,9 +64,9 @@ above 8 kHz in the emulator reconstruction of the tune example, notes unaffected
 
 ## Video outputs
 
-- **S-video**: the AD724's LUMA (pin 11) and CRMA (pin 9) outputs through 75 ohm to a
-  mini-DIN 4 jack. Two resistors and a connector; no CPLD or firmware change. Kills
-  cross-colour and gives the TV the full luma bandwidth.
+- **S-video**: DONE 2026-10-21 in board rev C2 (J10, CUI MD-40SM): the AD724's LUMA (pin 11)
+  and CRMA (pin 9) outputs through 220 uF and 75 ohm each to the mini-DIN 4. No CPLD or
+  firmware change. Kills cross-colour and gives the TV the full luma bandwidth.
 - **Monochrome switch**: an analog SPDT video switch (5 V, low on-resistance, e.g. a
   TS5A3159-class part) selecting COMP or LUMA onto the RCA jack, driven by a CPLD2 soft
   switch. Luma alone has sync but no burst, so the TV's colour killer engages: no

@@ -225,8 +225,8 @@ fitter budget (section 7) does not allow them. SDIO reads back the six card line
   periods (~190 us) so a glitch cannot desynchronise it permanently. Host-to-device
   transmission is bit-banged by software through GPIO.PS2CLK/PS2DAT (open-drain pins).
 * **Serial**: not in the CPLDs. A 68681 DUART on the CPU bus provides channel A (FTDI
-  header, 38400 8N1, the top of the chip's fixed baud table) and channel B (expansion
-  header). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
+  header J2, 38400 8N1, the top of the chip's fixed baud table) and channel B (a second FTDI
+  header, J11, since board rev C2). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
   set; INTSTAT.DUARTIRQ shows the pin. The DUART's IACK is tied high: all interrupts are
   autovectored and the ISR reads the DUART's own ISR register.
 * **SD card** (spec rev 7, board rev C1): native 4-bit SD bus, bit-banged. The six lines
@@ -242,7 +242,8 @@ fitter budget (section 7) does not allow them. SDIO reads back the six card line
   streams pattern buffers from the HSYNC interrupt (audio_start/next/last); the SDK encodes
   8-bit samples with a sigma-delta table.
 * **USERIO**: removed in spec rev 7; its four macrocells and pins went to the SD data lines.
-  The expansion header keeps +5V, +3V3, GND and DUART channel B.
+  The expansion header that carried them went in board rev C2; DUART channel B has its own
+  FTDI header instead.
 
 ## 6. Reset
 

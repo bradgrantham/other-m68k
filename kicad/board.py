@@ -130,8 +130,9 @@ def build():
                 "3.5mm audio", sheet="cpld2")
     j7 = b.part("J7", "Connector_Generic", "Conn_02x05_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x05_P2.54mm_Vertical",
                 "JTAG (ByteBlaster)", sheet="cpld1")
-    j8 = b.part("J8", "Connector_Generic", "Conn_02x08_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x08_P2.54mm_Vertical",
-                "Expansion", sheet="io")
+    j10 = b.part("J10", "other-m68k", "Mini-DIN-4_Shield", "other-m68k:MiniDIN-4_CUI_MD-40SM_Horizontal", "S-video", sheet="video")
+    j11 = b.part("J11", "Connector_Generic", "Conn_01x06", "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+                 "FTDI B (GND CTS VCC TXD RXD RTS)", sheet="io")
     j9 = b.part("J9", "Connector_Generic", "Conn_02x15_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x15_P2.54mm_Vertical",
                 "Logic analyzer (gusmanb 2x15)", sheet="cpu")
     sw1 = b.part("SW1", "Switch", "SW_Push", "Button_Switch_THT:SW_PUSH_6mm", "RESET", sheet="io")
@@ -273,12 +274,10 @@ def build():
     # LEDs
     for name, dref in (("LED0", "D3"), ("LED1", "D4")):
         r = R("1k", "cpld2", near="U7")
-        d = b.part(dref, "Device", "LED", LED0805, "LED green", sheet="cpld2", PcbNear="U7")
+        d = b.part(dref, "Device", "LED", LED0805, "LED green", sheet="cpld2", PcbNear="SW2")   # front edge, placement.json
         b.net(name, u7.pin(p2[name]), r.pin(1))
         b.net(f"{name}_A", r.pin(2), d.pin("A"))
         b.power("GND", d.pin("K"))
-    # expansion header pins 5/7/9/11 were UIO0..3 until spec rev 7; now unused
-    j8.nc(5, 7, 9, 11)
     # DUART interrupt (open drain) into CPLD2
     r = R("4.7k", "io", near="U10")
     b.net("DUART_IRQ", u10.pin("IRQ"), u7.pin(p2["DUART_IRQ"]), r.pin(2))
@@ -348,7 +347,17 @@ def build():
     b.net("COMP_AC", c_comp.pin(2), r_ser.pin(1))
     b.net("VIDEO", r_ser.pin(2), j5.pin(1))
     b.power("GND", j5.pin(2))
-    u11.nc("9", "11")                                              # CRMA, LUMA
+    # S-video (rev C2): LUMA and CRMA the same way, each 220 uF then 75 ohm, to the mini-DIN 4
+    # (1 GND-Y, 2 GND-C, 3 Y, 4 C); the AD724 drives all three outputs at once
+    c_y, c_c = C("220uF", "video", near="J10", fp=CP_RADIAL, symbol="C_Polarized"), C("220uF", "video", near="J10", fp=CP_RADIAL, symbol="C_Polarized")
+    r_y, r_c = R("75", "video", near="J10"), R("75", "video", near="J10")
+    b.net("LUMA", u11.pin("11"), c_y.pin(1))
+    b.net("LUMA_AC", c_y.pin(2), r_y.pin(1))
+    b.net("SVIDEO_Y", r_y.pin(2), j10.pin(3))
+    b.net("CRMA", u11.pin("9"), c_c.pin(1))
+    b.net("CRMA_AC", c_c.pin(2), r_c.pin(1))
+    b.net("SVIDEO_C", r_c.pin(2), j10.pin(4))
+    b.power("GND", j10.pin(1), j10.pin(2), j10.pin("SH"))
     # supplies: APOS through a ferrite bead (+5VA), DPOS from VCC, 100 nF + 10 uF each
     b.power("VCC", fb1.pin(1), u11.pin("14"))
     b.power("+5VA", fb1.pin(2), u11.pin("4"))
@@ -370,13 +379,17 @@ def build():
     b.net("DUART_X1", u10.pin("X1/CLK"), y1.pin(1), c_x1.pin(1))
     b.net("DUART_X2", u10.pin("X2"), y1.pin(2), c_x2.pin(1))
     b.power("GND", c_x1.pin(2), c_x2.pin(2))
-    # channel A to the FTDI header (1 GND, 2 CTS, 3 VCC, 4 TXD, 5 RXD, 6 RTS); channel B to J8
+    # channel A to the FTDI header J2 (1 GND, 2 CTS, 3 VCC, 4 TXD, 5 RXD, 6 RTS), channel B to
+    # the identical J11 (rev C2; the 2x8 expansion header it replaces carried only these two
+    # signals and the rails after spec rev 7). TTL levels, 5 V; CTS/RTS/VCC not connected.
     b.net("FTDI_TXD", j2.pin(4), u10.pin("RXDA"))
     b.net("FTDI_RXD", j2.pin(5), u10.pin("TXDA"))
     b.power("GND", j2.pin(1))
     j2.nc(2, 3, 6)
-    b.net("DUART_TXDB", u10.pin("TXDB"), j8.pin(13))
-    b.net("DUART_RXDB", u10.pin("RXDB"), j8.pin(15))
+    b.net("FTDIB_TXD", j11.pin(4), u10.pin("RXDB"))
+    b.net("FTDIB_RXD", j11.pin(5), u10.pin("TXDB"))
+    b.power("GND", j11.pin(1))
+    j11.nc(2, 3, 6)
     for i in range(6):                                             # unused inputs tied high
         r = R("10k", "io", near="U10")
         b.net(f"DUART_IP{i}", u10.pin(f"IP{i}"), r.pin(2))
@@ -385,10 +398,6 @@ def build():
     b.power("VCC", u10.pin("VCC"))
     b.power("GND", u10.pin("GND"))
     decouple(u10, ["40"], "io")
-    # expansion header: odd row signals (TXDB/RXDB above, 5..11 n/c), 1 = +5V, 3 = +3V3, even row GND
-    b.power("VCC", j8.pin(1))
-    b.power("+3V3", j8.pin(3))
-    b.power("GND", *[j8.pin(i) for i in range(2, 17, 2)])
     # reset supervisor + button -> SYSRESET (10k pull-up)
     r_rst = R("10k", "io", near="U13")
     b.net("SYSRESET", u13.pin("RST"), sw1.pin(1), r_rst.pin(2))
@@ -409,7 +418,7 @@ def build():
     b.power("VCC", c_bulk.pin(1), c_bulk2.pin(1))
     b.power("GND", c_bulk.pin(2), c_bulk2.pin(2))
     r_pwr = R("1k", "power", near="J1")
-    d_pwr = b.part("D5", "Device", "LED", LED0805, "LED red (power)", sheet="power", PcbNear="J1")
+    d_pwr = b.part("D5", "Device", "LED", LED0805, "LED red (power)", sheet="power", PcbNear="SW1")   # front edge, placement.json
     b.power("VCC", r_pwr.pin(1))
     b.net("PWRLED_A", r_pwr.pin(2), d_pwr.pin("A"))
     b.power("GND", d_pwr.pin("K"))
