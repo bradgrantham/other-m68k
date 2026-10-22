@@ -325,7 +325,11 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 * Serial TX is polled (one `TXRDY` wait per byte, ~260 us at 38400); a long `md` holds the
   monitor but no interrupts are masked. The DUART's TXRDY interrupt is not used.
 * USERIO.OUT is write-only and still has no shadow (nothing writes it).
-* ESC sequences from the keyboard are swallowed by the line editor (no history/cursor editing).
+* ESC sequences from the keyboard were swallowed by the line editor. (Resolved 2026-10-21:
+  `lineedit.c` has cursor movement, Home/End/Delete, ^K/^U/^W, a 32-line history with Up/Down
+  and `history`, Tab completion of commands, programs and paths with a match listing on the
+  second Tab; `args.c` splits with double quotes and expands `*`/`?` program arguments, 32
+  words / 511 bytes, `EXEC_MAX_ARGS` 32.)
 * NMI path is exercised only through the generic stub mechanism (the emulator needs a window
   for F12); the same path handled bus error / illegal instruction.
 

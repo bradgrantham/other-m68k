@@ -29,7 +29,7 @@ LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections -Wl,-Map=
 ASRCS = crt0.S post.S duart.S memops.S sd4.S flashram.S irq_hsync.S
 CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c queue.c \
         hexdump.c printf.c syscall.c string.c sd.c diskio.c fs.c elf.c exec.c flash.c audio.c \
-        clock.c flashdisk.c
+        clock.c flashdisk.c args.c lineedit.c
 FATFS = fatfs/ff.c fatfs/ffunicode.c
 OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS)) $(B)/ff.o $(B)/ffunicode.o
 
@@ -79,7 +79,7 @@ $(B)/rom.lst: $(B)/rom.elf
 # ../sdk/build/hello.elf when present) and FatFs + the fd table against a FAT32 image made
 # with mkfs.vfat/mcopy (skipped with a message when mtools/dosfstools are missing).
 TEST_SRCS = test/test_main.c test/test_sd.c test/test_elf.c test/test_fs.c test/test_audio.c \
-            srec.c ps2.c printf.c console.c hexdump.c queue.c sd.c fs.c elf.c audio.c clock.c flashdisk.c $(FATFS)
+            srec.c ps2.c printf.c console.c hexdump.c queue.c sd.c fs.c elf.c audio.c clock.c flashdisk.c args.c $(FATFS)
 TEST_IMG  = $(B)/test/fat.img
 TEST_CIMG = $(B)/test/c.img
 

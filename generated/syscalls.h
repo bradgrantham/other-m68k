@@ -142,7 +142,7 @@ int sys_mem_info(struct mem_info * info); /* Report the user RAM region availabl
 int sys_con_set_cursor(int x, int y); /* Move the console text cursor. */
 int sys_con_clear(void); /* Clear the console. */
 int sys_con_info(struct con_info * info); /* Console columns, rows, cursor position. */
-int sys_exec(const char * path, const char * args); /* Load and run another ELF executable (path syntax as for open; no search path) with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor. */
+int sys_exec(const char * path, const char * args); /* Load and run another ELF executable (path syntax as for open; no search path) with argument string `args` (passed as given: no wildcard expansion; words split on blanks, double quotes group). Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor. */
 int sys_key_event(void); /* Next raw keyboard event: bit 8 = release, bits 7..0 = PS/2 set-2 scan code (E0-prefixed codes have bit 9 set); -1 if none. */
 void sys_sleep_ms(uint32_t ms); /* Delay for approximately ms milliseconds. */
 int sys_set_audio_cb(void * cb); /* Install a function called from the HSYNC interrupt once per video line (15.7 kHz NTSC) in supervisor mode; it takes over the AUDIO register (the buffer stream of audio_start/next/last is not serviced while a callback is installed, and audio_start fails while one is) and should write one PDM pattern per call. NULL disables. */

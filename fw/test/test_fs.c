@@ -7,6 +7,7 @@
 #include "sd.h"
 #include "clock.h"
 #include "flashdisk.h"
+#include "args.h"
 #include "ff.h"
 #include "diskio.h"
 
@@ -224,6 +225,63 @@ static void test_flash_volume(const char *cimg)
     rc = fs_getcwd(buf, sizeof buf); CHECK_STR(buf, "C:/");
 }
 
+/* ---- args.c: quote-aware splitting, wildcards, expansion against C: ---- */
+static void test_args(void)
+{
+    char line[128], out[ARGS_MAX_BYTES];
+    char *argv[8];
+    uint8_t q[8];
+    strcpy(line, "copy  \"A long name.txt\" D:  x\"y z\"w");
+    CHECK_EQ(args_split(line, argv, q, 8), 4);
+    CHECK_STR(argv[0], "copy"); CHECK_STR(argv[1], "A long name.txt"); CHECK_STR(argv[2], "D:"); CHECK_STR(argv[3], "xy zw");
+    CHECK(!q[0] && q[1] && !q[2] && q[3]);
+    strcpy(line, "a b c d e f g h i");
+    CHECK_EQ(args_split(line, argv, 0, 8), 8);
+    strcpy(line, "   ");
+    CHECK_EQ(args_split(line, argv, 0, 8), 0);
+    strcpy(line, "\"unterminated");
+    CHECK_EQ(args_split(line, argv, q, 8), 1); CHECK_STR(argv[0], "unterminated");
+    CHECK(glob_match("*.elf", "HELLO.ELF")); CHECK(glob_match("h?llo*", "Hello.elf")); CHECK(!glob_match("*.txt", "HELLO.ELF"));
+    CHECK(glob_match("*", "")); CHECK(!glob_match("?", "")); CHECK(glob_match("a*b*c", "aXXbYc"));
+    char dir[FS_PATH_MAX]; const char *name;
+    split_path("D:/GAMES/STAR.BMP", dir, &name); CHECK_STR(dir, "D:/GAMES/"); CHECK_STR(name, "STAR.BMP");
+    split_path("STAR.BMP", dir, &name); CHECK_STR(dir, ""); CHECK_STR(name, "STAR.BMP");
+    split_path("C:X", dir, &name); CHECK_STR(dir, "C:"); CHECK_STR(name, "X");
+    strcpy(dir, "C:/SUB/"); CHECK_STR(dir_for_open(dir), "C:/SUB");
+    strcpy(dir, "C:/"); CHECK_STR(dir_for_open(dir), "C:/");
+    strcpy(dir, "/"); CHECK_STR(dir_for_open(dir), "/");
+    CHECK(join_path(out, sizeof out, "C:/SUB", "A.TXT")); CHECK_STR(out, "C:/SUB/A.TXT");
+    CHECK(join_path(out, sizeof out, "D:", "A.TXT")); CHECK_STR(out, "D:A.TXT");
+    CHECK(join_path(out, sizeof out, "", "A.TXT")); CHECK_STR(out, "A.TXT");
+    CHECK(!join_path(out, 4, "", "A.TXT"));
+
+    /* expansion on C: (current drive) */
+    CHECK_EQ(fs_chdir("C:"), 0);
+    CHECK_EQ(fs_mkdir("C:/EXP"), 0);
+    int fd;
+    fd = fs_open(O_WRONLY | O_CREAT, "C:/EXP/one.txt"); CHECK(fd >= 0); fs_close(fd);
+    fd = fs_open(O_WRONLY | O_CREAT, "C:/EXP/two words.txt"); CHECK(fd >= 0); fs_close(fd);
+    fd = fs_open(O_WRONLY | O_CREAT, "C:/EXP/three.dat"); CHECK(fd >= 0); fs_close(fd);
+    int n = args_expand("-v EXP/*.txt \"EXP/*.dat\" EXP/none* last", out, sizeof out);
+    CHECK_EQ(n, 6);
+    CHECK_STR(out, "-v EXP/one.txt \"EXP/two words.txt\" EXP/*.dat EXP/none* last");   /* quoted and unmatched stay */
+    n = args_expand("EXP/T*", out, sizeof out); CHECK_EQ(n, 2);
+    CHECK_STR(out, "\"EXP/two words.txt\" EXP/three.dat");                               /* case-insensitive */
+    n = args_expand("C:/EXP/*.TXT", out, sizeof out); CHECK_EQ(n, 2); CHECK(!strncmp(out, "C:/EXP/", 7));
+    n = args_expand("", out, sizeof out); CHECK_EQ(n, 0); CHECK_STR(out, "");
+    CHECK_EQ(args_expand("EXP/*", out, 20), E_INVAL);                                    /* does not fit */
+    char many[ARGS_MAX_BYTES];
+    many[0] = 0;
+    for (int i = 0; i < ARGS_MAX_WORDS + 1; i++) strcat(many, "w ");
+    CHECK_EQ(args_expand(many, out, sizeof out), E_INVAL);                               /* too many words */
+    /* the split that user_launch does afterwards gets the quoted name back as one word */
+    strcpy(line, out[0] ? "" : ""); 
+    n = args_expand("EXP/T*", out, sizeof out); CHECK_EQ(n, 2);
+    CHECK_EQ(args_split(out, argv, 0, 8), 2); CHECK_STR(argv[0], "EXP/two words.txt");
+    CHECK_EQ(fs_unlink("C:/EXP/one.txt"), 0); CHECK_EQ(fs_unlink("C:/EXP/two words.txt"), 0);
+    CHECK_EQ(fs_unlink("C:/EXP/three.dat"), 0); CHECK_EQ(fs_unlink("C:/EXP"), 0);
+}
+
 /* ---- both drives: copy, drive switching, invalidation ---- */
 static void test_two_drives(void)
 {
@@ -425,6 +483,7 @@ void test_fs(const char *path, const char *cimg)
     CHECK_EQ(find_entry("HELLO.TXT", &e), 1);
     CHECK(sd_card.ready);
 
+    test_args();
     test_two_drives();
 
     CHECK_STR(fs_strerror(E_NOENT), "not found");

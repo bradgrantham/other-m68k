@@ -455,8 +455,22 @@ program therefore drops you back in the monitor with its registers on the screen
 
 ## Monitor
 
-All numbers are hex (`0x` optional). Lines up to 127 characters; Backspace/DEL edit, ^U/^C
-clear the line. The prompt is the current drive and directory (`C:/> `, `D:/GAMES> `), or
+All numbers are hex (`0x` optional). The line editor (`lineedit.c`) takes lines up to 127
+characters: Left/Right, Home/End (also ^A/^E) move the cursor, Backspace and Delete (^D) edit
+anywhere in the line, ^K kills to the end, ^U/^C the whole line, ^W the word before the cursor,
+and a line may wrap over several screen rows. Up/Down browse the last 32 typed lines (a line
+equal to the previous one is not stored twice; script lines are not recorded); `history`
+lists them. Tab completes the word under the cursor: the first word against the built-in
+commands and the `NAME.ELF`/`NAME.CMD` files on the search path (a name an earlier directory
+also has is shown once), later words against the files in the directory the word names. One
+Tab inserts the only match (a directory with a trailing `/`, a file with a trailing blank) or
+the longest common prefix; when nothing more can be added, Tab lists the matches and redraws the
+line. Arguments are split on blanks, and double quotes group a word (`copy "A long name.txt"
+C:`); completion quotes a name that needs it. When a program is launched (`run` or the search
+path), its unquoted arguments containing `*` or `?` are expanded against the directory they
+name, each match becoming one word (quoted if it has a blank; a pattern with no match stays as
+typed), up to 32 words in 511 bytes (`args.c`); the built-in commands handle their own
+patterns. The prompt is the current drive and directory (`C:/> `, `D:/GAMES> `), or
 `X:?> ` when the current drive cannot be mounted (no card, unformatted C:). Before every
 prompt the monitor writes back the C: cache.
 
@@ -491,6 +505,7 @@ prompt the monitor writes back the C: cache.
 | `format C:` | after `y/N`, recreate C: as an empty FAT12 volume (D: is not supported) |
 | `echo text` | print the text (for scripts) |
 | `exit` | end the innermost script |
+| `history` | the last 32 typed lines, numbered (Up/Down recall them at the prompt) |
 | `run file [args...]` | load an ELF into user RAM and run it with `argv` (see "ELF loader") |
 | `name [args...]` | any word that is not a built-in command is looked up as `NAME`, `NAME.ELF`, `NAME.CMD` in the current directory (taken as an absolute path), then in `C:/`, then `D:/`; a word with a drive or directory in it is tried only there. An ELF runs with the rest of the line as arguments (`bmpview adobe2.bmp` is `run C:/bmpview.ELF adobe2.bmp` when the program lives on C:), a `.CMD` file runs as a script. Only a missing file gives "unknown command"; other loader errors are reported as by `run`. Built-ins win: `ls` is the monitor's directory listing, `ls.elf` or `run ls.elf` the program. |
 | `flashid`, `flash file`, `reboot` | see "Programming the ROM" |

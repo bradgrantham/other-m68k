@@ -39,7 +39,7 @@ the other documents disagree, the text says so; the list is collected in
 | ROM | 1 MB flash window at 0xE00000 (2x SST39SF040); the BIOS image is the first 256 KB, the other 768 KB hold a FAT12 volume, drive C: |
 | Video | 320x240, one byte per pixel (RGB332), two pages in RAM, composite out through an AD724 (NTSC only on rev B4 and C1) |
 | Glue | two ATF1508AS CPLDs: CPLD1 = decode, DTACK, SRAM address mux, video timing, soft switches; CPLD2 = I/O registers, pixel shifter, interrupt encoder, PS/2 receiver, PDM audio shifter, SD/GPIO pins |
-| I/O | 68681 DUART (channel A on the FTDI header, 38400 8N1: the POST report and the banner, then free for programs as `/dev/ttya`; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; drive D:, FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; the expansion header carries power and DUART channel B only |
+| I/O | 68681 DUART (channel A on the serial A FTDI header, 38400 8N1: the POST report and the banner, then free for programs as `/dev/ttya`; channel B on the identical serial B header, board rev C2), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; drive D:, FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; composite and S-video outputs (rev C2) |
 | Interrupts | autovectored, vector = 24 + level: VBLANK 1, PS/2 2, DUART 3, HSYNC 4, NMI button 7 |
 
 Programs are ELF files on drive C: (the flash) or D: (the SD card). The monitor loads one into
@@ -213,8 +213,12 @@ not work: it arrives during the POST, and `srec` throws away whatever was alread
 ### What the monitor does with the command line
 
 `run foo.elf a b c` and the shorthand `foo a b c` both call `main(argc, argv)` with
-`argv[0]` = the path of the file, then the remaining words split on blanks (at most 16
-arguments, 255 bytes). For `run` the path is as typed (`"foo.elf"`, relative to the current
+`argv[0]` = the path of the file, then the remaining words split on blanks (at most 32
+arguments, 511 bytes). Double quotes group a word (`foo "two words"` gives one argument), and
+an unquoted argument containing `*` or `?` is expanded by the monitor against the directory it
+names before the program starts, one argument per match in directory order, quoted if the name
+has a blank (`cat *.TXT` gives `cat` every text file; `foo "*.TXT"` and a pattern that matches
+nothing arrive as typed). Too many matches to fit is an error, not a truncation. For `run` the path is as typed (`"foo.elf"`, relative to the current
 directory, no search). For the shorthand it is where the search found the file, as an absolute
 path built from the word as typed: `"C:/foo.ELF"` if it is in the current directory `C:/`,
 `"D:/foo.ELF"` if it was found on the card. The search tries `WORD`, `WORD.ELF` and
@@ -236,8 +240,13 @@ wildcards allowed); `ren old new` (also `mv`; it moves within a volume); `mkdir 
 `rmdir dir` (empty directories only); `format C:` (asks y/N); `date [YYYY-MM-DD [HH:MM[:SS]]]`
 (without an argument it shows the clock and asks for a new value, Enter keeps it); `echo
 text`; `info`, which also shows the current directory, the clock and how many C: sectors have
-been written since reset. The command line is split on blanks only, without quotes, so names
-with spaces in them can be made and used by programs but not typed at the prompt.
+been written since reset. Names with blanks are typed in double quotes.
+
+The prompt has a line editor: Left/Right, Home/End, Backspace and Delete anywhere, Ctrl-K/U/W
+kills, Up/Down through the last 32 lines (`history` lists them), and Tab completion: the first
+word completes against the monitor's commands and the programs and scripts on the search path,
+later words against file and directory names in the directory typed so far; one Tab inserts the
+only match or the longest common prefix, a second Tab lists the choices.
 
 ## 1.3 The runtime model
 
@@ -2545,8 +2554,9 @@ not restore it).
 
 ### Channel B
 
-Channel B's TXDB and RXDB are on the expansion header J8 (pins 13 and 15, 5 V TTL levels; even
-pins are ground). Nothing uses it. Setting it up and sending (tested in the emulator with
+Channel B's TXDB and RXDB are on the serial B header J11 (board rev C2; the FTDI pinout GND 1,
+TXD 4, RXD 5, 5 V TTL levels; rev C1 had them on the expansion header J8, pins 13 and 15).
+Nothing uses it. Setting it up and sending (tested in the emulator with
 `--duart-b-log`):
 
 ```c
@@ -2770,7 +2780,7 @@ is how `make run` keeps C: from one run to the next (it saves to the image it bo
 * `reboot` jumps through the reset vectors at `ROM_BASE` (SSP and PC) without resetting the
   glue: the way to start a ROM image that was just written.
 
-## 2.13 LEDs and the expansion header
+## 2.13 LEDs, user pins and headers
 
 * `GPIO_LED0`, `GPIO_LED1`: the BIOS uses them as POST codes (LED0 = POST started, both = RAM
   test, LED1 = C initialisation, alternating = RAM failure) and leaves both off; `sys_exit`
@@ -2778,9 +2788,12 @@ is how `make run` keeps C: from one run to the next (it saves to the image it bo
 * There are no general-purpose user pins any more. Up to spec revision 6 (rev B4) the `USERIO`
   register drove four open-drain pins UIO0-UIO3 on the expansion header; revision 7 removed
   them to make room in CPLD2 for the 4-bit SD bus.
-* Expansion header J8 (2x8): pin 1 +5 V, 3 +3.3 V, 13 TXDB, 15 RXDB, every even pin ground;
-  pins 5, 7, 9 and 11 (UIO0-UIO3 on rev B4) are not connected on rev C1. DUART channel B
-  ([2.11](#channel-b)) is the only signal interface left on the header.
+* The expansion header itself went in board rev C2: with the user pins gone it carried only
+  power and DUART channel B, which now has its own FTDI-pinout header J11 ([2.11](#channel-b)).
+  Rev C1 boards have J8 (2x8): pin 1 +5 V, 3 +3.3 V, 13 TXDB, 15 RXDB, every even pin ground.
+* Headers for the bench: J7 JTAG (ByteBlaster pinout, the two CPLDs in a chain) and J9, a 2x15
+  header with gusmanb's LogicAnalyzer pinout carrying the bus control signals and A1-A4 through
+  100 ohm (see kicad/README.md); both on the left edge of the rev C2 board.
 
 ## 2.14 Running without the BIOS
 

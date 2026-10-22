@@ -8,6 +8,8 @@
 #include "flash.h"
 #include "flashdisk.h"
 #include "clock.h"
+#include "args.h"
+#include "lineedit.h"
 
 #define LINE_MAX 128
 #define SREC_LINE_MAX 520
@@ -27,19 +29,6 @@ static void srec_store(void *ctx, uint32_t addr, const uint8_t *data, int n)
     /* Only RAM above the BIOS area may be written: the stack and queues live in SYSDATA. */
     if (addr < USER_BASE || addr + (uint32_t)n > RAM_END) { srec_rejected++; return; }
     memcpy((void *)addr, data, (size_t)n);
-}
-
-/* Line terminators: CR, LF or CRLF. A LF directly after a CR is part of the same end of
- * line (most terminals send CRLF). */
-static int prev_cr;
-static int getchar_eol(void)
-{
-    for (;;) {
-        int c = input_getchar();
-        int skip = (c == '\n' && prev_cr);
-        prev_cr = (c == '\r');
-        if (!skip) return c;
-    }
 }
 
 /* S-records arrive on serial port A, which is not console input after the POST: read it
@@ -91,42 +80,6 @@ static void srec_receive(void)
     kprintf("\n");
 }
 
-/* ---- line editor ------------------------------------------------------------------ */
-
-/* Returns the line length. */
-static int read_line(char *buf, int max)
-{
-    int n = 0;
-    con_cursor_show(1);
-    for (;;) {
-        int c = getchar_eol();
-        if (c == '\r' || c == '\n') {
-            buf[n] = 0;
-            con_cursor_show(0);
-            putchar_both('\n');
-            return n;
-        }
-        if (c == '\b' || c == 0x7F) {
-            if (n > 0) { n--; putchar_both('\b'); putchar_both(' '); putchar_both('\b'); }
-            continue;
-        }
-        if (c == 0x15 || c == 0x03) {           /* ^U / ^C: kill line */
-            while (n > 0) { n--; putchar_both('\b'); putchar_both(' '); putchar_both('\b'); }
-            continue;
-        }
-        if (c == 0x1B) {                        /* swallow escape sequences from arrow keys */
-            int c2 = input_getchar();
-            if (c2 == '[' || c2 == 'O') {
-                int c3;
-                do { c3 = input_getchar(); } while (c3 >= '0' && c3 <= '9');
-            }
-            continue;
-        }
-        if (c < 0x20 || c > 0x7E) continue;
-        if (n < max - 1) { buf[n++] = (char)c; putchar_both(c); }
-    }
-}
-
 /* ---- argument parsing --------------------------------------------------------------- */
 
 static int parse_hex(const char *s, uint32_t *out)
@@ -146,19 +99,6 @@ static int parse_hex(const char *s, uint32_t *out)
     if (!digits) return 0;
     *out = v;
     return 1;
-}
-
-static int split(char *line, char **argv, int max)
-{
-    int argc = 0;
-    while (*line && argc < max) {
-        while (*line == ' ' || *line == '\t') line++;
-        if (!*line) break;
-        argv[argc++] = line;
-        while (*line && *line != ' ' && *line != '\t') line++;
-        if (*line) *line++ = 0;
-    }
-    return argc;
 }
 
 static int need_hex(int argc, char **argv, int i, uint32_t *v)
@@ -367,44 +307,6 @@ static void cmd_flash(int argc, char **argv)
 
 static int lower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
 
-/* DOS-style pattern match, case-insensitive: * any run, ? one character. */
-static int glob(const char *pat, const char *s)
-{
-    for (;;) {
-        if (*pat == '*') {
-            while (*pat == '*') pat++;
-            if (!*pat) return 1;
-            for (; *s; s++) if (glob(pat, s)) return 1;
-            return 0;
-        }
-        if (!*s) return *pat == 0;
-        if (*pat != '?' && lower(*pat) != lower(*s)) return 0;
-        pat++; s++;
-    }
-}
-
-static int has_wild(const char *s) { return strchr(s, '*') || strchr(s, '?'); }
-
-/* Split "D:/GAMES/STAR.BMP" (the name may hold * and ?) into dir "D:/GAMES/" (kept with its separator, so names can be
- * appended) and name "*.BMP". A path without a separator is a name in the current dir. */
-static void split_path(const char *path, char *dir, const char **name)
-{
-    const char *p = path + strlen(path);
-    while (p > path && p[-1] != '/' && p[-1] != '\\' && p[-1] != ':') p--;
-    memcpy(dir, path, (size_t)(p - path));
-    dir[p - path] = 0;
-    *name = p;
-}
-
-/* The directory to open for a split prefix: "" is the current directory; a trailing
- * separator comes off unless it is the root ("/", "C:/"). */
-static const char *dir_for_open(char *dir)
-{
-    size_t n = strlen(dir);
-    if (n > 1 && (dir[n - 1] == '/' || dir[n - 1] == '\\') && dir[n - 2] != ':') dir[n - 1] = 0;
-    return dir;
-}
-
 static int is_dir_path(const char *path, int *exists)
 {
     struct dirent e;
@@ -414,18 +316,6 @@ static int is_dir_path(const char *path, int *exists)
     if (path[n - 1] == '/' || path[n - 1] == '\\' || path[n - 1] == ':') return 1;
     if (fs_stat(path, &e) == 0) { *exists = 1; return (e.attr & ATTR_DIR) != 0; }
     return 0;
-}
-
-/* dir + name into out (FS_PATH_MAX), adding a separator when dir has none. */
-static int join_path(char *out, const char *dir, const char *name)
-{
-    size_t n = strlen(dir);
-    int sep = n && dir[n - 1] != '/' && dir[n - 1] != '\\' && dir[n - 1] != ':';
-    if (n + sep + strlen(name) + 1 > FS_PATH_MAX) return 0;
-    strcpy(out, dir);
-    if (sep) out[n++] = '/';
-    strcpy(out + n, name);
-    return 1;
 }
 
 /* ---- files and directories ------------------------------------------------------------- */
@@ -454,7 +344,7 @@ static void cmd_dir(int argc, char **argv)
     uint32_t bytes = 0;
     char stamp[16];
     while ((rc = fs_readdir(h, &ent)) > 0) {
-        if (!glob(pat, ent.name)) continue;
+        if (!glob_match(pat, ent.name)) continue;
         fmt_stamp(ent.mtime, stamp);
         if (strlen(ent.name) > 16) kprintf("%s\n%16s", ent.name, "");
         else kprintf("%-16s", ent.name);
@@ -502,7 +392,7 @@ static int for_each_match(const char *spec, int (*fn)(const char *dir, const cha
     struct dirent ent;
     int n = 0, rc;
     while ((rc = fs_readdir(h, &ent)) > 0) {
-        if ((ent.attr & ATTR_DIR) || !glob(pat, ent.name)) continue;
+        if ((ent.attr & ATTR_DIR) || !glob_match(pat, ent.name)) continue;
         n++;
         if (fn(dir, ent.name, ctx)) { rc = -1; break; }
     }
@@ -518,7 +408,7 @@ static int copy_one(const char *dir, const char *name, void *vctx)
 {
     struct copy_ctx *c = vctx;
     char src[FS_PATH_MAX], dst[FS_PATH_MAX];
-    if (!join_path(src, dir, name) || !(c->dst_is_dir ? join_path(dst, c->dst, name) : (strcpy(dst, c->dst), 1))) {
+    if (!join_path(src, sizeof src, dir, name) || !(c->dst_is_dir ? join_path(dst, sizeof dst, c->dst, name) : (strcpy(dst, c->dst), 1))) {
         kprintf("copy: path too long\n"); c->errors++; return 1;
     }
     kprintf("%s -> %s", src, dst);
@@ -556,7 +446,7 @@ static int del_one(const char *dir, const char *name, void *ctx)
 {
     (void)ctx;
     char path[FS_PATH_MAX];
-    if (!join_path(path, dir, name)) return 0;
+    if (!join_path(path, sizeof path, dir, name)) return 0;
     int rc = fs_unlink(path);
     if (rc) kprintf("del %s: %s\n", path, fs_strerror(rc));
     return 0;
@@ -620,8 +510,6 @@ static void cmd_format(int argc, char **argv)
 
 /* ---- clock ------------------------------------------------------------------------------ */
 
-static int read_line(char *buf, int max);
-
 static void set_date(const char *text)
 {
     uint32_t secs;
@@ -636,9 +524,8 @@ static void cmd_date(const char *rest)
     if (*rest) { set_date(rest); return; }
     if (clock_get()) { clock_format(clock_get(), d); kprintf("%s\n", d); }
     else kprintf("clock not set\n");
-    kprintf("new date and time (YYYY-MM-DD HH:MM, Enter keeps): ");
     static char line[32];
-    int n = read_line(line, sizeof line);
+    int n = lineedit_read("new date and time (YYYY-MM-DD HH:MM, Enter keeps): ", line, sizeof line, 0, 0);
     if (n > 0) set_date(line);
 }
 
@@ -700,7 +587,11 @@ static void cmd_exit(void)
 static int run_file(const char *path, char *args, int quiet_noent)
 {
     static struct exec_image img;
-    int rc = exec_prepare(path, &img);
+    static char expanded[ARGS_MAX_BYTES];
+    int rc = args_expand(args, expanded, sizeof expanded);     /* * and ? against the filesystem */
+    if (rc < 0) { kprintf("run %s: too many arguments after expansion (%d words, %d bytes at most)\n", path, ARGS_MAX_WORDS, ARGS_MAX_BYTES - 1); return rc; }
+    args = expanded;
+    rc = exec_prepare(path, &img);
     if (rc == 0) rc = exec_load(&img);
     if (rc) {
         if (!(quiet_noent && rc == E_NOENT)) kprintf("run %s: %s\n", path, fs_strerror(rc));
@@ -762,7 +653,7 @@ static int resolve_command(const char *word, char *out)
     struct dirent e;
     for (int d = 0; d < ndirs; d++)
         for (int x = 0; x < 3; x++) {
-            if (!join_path(out, dirs[d], word)) continue;
+            if (!join_path(out, FS_PATH_MAX, dirs[d], word)) continue;
             if (strlen(out) + strlen(exts[x]) >= FS_PATH_MAX) continue;
             strcpy(out + strlen(out), exts[x]);
             if (fs_stat(out, &e) == 0 && !(e.attr & ATTR_DIR)) return 1;
@@ -807,7 +698,7 @@ static void cmd_help(void)
             "run file [args] load ELF and run\n"
             "name [args]    NAME.ELF or NAME.CMD\n"
             "               from ., C:/, D:/\n"
-            "exit           end a script\n"
+            "exit  history  end a script / typed lines\n"
             "flash file     reprogram the ROM\n");
 }
 
@@ -823,7 +714,7 @@ static void execute(char *line)
     if (!strcmp(word, "echo")) { kprintf("%s\n", rest); return; }
     if (!strcmp(word, "date")) { cmd_date(rest); return; }
     if (!strcmp(word, "rem") || word[0] == '#' || word[0] == ';') return;
-    int argc = split(line, argv, 12);
+    int argc = args_split(line, argv, 0, 12);
     if (!argc) return;
     const char *c = argv[0];
     if (!strcmp(c, "help") || !strcmp(c, "?")) cmd_help();
@@ -854,6 +745,7 @@ static void execute(char *line)
     else if (!strcmp(c, "rmdir")) cmd_rmdir(argc, argv);
     else if (!strcmp(c, "format")) cmd_format(argc, argv);
     else if (!strcmp(c, "exit")) cmd_exit();
+    else if (!strcmp(c, "history")) lineedit_history_print();
     else if (!strcmp(c, "flashid")) cmd_flashid();
     else if (!strcmp(c, "flash")) cmd_flash(argc, argv);
     else if (!strcmp(c, "reboot")) cpu_reboot();
@@ -861,11 +753,101 @@ static void execute(char *line)
     else run_unknown(word, rest);
 }
 
-static void print_prompt(void)
+static void make_prompt(char *out)             /* FS_PATH_MAX + 8 bytes */
 {
-    char cwd[FS_PATH_MAX];
-    if (fs_getcwd(cwd, sizeof cwd) >= 0) kprintf("%s> ", cwd);
-    else kprintf("%c:?> ", cur_drive);
+    if (fs_getcwd(out, FS_PATH_MAX) >= 0) strcpy(out + strlen(out), "> ");
+    else ksnprintf(out, 8, "%c:?> ", cur_drive);
+}
+
+/* ---- Tab completion ---------------------------------------------------------------------- */
+
+static const char *const builtins[] = {
+    "help", "md", "mb", "mw", "ml", "fill", "go", "regs", "reset", "led", "page", "ticks", "ramtest",
+    "beep", "cls", "info", "srec", "sd", "dir", "ls", "cat", "type", "cd", "copy", "cp", "del", "rm",
+    "ren", "mv", "mkdir", "rmdir", "format", "exit", "history", "flashid", "flash", "reboot", "run",
+    "echo", "date", 0 };
+
+static int prefix_ci(const char *prefix, const char *s)
+{
+    for (; *prefix; prefix++, s++) if (lower(*prefix) != lower(*s)) return 0;
+    return 1;
+}
+
+struct comp { const char *word; char *out; int outsz; int n; int list, col; int is_dir_last; };
+
+/* one candidate: `name` completes the word's last component; `dir` is the typed prefix before it */
+static void candidate(struct comp *c, const char *dir, const char *name, int is_dir)
+{
+    if (c->list) {
+        int w = (int)strlen(name) + (is_dir ? 1 : 0);
+        if (c->col && c->col + 2 + w > CON_COLS) { kprintf("\n"); c->col = 0; }
+        if (c->col) { kprintf("  "); c->col += 2; }
+        kprintf("%s%s", name, is_dir ? "/" : "");
+        c->col += w;
+        c->n++;
+        return;
+    }
+    char full[FS_PATH_MAX];
+    if (!join_path(full, sizeof full, dir, name)) return;
+    if (is_dir && strlen(full) + 1 < sizeof full) strcpy(full + strlen(full), "/");
+    if (c->n == 0) { ksnprintf(c->out, (size_t)c->outsz, "%s", full); c->is_dir_last = is_dir; }
+    else {                                      /* keep the common prefix (case from the first match) */
+        int i = 0;
+        while (c->out[i] && full[i] && lower(c->out[i]) == lower(full[i])) i++;
+        c->out[i] = 0;
+    }
+    c->n++;
+}
+
+static int monitor_complete(const char *word, int first, char *out, int outsz, int *unique, int list)
+{
+    struct comp c = { word, out, outsz, 0, list, 0, 0 };
+    out[0] = 0;
+    char dir[FS_PATH_MAX], opendir_name[FS_PATH_MAX];
+    const char *name;
+    split_path(word, dir, &name);
+    if (first && !dir[0]) {
+        for (int i = 0; builtins[i]; i++) if (prefix_ci(word, builtins[i])) candidate(&c, "", builtins[i], 0);
+        /* programs and scripts along the search path; a name an earlier directory also has
+         * is shadowed (that is what the search would run), so it is listed once */
+        static const char *const dirs[] = { "", "C:/", "D:/" };
+        char cwd[FS_PATH_MAX];
+        if (fs_getcwd(cwd, sizeof cwd) < 0) cwd[0] = 0;
+        for (int d = 0; d < 3; d++) {
+            if (d > 0 && !strcmp(cwd, dirs[d])) continue;          /* the current directory is this root */
+            strcpy(opendir_name, dirs[d]);
+            int h = fs_opendir(dir_for_open(opendir_name));
+            if (h < 0) continue;
+            struct dirent e;
+            while (fs_readdir(h, &e) > 0) {
+                size_t n = strlen(e.name);
+                if ((e.attr & ATTR_DIR) || n < 5 || !(prefix_ci(".elf", e.name + n - 4) || prefix_ci(".cmd", e.name + n - 4))) continue;
+                if (!prefix_ci(word, e.name) || strlen(word) > n - 4) continue;
+                int shadowed = 0;
+                for (int k = 0; k < d && !shadowed; k++) {
+                    char full[FS_PATH_MAX];
+                    if (k > 0 && !strcmp(cwd, dirs[k])) continue;
+                    shadowed = join_path(full, sizeof full, dirs[k], e.name) && fs_stat(full, 0) == 0;
+                }
+                if (shadowed) continue;
+                e.name[n - 4] = 0;
+                candidate(&c, "", e.name, 0);
+            }
+            fs_closedir(h);
+        }
+    } else {
+        strcpy(opendir_name, dir);
+        int h = fs_opendir(dir_for_open(opendir_name));
+        if (h >= 0) {
+            struct dirent e;
+            while (fs_readdir(h, &e) > 0)
+                if (prefix_ci(name, e.name)) candidate(&c, dir, e.name, (e.attr & ATTR_DIR) != 0);
+            fs_closedir(h);
+        }
+    }
+    if (list && c.col) kprintf("\n");
+    *unique = c.n == 1;
+    return c.n;
 }
 
 /* At the first prompt after reset: C:/AUTOEXEC.CMD, unless ESC was pressed during the POST
@@ -881,6 +863,7 @@ void monitor_main(void)
     static char line[LINE_MAX];
     static int booted;
     if (!booted) { booted = 1; autoexec(); }
+    static char prompt[FS_PATH_MAX + 8];
     for (;;) {
         fs_sync();                          /* nothing stays in the flash write cache across a prompt */
         int n;
@@ -888,8 +871,8 @@ void monitor_main(void)
             if (input_has_esc()) { input_flush(); script_depth = 0; kprintf("script aborted\n"); continue; }
             n = script_line(line, LINE_MAX);         /* not echoed: the screen is 40 columns */
         } else {
-            print_prompt();
-            n = read_line(line, LINE_MAX);
+            make_prompt(prompt);
+            n = lineedit_read(prompt, line, LINE_MAX, monitor_complete, 1);
         }
         if (n > 0) execute(line);
     }

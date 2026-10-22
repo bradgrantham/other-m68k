@@ -1195,7 +1195,7 @@
           "args"
         ]
       ],
-      "desc": "Load and run another ELF executable (path syntax as for open; no search path) with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor."
+      "desc": "Load and run another ELF executable (path syntax as for open; no search path) with argument string `args` (passed as given: no wildcard expansion; words split on blanks, double quotes group). Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor."
     },
     {
       "num": 27,
@@ -1480,7 +1480,7 @@
       "AUDIO_BUF_MAX": 512,
       "AUDIO_NBUF": 3
     },
-    "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host. User program entry: USP points at {return address (exit stub), argc, argv} as for a C `_start(argc, argv)`; argv[0] is the path as given to `run`/`exec`, further words split on blanks (at most 16 words, 255 bytes). The monitor's `go` enters with argc 0 and argv[0] NULL. File names are VFAT long names of up to 63 characters, case-insensitive (see \"filesystem\"); E_NAMETOOLONG for anything longer or malformed. Pointers passed to syscalls must lie in user RAM (USER_BASE..RAM_END, framebuffers included) or the call fails with E_FAULT."
+    "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host. User program entry: USP points at {return address (exit stub), argc, argv} as for a C `_start(argc, argv)`; argv[0] is the path as given to `run`/`exec`, further words split on blanks, a double-quoted group counting as one word (at most 32 words, 511 bytes). The monitor expands unquoted * and ? arguments of a program against the directory they name before launching it; sys_exec passes its string as given. The monitor's `go` enters with argc 0 and argv[0] NULL. File names are VFAT long names of up to 63 characters, case-insensitive (see \"filesystem\"); E_NAMETOOLONG for anything longer or malformed. Pointers passed to syscalls must lie in user RAM (USER_BASE..RAM_END, framebuffers included) or the call fails with E_FAULT."
   },
   "glue": {
     "cpld1": {

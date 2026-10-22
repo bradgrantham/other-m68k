@@ -9,6 +9,7 @@
 #include "sd.h"
 #include "fs.h"
 #include "exec.h"
+#include "args.h"
 #include "clock.h"
 
 uint32_t video_standard = VIDEO_STD_NTSC;
@@ -237,7 +238,7 @@ int bios_sd_write_block(uint32_t lba, const void *buf)
 int bios_exec(const char *path, const char *args)
 {
     static struct exec_image img;
-    static char args_copy[256];
+    static char args_copy[ARGS_MAX_BYTES];
     int rc;
     if (!user_str_ok(path, FS_PATH_MAX)) return E_FAULT;
     if (args && !user_str_ok(args, sizeof args_copy)) return E_FAULT;

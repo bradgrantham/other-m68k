@@ -8,9 +8,11 @@
  *              argv            -> { argv[0], ..., argv[argc-1], NULL }
  *
  * argv[0] is the path as given to `run`/`exec`; the remaining words of the argument
- * string are split on blanks. `go` launches with argc = 0 and argv[0] == NULL. */
+ * string are split on blanks, double quotes grouping a word (args.c). `go` launches with
+ * argc = 0 and argv[0] == NULL. */
 #include "bios.h"
 #include "exec.h"
+#include "args.h"
 
 extern void user_exit_stub(void);       /* crt0.S */
 
@@ -90,14 +92,7 @@ void user_launch(uint32_t entry, const char *argv0, const char *args)
     if (args) {
         sp -= strlen(args) + 1;
         strcpy(sp, args);
-        char *s = sp;
-        while (*s && argc < EXEC_MAX_ARGS) {
-            while (*s == ' ' || *s == '\t') s++;
-            if (!*s) break;
-            argv[argc++] = s;
-            while (*s && *s != ' ' && *s != '\t') s++;
-            if (*s) *s++ = 0;
-        }
+        argc += args_split(sp, argv + argc, 0, EXEC_MAX_ARGS - argc);
     }
     argv[argc] = 0;
     sp = (char *)((uintptr_t)sp & ~3u);

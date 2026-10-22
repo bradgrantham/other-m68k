@@ -23,6 +23,6 @@ int exec_load(struct exec_image *img);
  * program at entry in user mode. argv0/args may be NULL. Never returns. */
 void user_launch(uint32_t entry, const char *argv0, const char *args) __attribute__((noreturn));
 
-#define EXEC_MAX_ARGS 16
+#define EXEC_MAX_ARGS 32        /* = ARGS_MAX_WORDS (args.h) */
 
 #endif
