@@ -576,6 +576,8 @@ direction and `lseek` on them `E_INVAL`.
 | `flashdisk.c`, `flashdisk.h` | C: block layer: reads from the ROM window, writes through the 8 KB erase-sector cache |
 | `flash.c`, `flash.h`, `flash_layout.h`, `flashram.S` | `flashid`, `flash` (image update) and `flash_write_sector` (one 8 KB sector for C:); the RAM-resident routine (in `.data`) and the `struct flash_op` offsets it shares with C |
 | `clock.c`, `clock.h` | wall clock, calendar and FAT stamp conversions, `get_fattime` |
+| `args.c`, `args.h` | command-line words: quote-aware split, `*`/`?` matching, expansion of program arguments against the filesystem |
+| `lineedit.c`, `lineedit.h` | the monitor's line editor: cursor keys, 32-line history, Tab completion through a callback |
 | `fs.c`, `fs.h` | two volumes, fd table, `O_*` to FatFs mode mapping, `FRESULT` to `E_*`, `struct dirent`, unlink/rename/mkdir/chdir/getcwd/copy/mkfs |
 | `elf.c`, `elf.h`, `exec.c`, `exec.h` | ELF32 parsing, `exec_prepare`/`exec_load`, `user_launch` (argv convention) |
 | `test/test_main.c`, `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`, `test.h` | host unit tests (`make test`, including `test_clock`); `test/mkimage.sh` builds the FAT32 image (D:), `../tools/mkflashvol.sh` the FAT12 image (C:) that `test_fs.c` loads into a RAM array with a simulated `flash_write_sector` (erase to 0xFF, programming clears bits, cycles counted); `test/data/` their files |

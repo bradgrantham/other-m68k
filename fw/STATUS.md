@@ -280,6 +280,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `sd.c/h`, `sd4.S` (was `sdspi.S`), `diskio.c`, `fatfs/`, `fs.c/h`, `elf.c/h`, `exec.c/h` | stage 2 (see above; SD rewritten for spec rev 7; two volumes, LFN and the new fs calls in rev 9) |
 | `flash.c/h`, `flash_layout.h`, `flashram.S`, `flashdisk.c/h`, `clock.c/h` | rev 3 ROM update; rev 9 C: block layer, sector write (op 2), wall clock |
 | `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | monitor (file commands, scripts, search path since rev 9), S-record parser, dump line, kprintf/ksnprintf |
+| `lineedit.c`, `args.c` | line editor (cursor keys, 32-line history, Tab completion) and command-line words (quotes, `*`/`?` expansion; host tested) |
 | `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, clock, FatFs/fd table on C: and D:, audio |
 | `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
 | `../tools/mkflashvol.sh`, `../flashfs/` | C: volume image and its text files (rev 9) |
