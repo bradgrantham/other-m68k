@@ -14,7 +14,7 @@
  * --serial-type).  Channel B transmits into --duart-b-log or nowhere and
  * never receives.  Not modelled: parity/framing/break detection (PE, FE, RB
  * and the change-in-break interrupts stay 0), CTS/RTS, loopback and
- * multidrop modes, the input-port change detector (IPC stays 0), 1X/16X clock
+ * multidrop modes, 1X/16X clock
  * outputs.  Bit rates come from the data-sheet CSR table: code 0xC is 38400
  * in set 1 (ACR[7] = 0) and 19200 in set 2 (ACR[7] = 1).
  */
@@ -27,6 +27,7 @@
 #include "emu.h"
 #include "io.h"
 #include "duart.h"
+#include "joy.h"
 #include "serial.h"
 
 unsigned long duart_tx_bytes[2];
@@ -66,7 +67,16 @@ unsigned long duart_rx_dropped;
 
 #define FIFO_DEPTH 3
 #define IVR_RESET  0x0F
-#define IP_VALUE   0xFF         /* IP0..IP5 unconnected (pulled up), bits 6..7 read 1 */
+/* IP0..IP5 carry the joystick port (joy.c); bits 6..7 read 1. The input-change detector
+ * compares the lines on every tick and on every port read. */
+static uint8_t ip_last = 0xFF, ipcr_delta;
+static uint8_t ip_now(uint64_t now) { return (uint8_t)(joy_ip_bits(now) | 0xC0); }
+static void ip_sync(uint64_t now)
+{
+    uint8_t cur = ip_now(now);
+    ipcr_delta |= (uint8_t)((ip_last ^ cur) & 0x0F);
+    ip_last = cur;
+}
 
 struct chan {
     uint8_t mr1, mr2;
@@ -222,6 +232,8 @@ static uint8_t isr_value(void)
         isr |= ISR_RXRDYB;
     if (ctr_flag)
         isr |= ISR_CTR;
+    if (ipcr_delta & acr & 0x0F)        /* a change on an input whose ACR bit enables it */
+        isr |= ISR_IPC;
     return isr;
 }
 
@@ -444,6 +456,7 @@ void duart_tick(uint64_t now)
     tx_advance(&ch[1], 1, now);
     rx_console_advance(now);
     ct_run(now);
+    ip_sync(now);
     irq_update();
 }
 
@@ -463,6 +476,9 @@ void duart_reset(void)
     acr = 0;
     opcr = 0;
     opr = 0;
+    ip_last = 0xFF;
+    ipcr_delta = 0;
+    joy_set_charging(last_now, 0);
     ctr_flag = 0;
     rx_inflight = 0;
     memset(&ct, 0, sizeof ct);
@@ -557,12 +573,12 @@ uint8_t duart_peek(unsigned rs)
     case RS(DUART_RBA_OFFSET):   return c->fifo_n ? c->fifo[0] : 0;
     }
     switch (rs) {
-    case RS(DUART_IPCR_OFFSET):  return IP_VALUE & 0x0F;
+    case RS(DUART_IPCR_OFFSET):  return (uint8_t)((ipcr_delta << 4) | (ip_last & 0x0F));
     case RS(DUART_ISR_OFFSET):   return isr_value();
     case RS(DUART_CUR_OFFSET):   return (uint8_t)(ct_count(last_now) >> 8);
     case RS(DUART_CLR_OFFSET):   return (uint8_t)ct_count(last_now);
     case RS(DUART_IVR_OFFSET):   return ivr;
-    case RS(DUART_IP_OFFSET):    return IP_VALUE;
+    case RS(DUART_IP_OFFSET):    return ip_last;
     case RS(DUART_START_CTR_OFFSET):
     case RS(DUART_STOP_CTR_OFFSET):
         return 0xFF;            /* address-triggered commands: data undefined */
@@ -599,9 +615,12 @@ uint8_t duart_read(unsigned rs)
         v = rx_pop(c);
         break;
     case RS(DUART_IPCR_OFFSET):
-        v = IP_VALUE & 0x0F;    /* no changes detected: delta bits 0, levels high */
+        ip_sync(now);
+        v = (uint8_t)((ipcr_delta << 4) | (ip_last & 0x0F));
+        ipcr_delta = 0;         /* the read clears the change bits (and so ISR.IPC) */
         break;
     case RS(DUART_ISR_OFFSET):
+        ip_sync(now);
         v = isr_value();
         break;
     case RS(DUART_CUR_OFFSET):
@@ -614,7 +633,8 @@ uint8_t duart_read(unsigned rs)
         v = ivr;
         break;
     case RS(DUART_IP_OFFSET):
-        v = IP_VALUE;
+        ip_sync(now);
+        v = ip_last;
         break;
     case RS(DUART_START_CTR_OFFSET):
         ct_start_cmd(now);
@@ -693,9 +713,11 @@ void duart_write(unsigned rs, uint8_t v)
         break;
     case RS(DUART_OPR_SET_OFFSET):
         opr |= v;
+        joy_set_charging(now, (opr & JOY_OP_DISCHARGE) != 0);   /* bit set = pin low = charging */
         break;
     case RS(DUART_OPR_RESET_OFFSET):
         opr &= (uint8_t)~v;
+        joy_set_charging(now, (opr & JOY_OP_DISCHARGE) != 0);
         break;
     default:
         break;

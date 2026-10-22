@@ -43,5 +43,7 @@ case SYS_chdir: ret = (uint32_t)bios_chdir((const char *)f->a0); break;
 case SYS_getcwd: ret = (uint32_t)bios_getcwd((unsigned)f->d1, (char *)f->a0); break;
 case SYS_time: ret = (uint32_t)bios_time(); break;
 case SYS_set_time: ret = (uint32_t)bios_set_time((uint32_t)f->d1); break;
+case SYS_joystick: ret = (uint32_t)bios_joystick(); break;
+case SYS_paddles: ret = (uint32_t)bios_paddles((struct paddles *)f->a0); break;
 default: ret = (uint32_t)E_NOSYS; break;
 }

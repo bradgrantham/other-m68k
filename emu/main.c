@@ -33,6 +33,7 @@
 #include "duart.h"
 #include "ps2.h"
 #include "sdcard.h"
+#include "joy.h"
 #include "audio.h"
 
 struct emu_opts opts = {
@@ -183,6 +184,7 @@ static void handle_events(void)
             break;
         }
         default:
+            joy_event(&ev);
             break;
         }
     }
@@ -232,6 +234,8 @@ static void usage(FILE *f)
         "  --serial-log FILE   also write serial (DUART channel A) output to FILE\n"
         "  --duart-b-log FILE  write DUART channel B output to FILE (dropped otherwise)\n"
         "  --type STR          type STR on the PS/2 keyboard (\\n = Enter)\n"
+        "  --joy LIST          hold joystick switches: up,down,left,right,fire (a game controller also works)\n"
+        "  --paddle A,B|pad    paddles on the port at A,B (0..1023), or from a controller's triggers\n"
         "  --type-delay N      ... after N frames (default 120)\n"
         "  --serial-type STR   feed STR into the serial port (DUART channel A, \\n = CR)\n"
         "  --serial-type-delay N  ... after N frames (default 120)\n"
@@ -297,6 +301,8 @@ static void parse_args(int argc, char **argv)
         else if (!strcmp(a, "--serial-log")) opts.serial_log_path = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--duart-b-log")) opts.duart_b_log_path = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--type")) opts.type_text = need_arg(argc, argv, &i);
+        else if (!strcmp(a, "--joy")) opts.joy_opt = need_arg(argc, argv, &i);
+        else if (!strcmp(a, "--paddle")) opts.paddle_opt = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--type-delay")) opts.type_delay = (int)parse_num(need_arg(argc, argv, &i), "frame count");
         else if (!strcmp(a, "--serial-type")) opts.serial_type_text = need_arg(argc, argv, &i);
         else if (!strcmp(a, "--serial-type-delay")) opts.serial_type_delay = (int)parse_num(need_arg(argc, argv, &i), "frame count");
@@ -384,6 +390,8 @@ int main(int argc, char **argv)
     signal(SIGTERM, on_signal);
     signal(SIGHUP, on_signal);
 
+    if (joy_init(opts.joy_opt, opts.paddle_opt) != 0)
+        return 1;
     if (sd_init(opts.sd_path, opts.sd_trace, opts.sd_sdsc) != 0)
         return 1;
 
@@ -393,6 +401,7 @@ int main(int argc, char **argv)
             return 1;
         }
         sdl_inited = 1;
+        joy_open_controller();
     }
     if (video_init(opts.scale, opts.headless) != 0)
         return 1;

@@ -68,6 +68,17 @@ def gen_hw_h(d):
         A("\n/* ---- audio output filter (spec \"audio\"): first-order RC after the PDM pin ---- */")
         A("#define AUDIO_LP_R_OHM %d" % d["audio"]["lowpass_r_ohm"])
         A("#define AUDIO_LP_C_NF %d" % d["audio"]["lowpass_c_nf"])
+    if "joystick" in d:
+        jy = d["joystick"]
+        A("\n/* ---- joystick / paddle port on the DUART's IP/OP pins (spec \"joystick\") ---- */")
+        for k in ("up", "down", "left", "right", "fire", "spare"):
+            A("#define JOY_IP_%s_BIT %d" % (k.upper(), jy["ip_" + k]))
+            A("#define JOY_IP_%s (1u << %d)" % (k.upper(), jy["ip_" + k]))
+        A("#define JOY_OP_DISCHARGE_BIT %d" % jy["op_discharge"])
+        A("#define JOY_OP_DISCHARGE (1u << %d)" % jy["op_discharge"])
+        A("#define PADDLE_C_NF %d" % jy["pot_c_nf"])
+        A("#define PADDLE_FULL_SCALE_US %d" % jy["pot_full_scale_us"])
+        A("#define JOY_ACR_PADDLES %s /* ACR while paddles are measured: timer X1/16, IP0/IP1 change interrupts */" % jy["acr_paddles"])
     A("\n/* ---- RAM layout ---- */")
     for r in d["ram_layout"]:
         nm = cident(r["name"])
@@ -491,7 +502,7 @@ def gen_doc(d):
         if not isinstance(vv, list):
             return str(vv)
         return ", ".join("`%s` (%s)" % (x["path"], x["desc"]) if isinstance(x, dict) else str(x) for x in vv)
-    for k in ("serial", "ps2", "sd", "filesystem", "audio", "power", "reset"):
+    for k in ("serial", "ps2", "sd", "filesystem", "audio", "joystick", "power", "reset"):
         A("**%s**: %s" % (k, "; ".join("%s: %s" % (kk, peripheral_value(vv)) for kk, vv in d[k].items()))); A("")
     A("## System calls"); A(""); A(d["syscall"]["desc"]); A("")
     A("| # | Name | Prototype | Description |"); A("|---|---|---|---|")

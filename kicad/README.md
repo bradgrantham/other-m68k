@@ -47,7 +47,7 @@ pictures. Page 1 is the root with the seven sheet symbols; the power-net anchors
 | 4 | cpld1 | U6 ATF1508AS "MMU" with every pin labelled from `hdl/pins_cpld1_mmu.json`, X1 24 MHz oscillator, J7 JTAG, JTAG pull-ups, 8+1 decoupling capacitors |
 | 5 | cpld2 | U7 ATF1508AS "I/O", J3 PS/2, J4 microSD with its six 10 k pull-ups (native 4-bit SD bus, CPLD2 open-drain), SW2 NMI, D3/D4 LEDs, J6 audio and its filter, decoupling |
 | 6 | video | U11 AD724 (AD725 symbol), the three resistor DACs and terminations, Y2 subcarrier crystal, STND pull-up (NTSC), FB1, J5 RCA and J10 S-video (rev C2), 220 uF/75 ohm on each of the three outputs |
-| 7 | io | U10 MC68681 DUART, Y1 3.6864 MHz, J2 FTDI (channel A), J11 FTDI (channel B, rev C2), U13 MCP130 + SW1 reset, DUART pull-ups |
+| 7 | io | U10 MC68681 DUART, Y1 3.6864 MHz, J2 FTDI (channel A), J11 FTDI (channel B, rev C2), U13 MCP130 + SW1 reset, DUART pull-ups, J12 Atari joystick/paddle port with U14 74HC14, Q1 dual NPN, D6/D7, F2 (rev C3) |
 | 8 | power | J1 USB-C, F1 polyfuse, CC pull-downs, bulk capacitors, D5 power LED, U12 AP2112K-3.3, H1..H4 |
 
 Net names follow the spec (`A1..A23`, `D0..D15` CPU data bus, `MD0..MD15` SRAM-side bus,
@@ -95,6 +95,13 @@ behind FB1).
 * **Serial headers** J2 (channel A) and J11 (channel B, rev C2; it replaces the 2x8 expansion
   header J8 of rev B/C1, which by then carried only channel B and the rails): both the 6-pin
   FTDI pinout GND, CTS, VCC, TXD, RXD, RTS with only GND, TXD and RXD connected, 5 V TTL.
+* **Joystick port** J12 (rev C3, spec "joystick"): DE-9 male, Atari pinout (1 up, 2 down,
+  3 left, 4 right, 5 pot B, 6 fire, 7 +5 V through F2 200 mA polyfuse, 8 GND, 9 pot A, shell
+  GND). The switches go through 1 k into the DUART's IP0..IP4, which already have 10 k pull-ups.
+  Each pot charges, through 1 k, a 15 nF capacitor to ground; a 74HC14 gate (U14) watches it and pulls the up
+  (A) or down (B) line low through a BAT54W when it passes the threshold; Q1 (MMDT3904) shorts
+  both capacitors from OP0 through 4.7 k (pin high = shorted, the reset state). U14's four spare
+  inputs are grounded.
 * **S-video** J10 (rev C2): the AD724's LUMA (pin 11) and CRMA (pin 9) outputs, each through
   220 uF and 75 ohm like the composite output, to a CUI MD-40SM mini-DIN 4 (1 GND, 2 GND,
   3 Y, 4 C; footprint `other-m68k:MiniDIN-4_CUI_MD-40SM_Horizontal`, the pre-03/2022 layout
@@ -218,7 +225,7 @@ sheet's bottom edge is the machine's front, the top edge its back):
 * Back edge, left to right: J1 USB-C, J2 serial A, J11 serial B, J5 RCA, J10 S-video; the
   AD724 video section (U11, Y2, the DACs) right of the S-video jack above CPLD1, X1 next to
   it. Front edge, left to right: J3 PS/2, J6 audio, J4 microSD (U12, the 3.3 V LDO, behind
-  it), then SW1 reset and SW2 NMI with the three LEDs D5 power, D3 LED0, D4 LED1 behind them,
+  it), J12 the joystick port with U14 beside it (rev C3), then SW1 reset and SW2 NMI with the three LEDs D5 power, D3 LED0, D4 LED1 behind them,
   labelled on the silkscreen, so a case can expose the front. Left edge: J9 logic analyzer
   (2x15, gusmanb pinout, 100 ohm series arrays RN1-RN6 beside it; see ORDER.md) and J7 JTAG,
   used with the case off.
@@ -227,7 +234,8 @@ sheet's bottom edge is the machine's front, the top edge its back):
   SRAM pair U2/U3 (top right, horizontal) and the two bus transceivers U8/U9 (SOIC-20,
   under the SRAMs). U1 lies horizontally under both CPLDs.
 * The two flash chips U5 (odd) and U4 (even) stand vertically at the right edge next to the
-  CPU's end (plain DIP-32 sockets). The free area under the CPU carries the dedication text.
+  CPU's end (plain DIP-32 sockets). The dedication text sits under the SRAMs, right of the bus
+  buffers (rev C3 moved it there to make room for the joystick port).
 
 Rev A had CPLD1 on the left and the memory stacked down the right edge, which put the
 whole bus across the board; rev B put the memory along the bottom and every connector on the

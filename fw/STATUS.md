@@ -12,6 +12,28 @@ present here); `make -C sdk` builds `libsys.a` and the examples' `.elf/.srec`. `
 is 0x4780 bytes (ends at 0x4B80), leaving ~13 KB of supervisor stack below 0x8000. See
 README.md for usage, the exact emulator commands and their output.
 
+## Spec rev 11 / board rev C3: Atari joystick and paddle port (2026-10-22)
+
+* `joy.c`: `sys_joystick` (40) reads the five switches from the DUART input port (IP0..IP4,
+  active low behind the existing 10 k pull-ups); `sys_paddles` (41) returns `struct paddles`
+  {a, b 0..1023, valid bits, frame}. Paddle timing: the VBLANK handler shorts the two 15 nF
+  capacitors through OP0; the lines that had charged rise, the DUART reports the rise through
+  its change interrupt once its 38.4 kHz sampler has seen it, and that level-3 handler releases
+  the capacitors and notes the free-running counter/timer (timer mode, X1/16 = 230.4 kHz); the
+  74HC14 gates pull IP0/IP1 low at end of charge and the handler timestamps the fall (ACR 0x73,
+  IMR.IPC). If nothing rose during a frame the next VBLANK releases directly. 1023 = 12 ms =
+  2764 counts. Measuring starts with the first `sys_paddles` call and stops with
+  `sys_paddles(NULL)` or program exit. The first version waited 20 us in the VBLANK handler and
+  masked IMR around the discharge; the guide review showed the wait could leave a paddle near
+  zero undetected (the DUART needs 26..52 us to see a step) and the IMR writes trampled a
+  program's own interrupt bits.
+* Shared lines: paddle A ends on the up line, paddle B on the down line (a joystick has no
+  pots, paddles have no up/down switches); in paddle mode a joystick held up/down keeps its
+  line low and reads as no paddle (valid clear) except in the frame the switch closes. A program that uses the DUART counter/timer itself must not use paddles.
+* Emulator: `--joy up,fire`, `--paddle A,B|pad`, or an SDL game controller; the DUART model
+  gained the input-change detector (IPCR delta bits, ISR.IPC) and OP0.
+* Host tests: `joy_scale` (649 checks in all). Verified in the emulator with `joytest`.
+
 ## Spec rev 9: drive C: in the flash, long names, directories, clock, scripts (2026-10-21)
 
 * Flash split: the ROM image is 256 KB (`ROM_IMAGE_SIZE` 0x40000; the POST checksum loop
@@ -281,6 +303,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `flash.c/h`, `flash_layout.h`, `flashram.S`, `flashdisk.c/h`, `clock.c/h` | rev 3 ROM update; rev 9 C: block layer, sector write (op 2), wall clock |
 | `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | monitor (file commands, scripts, search path since rev 9), S-record parser, dump line, kprintf/ksnprintf |
 | `lineedit.c`, `args.c` | line editor (cursor keys, 32-line history, Tab completion) and command-line words (quotes, `*`/`?` expansion; host tested) |
+| `joy.c` | joystick switches, paddle timing from the VBLANK and DUART interrupts (rev 11) |
 | `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, clock, FatFs/fd table on C: and D:, audio |
 | `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
 | `../tools/mkflashvol.sh`, `../flashfs/` | C: volume image and its text files (rev 9) |

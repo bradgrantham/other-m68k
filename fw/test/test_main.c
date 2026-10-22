@@ -1,6 +1,7 @@
 /* Host unit tests for the pure-C BIOS modules. Build/run: make -C fw test */
 #include "test.h"
 #include "clock.h"
+#include "joy.h"
 
 int fails, checks;
 
@@ -10,6 +11,12 @@ static uint16_t ev_out[64]; static int ev_n;
 void input_kbd_push(uint8_t c) { if (kbd_n < 255) kbd_out[kbd_n++] = (char)c; kbd_out[kbd_n] = 0; }
 void input_key_event_push(uint16_t ev) { if (ev_n < 64) ev_out[ev_n++] = ev; }
 static void kbd_reset(void) { kbd_n = 0; kbd_out[0] = 0; ev_n = 0; }
+
+/* ---- stand-ins for joy.c (only joy_scale is exercised; the rest touches the DUART) ---- */
+volatile uint32_t ticks;
+void delay_us(uint32_t us) { (void)us; }
+uint16_t irq_disable(void) { return 0; }
+void irq_restore(uint16_t sr) { (void)sr; }
 
 /* ---- DUART channel A stand-in for fs.c's /dev/ttya ---- */
 char test_serial_out[256]; int test_serial_out_n;
@@ -238,6 +245,16 @@ void test_clock(void)
     clock_set(0);
 }
 
+/* ---- joy.c: the paddle scale (the rest talks to the DUART) ---- */
+static void test_joy(void)
+{
+    CHECK_EQ(joy_scale(0), 0);
+    CHECK_EQ(joy_scale(2764), 1023);                   /* 12 ms at 230.4 kHz */
+    CHECK_EQ(joy_scale(1382), 511);
+    CHECK_EQ(joy_scale(5000), 1023);                   /* past full scale: clamped */
+    CHECK_EQ(joy_scale(65535), 1023);
+}
+
 int main(int argc, char **argv)
 {
     test_printf();
@@ -250,6 +267,7 @@ int main(int argc, char **argv)
     test_audio();
     test_elf(argc > 2 ? argv[2] : 0);
     test_clock();
+    test_joy();
     test_fs(argc > 1 ? argv[1] : 0, argc > 3 ? argv[3] : 0);
     printf("%d checks, %d failures\n", checks, fails);
     return fails ? 1 : 0;

@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define BOARD_NAME "other-m68k"
-#define BOARD_REVISION 10
+#define BOARD_REVISION 11
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL
 #define SLOT_CPU_CLOCKS 4
@@ -43,6 +43,25 @@
 /* ---- audio output filter (spec "audio"): first-order RC after the PDM pin ---- */
 #define AUDIO_LP_R_OHM 1000
 #define AUDIO_LP_C_NF 33
+
+/* ---- joystick / paddle port on the DUART's IP/OP pins (spec "joystick") ---- */
+#define JOY_IP_UP_BIT 0
+#define JOY_IP_UP (1u << 0)
+#define JOY_IP_DOWN_BIT 1
+#define JOY_IP_DOWN (1u << 1)
+#define JOY_IP_LEFT_BIT 2
+#define JOY_IP_LEFT (1u << 2)
+#define JOY_IP_RIGHT_BIT 3
+#define JOY_IP_RIGHT (1u << 3)
+#define JOY_IP_FIRE_BIT 4
+#define JOY_IP_FIRE (1u << 4)
+#define JOY_IP_SPARE_BIT 5
+#define JOY_IP_SPARE (1u << 5)
+#define JOY_OP_DISCHARGE_BIT 0
+#define JOY_OP_DISCHARGE (1u << 0)
+#define PADDLE_C_NF 15
+#define PADDLE_FULL_SCALE_US 12000
+#define JOY_ACR_PADDLES 0x73 /* ACR while paddles are measured: timer X1/16, IP0/IP1 change interrupts */
 
 /* ---- RAM layout ---- */
 #define VECTORS_BASE 0x000000UL
@@ -248,9 +267,41 @@
 #define DUART_IPCR_OFFSET 9
 #define DUART_IPCR_ADDR (DUART_BASE + 9)
 #define DUART_IPCR (*(volatile uint8_t *)DUART_IPCR_ADDR)
+#define IPCR_IP0_BIT 0
+#define IPCR_IP0 (1u << 0)
+#define IPCR_IP1_BIT 1
+#define IPCR_IP1 (1u << 1)
+#define IPCR_IP2_BIT 2
+#define IPCR_IP2 (1u << 2)
+#define IPCR_IP3_BIT 3
+#define IPCR_IP3 (1u << 3)
+#define IPCR_DIP0_BIT 4
+#define IPCR_DIP0 (1u << 4)
+#define IPCR_DIP1_BIT 5
+#define IPCR_DIP1 (1u << 5)
+#define IPCR_DIP2_BIT 6
+#define IPCR_DIP2 (1u << 6)
+#define IPCR_DIP3_BIT 7
+#define IPCR_DIP3 (1u << 7)
 #define DUART_ACR_OFFSET 9
 #define DUART_ACR_ADDR (DUART_BASE + 9)
 #define DUART_ACR (*(volatile uint8_t *)DUART_ACR_ADDR)
+#define ACR_IPC0_EN_BIT 0
+#define ACR_IPC0_EN (1u << 0)
+#define ACR_IPC1_EN_BIT 1
+#define ACR_IPC1_EN (1u << 1)
+#define ACR_IPC2_EN_BIT 2
+#define ACR_IPC2_EN (1u << 2)
+#define ACR_IPC3_EN_BIT 3
+#define ACR_IPC3_EN (1u << 3)
+#define ACR_CT_MODE0_BIT 4
+#define ACR_CT_MODE0 (1u << 4)
+#define ACR_CT_MODE1_BIT 5
+#define ACR_CT_MODE1 (1u << 5)
+#define ACR_CT_MODE2_BIT 6
+#define ACR_CT_MODE2 (1u << 6)
+#define ACR_BRG_SET_BIT 7
+#define ACR_BRG_SET (1u << 7)
 #define DUART_ISR_OFFSET 11
 #define DUART_ISR_ADDR (DUART_BASE + 11)
 #define DUART_ISR (*(volatile uint8_t *)DUART_ISR_ADDR)
@@ -341,6 +392,18 @@
 #define DUART_IP_OFFSET 27
 #define DUART_IP_ADDR (DUART_BASE + 27)
 #define DUART_IP (*(volatile uint8_t *)DUART_IP_ADDR)
+#define IP_IP0_BIT 0
+#define IP_IP0 (1u << 0)
+#define IP_IP1_BIT 1
+#define IP_IP1 (1u << 1)
+#define IP_IP2_BIT 2
+#define IP_IP2 (1u << 2)
+#define IP_IP3_BIT 3
+#define IP_IP3 (1u << 3)
+#define IP_IP4_BIT 4
+#define IP_IP4 (1u << 4)
+#define IP_IP5_BIT 5
+#define IP_IP5 (1u << 5)
 #define DUART_OPCR_OFFSET 27
 #define DUART_OPCR_ADDR (DUART_BASE + 27)
 #define DUART_OPCR (*(volatile uint8_t *)DUART_OPCR_ADDR)

@@ -41,6 +41,14 @@
 #define KEY_EXTENDED 512
 #define AUDIO_BUF_MAX 512
 #define AUDIO_NBUF 3
+#define JOY_UP 1
+#define JOY_DOWN 2
+#define JOY_LEFT 4
+#define JOY_RIGHT 8
+#define JOY_FIRE 16
+#define PADDLE_FULL 1023
+#define PADDLE_A_VALID 1
+#define PADDLE_B_VALID 2
 
 /* ---- ABI structures ---- */
 struct video_info {
@@ -68,6 +76,12 @@ struct dirent {
     uint32_t size;
     uint32_t attr;
     uint32_t mtime;
+};
+struct paddles {
+    uint32_t a;
+    uint32_t b;
+    uint32_t valid;
+    uint32_t frame;
 };
 
 /* ---- syscall numbers ---- */
@@ -112,7 +126,9 @@ enum {
     SYS_getcwd = 37,
     SYS_time = 38,
     SYS_set_time = 39,
-    SYS_COUNT = 40
+    SYS_joystick = 40,
+    SYS_paddles = 41,
+    SYS_COUNT = 42
 };
 
 /* ---- user-side prototypes (implemented by generated/syscall_stubs.S) ---- */
@@ -156,5 +172,7 @@ int sys_chdir(const char * path); /* Change the current directory of a volume, o
 int sys_getcwd(unsigned len, char * buf); /* Current drive and directory as "X:/dir/sub" into buf (len bytes, NUL included). Returns the length, E_INVAL if len is 0 or it does not fit, E_NODEV if the current volume is not mounted. */
 uint32_t sys_time(void); /* BIOS clock: seconds since 1970-01-01 00:00 local time; 0 if it has not been set since power-on ("filesystem" clock). */
 int sys_set_time(uint32_t secs); /* Set the BIOS clock (seconds since 1970-01-01 00:00 local time). Used by the monitor's `date` command; a program may set it too. */
+int sys_joystick(void); /* Joystick switches as a bit mask (JOY_UP, JOY_DOWN, JOY_LEFT, JOY_RIGHT, JOY_FIRE; 1 = pressed), read directly from the DUART input port. With paddles plugged in, left and right are the paddle buttons and up/down are the pot lines (meaningless). */
+int sys_paddles(struct paddles * p); /* Paddle positions: a and b are 0..PADDLE_FULL (1023 = the nominal 12 ms full scale), valid has PADDLE_A_VALID/PADDLE_B_VALID for the lines that fell during the measured frame (clear: no paddle, or at the end stop; the value is then 1023), frame is the ticks value of the measurement. The first call switches measuring on (that call returns valid 0; data follows a frame later); p == NULL switches it off and leaves the capacitors discharged so up/down read as a joystick again. Off at program exit. */
 
 #endif /* SYSCALLS_H */

@@ -1,8 +1,8 @@
-# Ordering other-m68k rev C2 from PCBWay
+# Ordering other-m68k rev C3 from PCBWay
 
-This file describes the **rev C2** order (2026-10-21; the rev B4 order of 2026-10-20, git tag
-`rev-b`, was stopped before fabrication). Rev C2 is the current design in this directory, spec
-rev 10:
+This file describes the **rev C3** order (2026-10-21; the rev B4 order of 2026-10-20, git tag
+`rev-b`, was stopped before fabrication). Rev C3 is the current design in this directory, spec
+rev 11:
 
 * **SD card** (rev C1, spec rev 7): native 4-bit bus. CLK, CMD, DAT0..3 run straight to CPLD2
   pins 15, 24, 8, 16, 58, 4 with 10 k pull-ups to 3.3 V; the three 1.8k/3.3k level dividers of
@@ -16,7 +16,12 @@ rev 10:
   outputs through 220 uF and 75 ohm each (two more electrolytics and two resistors).
 * **Serial B** (rev C2): J11, a second 6-pin FTDI header on DUART channel B, replaces the 2x8
   expansion header J8.
-* The silkscreen carries a dedication in the open area under the CPU ("Griffin Jr.",
+* **Joystick/paddle port** (rev C3, spec rev 11): J12 DE-9 male (Atari pinout) on the front edge
+  between the SD socket and the buttons, with U14 74HC14, Q1 MMDT3904, D6/D7 BAT54W, two 15 nF,
+  F2 200 mA polyfuse and nine resistors. The six new part numbers are marked `verify` in
+  `parts.json` (they are listed in `other-m68k-bom-check.txt`): check them against a distributor
+  before ordering; same package and ratings are acceptable substitutes.
+* The silkscreen carries a dedication under the SRAMs, right of the bus buffers ("Griffin Jr.",
   "October 2026", "I love you, Kris!") and the board revision.
 
 The rev B4 notes below (quantities, stackup, assembly scope, part substitutions, power) still

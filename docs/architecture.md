@@ -226,7 +226,9 @@ fitter budget (section 7) does not allow them. SDIO reads back the six card line
   transmission is bit-banged by software through GPIO.PS2CLK/PS2DAT (open-drain pins).
 * **Serial**: not in the CPLDs. A 68681 DUART on the CPU bus provides channel A (FTDI
   header J2, 38400 8N1, the top of the chip's fixed baud table) and channel B (a second FTDI
-  header, J11, since board rev C2). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
+  header, J11, since board rev C2). Its input port carries the Atari joystick switches (IP0..IP4)
+  and, on IP0/IP1, the paddle end-of-charge signals; OP0 shorts the paddle capacitors and the
+  counter/timer times them while a program reads paddles (board rev C3, spec rev 11). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
   set; INTSTAT.DUARTIRQ shows the pin. The DUART's IACK is tied high: all interrupts are
   autovectored and the ISR reads the DUART's own ISR register.
 * **SD card** (spec rev 7, board rev C1): native 4-bit SD bus, bit-banged. The six lines

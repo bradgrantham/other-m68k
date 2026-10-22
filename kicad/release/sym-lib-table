@@ -16,6 +16,7 @@
   (lib (name "Power_Supervisor")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Power_Supervisor.kicad_sym")(options "")(descr ""))
   (lib (name "Regulator_Linear")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Regulator_Linear.kicad_sym")(options "")(descr ""))
   (lib (name "Switch")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Switch.kicad_sym")(options "")(descr ""))
+  (lib (name "Transistor_BJT")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Transistor_BJT.kicad_sym")(options "")(descr ""))
   (lib (name "Video")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/Video.kicad_sym")(options "")(descr ""))
   (lib (name "other-m68k")(type "KiCad")(uri "${KIPRJMOD}/../lib/other-m68k.kicad_sym")(options "")(descr ""))
   (lib (name "power")(type "KiCad")(uri "${KICAD9_SYMBOL_DIR}/power.kicad_sym")(options "")(descr ""))

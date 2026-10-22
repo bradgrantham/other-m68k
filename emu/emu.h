@@ -12,6 +12,8 @@ struct emu_opts {
     const char *serial_log_path;
     const char *duart_b_log_path;
     const char *type_text;
+    const char *joy_opt;        /* --joy: switches held, e.g. "up,fire" */
+    const char *paddle_opt;     /* --paddle: "A,B" (0..1023) or "pad" */
     const char *serial_type_text;
     int scale;
     int pal_jumper;

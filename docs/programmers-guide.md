@@ -1,6 +1,6 @@
 # other-m68k Programmer's Guide
 
-This guide describes **board rev C1, spec revision 9** (`"revision": 9` in `spec/board.json`,
+This guide describes **board rev C3, spec revision 11** (`"revision": 11` in `spec/board.json`,
 `BOARD_REVISION` in `generated/hw.h`) and the BIOS/monitor in `fw/` as it stands in this
 repository. Revision 5 changed only the audio hardware (an 8-bit PDM shifter behind a new
 `AUDIO` register instead of a GPIO bit, a JED-only change for B4 boards). Revision 6 changed
@@ -22,8 +22,13 @@ FAT12 volume, drive C:, beside the SD card as drive D: ([1.7](#17-files-and-dire
 [2.12](#212-the-flash-rom)); the BIOS's RAM grew to 31 KB, so programs now load at 0x008000;
 long file names, current directories, delete, rename and mkdir arrived with system calls
 33-37, and a wall clock (38, 39) stamps the files; the monitor gained DOS-style file commands,
-a search path for programs and `.CMD` scripts. Every address, bit and syscall
-name below comes from `spec/board.json` or from the headers generated from it
+a search path for programs and `.CMD` scripts. Revision 10 is board rev C2, a layout change
+that programs do not see: the connectors on a front and a back edge, an S-video output J10
+beside the composite one, and DUART channel B on a serial header of its own, J11, in place of
+the expansion header J8 ([2.13](#213-leds-user-pins-and-headers)). Revision 11, board rev C3,
+adds an Atari joystick/paddle port, J12, on the DUART's input and output pins, and system calls
+40 and 41 to read it ([1.4](#joystick-and-paddles), [2.11](#the-input-and-output-ports)).
+Every address, bit and syscall name below comes from `spec/board.json` or from the headers generated from it
 (`generated/hw.h`, `generated/syscalls.h`, `generated/hw.inc`). Where the spec, the firmware and
 the other documents disagree, the text says so; the list is collected in
 [Known discrepancies](#known-discrepancies) at the end.
@@ -39,7 +44,7 @@ the other documents disagree, the text says so; the list is collected in
 | ROM | 1 MB flash window at 0xE00000 (2x SST39SF040); the BIOS image is the first 256 KB, the other 768 KB hold a FAT12 volume, drive C: |
 | Video | 320x240, one byte per pixel (RGB332), two pages in RAM, composite out through an AD724 (NTSC only on rev B4 and C1) |
 | Glue | two ATF1508AS CPLDs: CPLD1 = decode, DTACK, SRAM address mux, video timing, soft switches; CPLD2 = I/O registers, pixel shifter, interrupt encoder, PS/2 receiver, PDM audio shifter, SD/GPIO pins |
-| I/O | 68681 DUART (channel A on the serial A FTDI header, 38400 8N1: the POST report and the banner, then free for programs as `/dev/ttya`; channel B on the identical serial B header, board rev C2), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; drive D:, FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; composite and S-video outputs (rev C2) |
+| I/O | 68681 DUART (channel A on the serial A FTDI header, 38400 8N1: the POST report and the banner, then free for programs as `/dev/ttya`; channel B on the identical serial B header, board rev C2), PS/2 keyboard, Atari joystick/paddle port on the DUART's input and output pins (board rev C3), bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; drive D:, FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; composite and S-video outputs (rev C2) |
 | Interrupts | autovectored, vector = 24 + level: VBLANK 1, PS/2 2, DUART 3, HSYNC 4, NMI button 7 |
 
 Programs are ELF files on drive C: (the flash) or D: (the SD card). The monitor loads one into
@@ -64,11 +69,11 @@ the user region of RAM (0x008000 upward) and starts it **in user mode**; the pro
 ### Which part to read
 
 * **Part 1, Writing applications**, is for a C programmer who wants to write a program
-  quickly and does not want to know how the hardware works: build, console and serial port,
-  graphics, files, sound, timing, and a reference table of every system call.
+  quickly and does not want to know how the hardware works: build, console, joystick and
+  serial port, graphics, files, sound, timing, and a reference table of every system call.
 * **Part 2, Programming the hardware directly**, is for someone writing a game engine, an
   interpreter, a demo or bare-metal code who wants every cycle: memory map, bus timing,
-  every register bit, interrupts and their cost, the SD/PS/2/DUART/flash protocols, and
+  every register bit, interrupts and their cost, the SD/PS/2/DUART/joystick/flash protocols, and
   how to take the machine over from the BIOS.
 
 ### A note on measurements
@@ -186,7 +191,8 @@ instance, shows as `?`). Only what is still on the screen at exit is there. stdo
 `--exit-on-berr`, `--break ADDR`, `--trace`, `--io-trace` (every register access with a cycle stamp),
 `--dump-mem ADDR LEN`, `--audio-wav FILE` (the audio output rendered to a 48 kHz mono WAV from
 cycle 0; works headless and with `--fast`, so you can check sound without a sound card) and
-`--audio-edge-log FILE` (every edge of the audio pin with its cycle stamp). See
+`--audio-edge-log FILE` (every edge of the audio pin with its cycle stamp). `--joy` and
+`--paddle` put a joystick or paddles on the Atari port ([1.4](#joystick-and-paddles)). See
 `emu/README.md` for the full list.
 
 Make images and cards 64 MB or larger for FAT32 (a FAT32 volume needs at least 65,525
@@ -411,6 +417,117 @@ int main(void)
 For "is this key held" in a game loop, keep a table: `held[ev & 0x2FF] = !(ev & KEY_RELEASE)`
 for every event read (masking with 0x2FF drops the release bit and keeps the `E0` bit), with
 `held` sized 0x300.
+
+### Joystick and paddles
+
+Board rev C3 has an Atari-style DE-9 port, J12, on the front edge. It takes a joystick (four
+direction switches and a fire button) or a pair of paddles (a pot and a button each), and two
+system calls read it:
+
+| call | what it does |
+|---|---|
+| `sys_joystick()` | the switches as a mask, a bit set while its switch is closed: `JOY_UP` 1, `JOY_DOWN` 2, `JOY_LEFT` 4, `JOY_RIGHT` 8, `JOY_FIRE` 16 |
+| `sys_paddles(&p)` | the paddle positions measured in the last complete frame, into a `struct paddles`; switches measuring on the first time. 0, or `E_FAULT` |
+| `sys_paddles(NULL)` | switch measuring off; 0 |
+
+`sys_joystick` is one read of the DUART's input port, inverted and masked: nothing to switch
+on, no queue and no events. Read it once a frame, after `sys_wait_vblank()`, and compare
+with the previous frame's mask to find presses (`now & ~before`).
+
+`struct paddles` is four `uint32_t`: `a` and `b`, the positions 0..`PADDLE_FULL` (1023);
+`valid`, with `PADDLE_A_VALID` (1) and `PADDLE_B_VALID` (2) set for the paddles whose
+measurement ended within the frame; and `frame`, the `sys_ticks()` value when that frame's
+measurement was collected. Measuring is off until the first `sys_paddles` call, which switches
+it on and returns `valid` 0 (with `a` and `b` 1023); from then on the BIOS measures both
+paddles once a frame from the VBLANK interrupt, so real values appear one or two frames later.
+Each further call only copies the latest result. A position is the time the paddle's
+capacitor takes to charge, with 1023 at the nominal full scale of 12 ms
+(`PADDLE_FULL_SCALE_US`); a longer time reads 1023, and a paddle whose capacitor has not
+charged by the next VBLANK (one at the end of its travel, or none plugged in) reads 1023 with
+its valid bit clear. The range a real paddle covers depends on its pot and on the gate's
+threshold, so scale from the smallest and largest values seen rather than trusting 0 and
+1023 (in the emulator, `--paddle 0,1023` reads 5 and 1023, *measured*). `sys_paddles(NULL)`
+switches measuring off, and so does the end of the program (`sys_exit`, `sys_exec`, or a
+crash).
+
+**The lines are shared.** Besides its two pot pins the port has five signal lines, so the
+paddles reuse two of them: paddle A's end of charge pulls the up line low, paddle B's the down
+line; paddle A's button is the right switch (pin 4) and paddle B's the left (pin 3). A
+joystick has no pots and a
+paddle has no up or down switch, so each works on its own, but:
+
+* With paddles plugged in, `JOY_UP` and `JOY_DOWN` mean nothing (while measuring they show
+  whether each capacitor has charged yet in this frame); use `JOY_LEFT` and `JOY_RIGHT`, the
+  buttons.
+* With a joystick plugged in and measuring on, pushing it up or down is taken for a paddle: the
+  switch closing ends a "charge" at that moment and gives one reading, and a switch held closed
+  reads as no paddle (`--joy up` gives `a` 1023 with `PADDLE_A_VALID` clear, *measured*).
+  `sys_joystick` still reports the directions correctly.
+* While measuring is on, the BIOS owns the DUART's counter/timer and ACR, and needs `IMR_IPC`
+  ([2.11](#the-input-and-output-ports)): a program that uses the counter/timer itself must not
+  use the paddles.
+
+Measuring costs about 430 clocks a frame with nothing plugged in and 3,500 with two paddles,
+0.2 % and 1.8 % of the CPU (*measured* in the emulator): the VBLANK pass, and with paddles
+three level-3 interrupts a frame, one for the discharge and one for each paddle's end of
+charge. A program that accepts either controller calls `sys_paddles`
+for a few frames and counts the frames with a `valid` bit: paddles set one every frame (unless
+both are at the end of their travel), a joystick at most once each time it is pushed up or
+down. If none turn up, `sys_paddles(NULL)` gives the timer and the time back:
+
+```c
+/* stick.c: report what is on the Atari port until a key is pressed. */
+#include <stdio.h>
+#include "syscalls.h"
+
+int main(void)
+{
+    struct paddles p;
+    int seen = 0;
+    sys_paddles(&p);                            /* switch measuring on (this result is valid 0) */
+    for (int i = 0; i < 8; i++) {               /* paddles report every frame; a joystick */
+        sys_wait_vblank();                      /* pushed up or down, once at most */
+        sys_paddles(&p);
+        if (p.valid) seen++;
+    }
+    int paddles = seen >= 4;
+    if (!paddles) sys_paddles(NULL);            /* a joystick: give the timer and the CPU back */
+    printf("%s (any key quits)\n", paddles ? "paddles" : "joystick");
+    int last_j = -1, last_a = -100;
+    while (sys_pollchar() < 0) {
+        sys_wait_vblank();
+        int j = sys_joystick();
+        if (!paddles) {
+            if (j != last_j)
+                printf("%s%s%s%s%s\n", (j & JOY_UP) ? " up" : "", (j & JOY_DOWN) ? " down" : "",
+                       (j & JOY_LEFT) ? " left" : "", (j & JOY_RIGHT) ? " right" : "",
+                       (j & JOY_FIRE) ? " fire" : "");
+        } else {
+            sys_paddles(&p);
+            j &= JOY_LEFT | JOY_RIGHT;          /* the paddle buttons; up and down carry the pots */
+            int a = (int)p.a;
+            if (j != last_j || a > last_a + 4 || a < last_a - 4) {
+                printf("A %4d B %4lu%s%s\n", a, (unsigned long)p.b,
+                       (j & JOY_LEFT) ? " left" : "", (j & JOY_RIGHT) ? " right" : "");
+                last_a = a;
+            }
+        }
+        last_j = j;
+    }
+    while (sys_pollchar() >= 0) ;
+    return 0;                                   /* exit switches measuring off */
+}
+```
+
+In the emulator, `--joy LIST` holds switches (`up`, `down`, `left`, `right`, `fire`, comma
+separated), `--paddle A,B` plugs in paddles at those positions (0..1023), `--paddle pad` takes
+the positions from a game controller's triggers, and with a window the first game controller
+drives the switches (d-pad or left stick, any face button for fire). The emulator looks at the
+lines once per video line, so its paddles resolve 64 us, 0.5 % of full scale. `stick` prints
+`paddles` and `A  303 B  705 left` with `--joy fire,left --paddle 300,700`, and `joystick` and
+` up fire` with `--joy up,fire` (*measured*). `sdk/examples/joytest.c` (`joytest` at the
+prompt; `joytest -j` reads the joystick only and leaves measuring off) prints the mask and
+both paddles six times a second: `--L-F   A  303  B  705` with the first options.
 
 ### Serial port A is yours: `/dev/ttya`
 
@@ -946,9 +1063,9 @@ hook, and `NULL` removes it. Hooks are removed when the program exits.
 
 | level | interrupt | rate | BIOS work before the hook |
 |---|---|---|---|
-| 1 | VBLANK | once per frame | acknowledge, `ticks++` |
+| 1 | VBLANK | once per frame | acknowledge, `ticks++`, advance the clock; while paddles are measured, collect the frame's result and short the paddle capacitors, or release them if nothing charged in the frame (about 430 clocks, *measured*) |
 | 2 | PS/2 byte received | per keyboard byte | read the byte, decode it into the queues |
-| 3 | DUART | per serial event | drain the serial receive FIFO |
+| 3 | DUART | per serial event; three times a frame while two paddles are measured | drain the serial receive FIFO; while paddles are measured, read IPCR, release the capacitors once the discharge is seen, and time the paddle lines |
 | 4 | HSYNC | 15.7 kHz | acknowledge, play one byte of the audio stream (or call the audio callback instead); installing a level-4 hook also turns the interrupt on and keeps it on while no stream plays, and switches the BIOS to its slower level-4 handler ([2.7](#what-the-bios-installs)) |
 
 Any other level gives `E_INVAL` (returned as the pointer value). The hook runs in
@@ -1061,7 +1178,7 @@ so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw
 
 | # | prototype | description, results and errors |
 |---|---|---|
-| 0 | `void sys_exit(int code)` | End the program: close its files, stop the audio stream (queued buffers are dropped), drop hooks and audio callback, restore interrupt enables, audio to the silence level, LEDs off, select page 0, print `[exit code]`, return to the monitor. Does not return. |
+| 0 | `void sys_exit(int code)` | End the program: close its files, switch paddle measuring off, stop the audio stream (queued buffers are dropped), drop hooks and audio callback, restore interrupt enables, audio to the silence level, LEDs off, select page 0, print `[exit code]`, return to the monitor. Does not return. |
 | 1 | `int sys_putchar(int c)` | Write a character to the video console (page 0). Returns `c & 0xFF`. |
 | 2 | `int sys_getchar(void)` | Wait for a character from the PS/2 keyboard; returns it (0..255). |
 | 3 | `int sys_pollchar(void)` | Next keyboard character, or -1 if none. |
@@ -1101,10 +1218,15 @@ so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw
 | 37 | `int sys_getcwd(unsigned len, char *buf)` | The current drive and directory as `"X:/dir/sub"` into `buf` (`len` bytes, NUL included). Returns the length, or `E_INVAL` (does not fit), `E_NODEV` (the current volume is not mounted), `E_FAULT` (also for `len` 0). |
 | 38 | `uint32_t sys_time(void)` | The BIOS clock: seconds since 1970-01-01 00:00, local time; 0 if it has not been set since reset ([1.6](#16-timing)). |
 | 39 | `int sys_set_time(uint32_t secs)` | Set the clock (the monitor's `date` command uses it). 0 stops it again ("not set"). Returns 0. |
+| 40 | `int sys_joystick(void)` | The Atari port's switches as a mask, 1 = closed: `JOY_UP`, `JOY_DOWN`, `JOY_LEFT`, `JOY_RIGHT`, `JOY_FIRE` (one read of the DUART input port; nothing to set up). With paddles plugged in, left and right are the paddle buttons and up and down are the paddles' charge lines, meaningless as switches ([1.4](#joystick-and-paddles)). |
+| 41 | `int sys_paddles(struct paddles *p)` | Copy the last complete paddle measurement into `*p`: `a`, `b` 0..`PADDLE_FULL` (1023 = 12 ms, the nominal full scale; longer reads 1023), `valid` with `PADDLE_A_VALID`/`PADDLE_B_VALID` for the lines that fell during the frame (clear: no paddle, or at the end of its travel; the value is then 1023), `frame` the tick count of the measurement. The first call switches measuring on and returns `valid` 0; results follow one or two frames later. While it is on the BIOS owns the DUART's counter/timer and ACR and needs `IMR_IPC` set. `p` = NULL switches measuring off (capacitors shorted, ACR and IMR back to the serial values); so does program exit. 0, or `E_FAULT`. |
 
 Any other number returns `E_NOSYS`. The constants and structures (`O_*`, `SEEK_*`, `ATTR_*`,
-`VIDEO_STD_*`, `KEY_*`, `AUDIO_BUF_MAX`, `AUDIO_NBUF`, `E_*`, `struct video_info`, `struct mem_info`, `struct con_info`,
-`struct dirent`) are in `generated/syscalls.h`.
+`VIDEO_STD_*`, `KEY_*`, `AUDIO_BUF_MAX`, `AUDIO_NBUF`, `JOY_*`, `PADDLE_FULL`, `PADDLE_A_VALID`,
+`PADDLE_B_VALID`, `E_*`, `struct video_info`, `struct mem_info`, `struct con_info`,
+`struct dirent`, `struct paddles`) are in `generated/syscalls.h`. The hardware constants of the
+port (`JOY_IP_*`, `JOY_OP_DISCHARGE`, `PADDLE_FULL_SCALE_US`, `JOY_ACR_PADDLES`) are in
+`generated/hw.h`.
 
 | code | value | meaning here |
 |---|---|---|
@@ -1215,12 +1337,15 @@ if it points anywhere else, the BIOS assumes the program replaced it and leaves 
 
 ### What `sys_exit` restores, and what it does not
 
-`sys_exit` (and `sys_exec`, before loading) closes files, stops the audio stream (dropping
+`sys_exit` (and `sys_exec`, before loading) closes files, switches paddle measuring off if it
+is on (which writes IMR = `IMR_RXRDYA` and ACR = `SERIAL_ACR_VALUE`, stops the counter/timer and
+shorts the paddle capacitors), stops the audio stream (dropping
 queued buffers) and writes the idle pattern 0xAA to AUDIO, removes hooks and the audio
 callback, points vector 28 back at its own level-4 handler and rewrites INTEN, clears the
 LEDs, and selects display page 0. It does **not**
-restore: the other exception vectors you replaced, DUART registers (IMR, ACR, the counter/timer, channel
-B), the NTSC/PAL soft switch, SDIO (or the card's state, if you talked to it yourself), or
+restore: the other exception vectors you replaced, DUART registers you wrote yourself (IMR,
+ACR, the counter/timer, OPR, channel B: the paddle switch-off above happens only if
+`sys_paddles` switched measuring on), the NTSC/PAL soft switch, SDIO (or the card's state, if you talked to it yourself), or
 the flash. A replaced vector that points into your
 program becomes a pointer into whatever is loaded next; a DUART interrupt source you enabled
 without the BIOS knowing how to clear it will hang the machine at level 3. Put everything back
@@ -1628,7 +1753,7 @@ Write-only actions in CPLD1: any write (any value, word access) to the address p
 |---|---|---|---|---|---|
 | 1 | VBLANK flag | 25 | 0x064 (`IRQ_VBLANK_VECTOR_ADDR`) | `INTEN_VBLANK` | write `INTSTAT_VBLANK` to INTSTAT |
 | 2 | PS/2 byte (PS2RDY) | 26 | 0x068 | `INTEN_PS2` | read `IO_PS2DATA` |
-| 3 | DUART IRQ pin | 27 | 0x06C | `INTEN_DUART` | remove the cause in the 68681 (read RBx, stop the counter, mask in IMR, ...) |
+| 3 | DUART IRQ pin | 27 | 0x06C | `INTEN_DUART` | remove the cause in the 68681 (read RBx, read IPCR, stop the counter, mask in IMR, ...) |
 | 4 | HSYNC flag | 28 | 0x070 | `INTEN_HSYNC` | write `INTSTAT_HSYNC` to INTSTAT |
 | 7 | NMI button | 31 | 0x07C | always | edge triggered by the 68000; nothing to clear |
 
@@ -1648,9 +1773,9 @@ level-4 hook is installed or an audio buffer is playing or queued. The handlers:
 
 | level | BIOS handler |
 |---|---|
-| 1 | clear VBLANK, `ticks++`, call the level-1 hook |
+| 1 | clear VBLANK, `ticks++`, advance the clock; while paddles are measured, store the frame's paddle result and short the capacitors, or, if no line rose after the last short, note the counter/timer and release them ([2.11](#the-input-and-output-ports)); call the level-1 hook |
 | 2 | read INTSTAT and PS2DATA; on PS2ERR clear it and count an error, else decode the byte into the character and key-event queues; call the level-2 hook |
-| 3 | read the DUART ISR; if RXRDYA, pop RBA into the 512-byte serial ring while SRA.RXRDY (counting overruns, clearing OE); call the level-3 hook. The ring is what `sys_serial_getc` and `/dev/ttya` read; it fills whether or not a program reads it |
+| 3 | read the DUART ISR; if RXRDYA, pop RBA into the 512-byte serial ring while SRA.RXRDY (counting overruns, clearing OE); if IPC (enabled only while paddles are measured), read IPCR, which clears it, and the counter/timer; after a short, a rising line means the discharge has been seen, and the handler notes the count and releases the capacitors; after the release, it records the paddle whose line fell; call the level-3 hook. The ring is what `sys_serial_getc` and `/dev/ttya` read; it fills whether or not a program reads it |
 | 4 | `irq_hsync.S`, assembler, two handlers. `irq_hsync_fast` (no callback, no level-4 hook): clear HSYNC, write the next byte of the playing stream buffer to AUDIO; at the end of a buffer release it and take the next queued one, or, with none queued, clear `INTEN_HSYNC` (through `inten_shadow`), writing the idle pattern 0xAA first if the stream was closed with `sys_audio_last`. `irq_hsync_slow`: clear HSYNC, call the audio callback if one is installed, otherwise run the same stream step in C (leaving the interrupt on while a hook is installed), then call the level-4 hook |
 | 7 | through the exception path: print registers, enter the monitor |
 
@@ -1682,10 +1807,11 @@ I/O and waits.
 2. **Replace the vector.** Write your handler's address into the RAM vector. You must
    acknowledge the source yourself, preserve every register, end with `rte`, keep the enable
    bit set, and put the old vector back before the program exits. Replacing level 1 stops
-   `sys_ticks`, `sys_wait_vblank` and `sys_sleep_ms` (chain to the old handler or count ticks
-   yourself); replacing level 2 starves the BIOS's keyboard queues and level 3 its serial ring
-   (`sys_serial_getc`, `/dev/ttya`), and at level 3 your handler must drain the receiver (or
-   clear RXRDYA from IMR), or the level-sensitive DUART request never goes away.
+   `sys_ticks`, `sys_wait_vblank`, `sys_sleep_ms` and the paddle measurement (chain to the old
+   handler or count ticks yourself); replacing level 2 starves the BIOS's keyboard queues and
+   level 3 its serial ring (`sys_serial_getc`, `/dev/ttya`) and the paddles, and at level 3
+   your handler must drain the receiver (or clear RXRDYA from IMR), and read IPCR while paddles
+   are measured, or the level-sensitive DUART request never goes away.
 3. **Poll the flag** with the interrupt disabled, as in [2.5](#25-video-timing-and-finding-the-beam).
 
 For HSYNC, the tidy way to get the enable bit set and kept consistent with the BIOS is a
@@ -2521,7 +2647,9 @@ interrupt select); MR2A = `SERIAL_MR2_VALUE` 0x07 (1 stop bit, normal mode, no C
 CSRA = `SERIAL_CSR_VALUE` 0xCC (38,400 receive and transmit); CRA = 0x05. After the POST it
 drains the receiver, resets error status and sets IMR = `IMR_RXRDYA`, and INTEN.DUART routes the
 IRQ to level 3. Channel B and the counter/timer are left at their hardware-reset state
-(disabled).
+(disabled), and so is the output port (OPR 0, every OP pin high, which keeps the paddle
+capacitors shorted). The BIOS writes ACR and IMR again only to start and stop paddle
+measuring ([below](#the-input-and-output-ports)).
 
 The POST report and the banner go out on channel A (and on the screen); then the BIOS releases
 the port (spec `serial.console`, `console_serial` in `fw/main.c`). From the banner on, console
@@ -2584,10 +2712,89 @@ with `IMR_RXRDYA`) and drain channel B from a level-3 hook: the BIOS's level-3 h
 drains channel A, and the interrupt is level sensitive, so the hook must empty channel B's FIFO
 or the machine stays in the interrupt.
 
+### The input and output ports
+
+The 68681's six inputs IP0..IP5 and eight outputs OP0..OP7 serve the Atari joystick port J12
+and its paddle circuit (board rev C3; the wiring is in [2.13](#213-leds-user-pins-and-headers)):
+
+| pin | `hw.h` | use |
+|---|---|---|
+| IP0 | `JOY_IP_UP` | joystick up; paddle A end of charge |
+| IP1 | `JOY_IP_DOWN` | joystick down; paddle B end of charge |
+| IP2 | `JOY_IP_LEFT` | joystick left; paddle B's button |
+| IP3 | `JOY_IP_RIGHT` | joystick right; paddle A's button |
+| IP4 | `JOY_IP_FIRE` | joystick fire |
+| IP5 | `JOY_IP_SPARE` | spare: pulled up, reads 1 |
+| OP0 | `JOY_OP_DISCHARGE` | shorts both paddle capacitors while the pin is high |
+| OP1..OP7 | | not connected |
+
+**Reading.** `DUART_IP` returns the levels of IP0..IP5 in bits 0..5, unlatched (bits 6 and 7
+read 1). Every input has a 10 k pull-up and a closed switch pulls it low, so
+`~DUART_IP & 0x1F` is the switch mask, already in the bit order of the `JOY_*` constants:
+that is all `sys_joystick` does.
+
+**Change detection.** `DUART_IPCR` bits 3..0 are the levels of IP3..IP0, and bits 7..4
+(`IPCR_DIP0`..`IPCR_DIP3`) are set when that input has changed since IPCR was last read;
+reading IPCR clears them. ACR bits 3..0 (`ACR_IPC0_EN`..`ACR_IPC3_EN`) let a change on that
+input set ISR.IPC, which with `IMR_IPC` set holds the level-3 request until IPCR is read. IP4
+and IP5 have no change detector. The 68681 samples its inputs at 38.4 kHz, so a change is
+detected 26..52 us after it happens; the emulator compares the lines once per video line and at
+every DUART access. The BIOS's level-3 handler reads IPCR whenever
+ISR.IPC is set, before it calls the level-3 hook, so a hook finds the change bits already
+cleared: for input-change interrupts of your own, replace vector 27.
+
+**Outputs.** The OP pins carry the complement of the output port register: `DUART_OPR_SET`
+sets the register bits written as 1, which drives those pins low; `DUART_OPR_RESET` clears
+them, which drives the pins high. The register is write-only and resets to 0, every pin high;
+the BIOS never writes OPCR, so it stays at its reset value 0 and every pin follows the
+register. With OPR bit 0 clear (the reset state) OP0 is high and the transistors short both
+paddle capacitors; `DUART_OPR_SET = JOY_OP_DISCHARGE` releases them to charge.
+
+**How the BIOS times the paddles** (`fw/joy.c`). The first `sys_paddles` call shorts the
+capacitors, presets the counter/timer to 0xFFFF, writes ACR = `JOY_ACR_PADDLES` 0x73 (bit 7 =
+0 keeps baud-rate set 1; bits 6..4 = 111, timer mode from X1/16, 230.4 kHz or 4.34 us a count,
+so the free-running 16-bit count wraps every 284 ms; bits 1..0 enable change interrupts on IP0
+and IP1), starts the counter/timer, reads IPCR to drop stale changes and writes IMR =
+`IMR_RXRDYA | IMR_IPC`; the capacitors stay shorted until the next VBLANK. Every VBLANK
+interrupt then
+
+1. turns the counts collected in the frame that just ended into the `struct paddles` that
+   `sys_paddles` copies out (2,764 counts, 12 ms, scale to 1023; longer clamps to 1023; a line
+   that did not fall gives 1023 and a clear valid bit);
+2. if the capacitors were released, shorts them (`OPR_RESET`). The lines that had fallen rise
+   again, and when the DUART reports that rise (26..52 us later, so the discharge has
+   certainly been sampled), the level-3 handler notes the count (CUR, CLR, then CUR again until
+   the two upper bytes agree, so a borrow between the reads cannot tear the value) and
+   releases the capacitors (`OPR_SET`). There is no timed wait.
+3. if they were still shorted because no line rose (no paddle had charged, or none is plugged
+   in), notes the count and releases them at once. A frame in which neither paddle charged is
+   therefore followed by a frame spent shorted, and with nothing plugged in the capacitors are
+   released every other frame.
+
+When a capacitor passes the 74HC14's threshold, the gate pulls its line low; the level-3
+handler sees ISR.IPC, reads IPCR (which clears it) and the count, and stores start - now (the
+counter counts down) for each line that fell, keeping only the first fall of a frame. With two
+paddles the handler runs three times a frame: the rise after the short (one interrupt for both
+lines) and the two falls (*measured* in the emulator: 360 interrupts in 120 frames; 240 when
+both lines fall together). The counter resolves 4.34 us, a third of a step of the 0..1023 scale (11.7 us); what limits a
+reading is the detector's 26..52 us delay, which varies with the sampling phase, and the delay
+before the handler reads the count, which waits behind the level-4 line handler: about 8 bits.
+
+**Sharing.** While paddles are measured, ACR and the counter/timer belong to the BIOS, and
+`IMR_IPC` must stay set. The BIOS writes ACR and IMR whole only when measuring starts
+(`JOY_ACR_PADDLES`, `IMR_RXRDYA | IMR_IPC`) and when it stops (`SERIAL_ACR_VALUE`,
+`IMR_RXRDYA`), so a program that adds `IMR_RXRDYB` for channel B writes IMR after its first
+`sys_paddles` call (`IMR_RXRDYA | IMR_IPC | IMR_RXRDYB`) and again after `sys_paddles(NULL)`.
+The counter/timer cannot be shared: a program uses it ([below](#the-countertimer-as-a-second-timer))
+or the paddles, not both.
+
 ### The counter/timer as a second timer
 
 The 68681's 16-bit counter/timer, clocked from the 3.6864 MHz crystal (or crystal/16), can
-interrupt at level 3 at a rate of your choosing. In timer mode the CTR bit sets once every
+interrupt at level 3 at a rate of your choosing. It is free unless the program measures
+paddles: from the first `sys_paddles` call until `sys_paddles(NULL)` or the end of the program
+it is the BIOS's paddle timer ([above](#the-input-and-output-ports)), and a program that uses
+it as below must not call `sys_paddles`. In timer mode the CTR bit sets once every
 2N source clocks (N = the preset), and reading `STOP_CTR` clears it while the timer keeps
 running:
 
@@ -2634,8 +2841,10 @@ int main(void)
 
 In the emulator it counts about 8,020 interrupts in 60 frames (8,014 Hz expected). The cleanup
 at the end matters: with CTR left enabled in IMR after the program exits, nothing clears it and
-the machine hangs in the level-3 interrupt. (The ACR mode values are from the MC68681 data
-sheet; the spec only describes ACR bit 7.)
+the machine hangs in the level-3 interrupt. The values it writes back, ACR =
+`SERIAL_ACR_VALUE` and IMR = `IMR_RXRDYA`, are also what `sys_paddles(NULL)` and the end of a
+paddle-measuring program leave. (The ACR fields, `ACR_CT_MODE0`..`2` for the mode and source
+included, are in the spec and `hw.h`, from the MC68681 data sheet.)
 
 ### Access cost
 
@@ -2787,13 +2996,29 @@ is how `make run` keeps C: from one run to the next (it saves to the image it bo
   turns them off; the monitor's `led n` sets them.
 * There are no general-purpose user pins any more. Up to spec revision 6 (rev B4) the `USERIO`
   register drove four open-drain pins UIO0-UIO3 on the expansion header; revision 7 removed
-  them to make room in CPLD2 for the 4-bit SD bus.
+  them to make room in CPLD2 for the 4-bit SD bus. The DUART's pins went to the joystick port
+  in board rev C3 (below): IP5 is the only spare DUART input, pulled up and not on any
+  connector, and OP1..OP7 are not connected.
+* The joystick port J12 (board rev C3, spec `joystick`) is a DE-9 male on the front edge, between
+  the microSD socket and the buttons, with the Atari pinout: 1 up, 2 down, 3 left, 4 right,
+  5 paddle B pot, 6 fire, 7 +5 V (through F2, a 200 mA polyfuse), 8 GND, 9 paddle A pot; the
+  shell is grounded. The five switch lines go through 1 k series resistors to IP0..IP4 (up,
+  down, left, right, fire), which have 10 k pull-ups, so a closed switch reads 0; an Atari
+  paddle's button is on the right line (paddle A) or the left (paddle B). Each pot (1 M in an
+  Atari paddle) charges a 15 nF capacitor from +5 V through a 1 k series resistor, which limits
+  the discharge transistor's current when the pot is at its end stop (about 0 ohm) and is
+  negligible for the timing; a 74HC14 Schmitt inverter (U14)
+  watches each capacitor and, once it passes the threshold, pulls the up line (paddle A) or the
+  down line (paddle B) low through a BAT54W diode (D6, D7). A dual NPN (Q1, MMDT3904), its
+  bases driven from OP0 through 4.7 k each, shorts both capacitors while OP0 is high
+  ([2.11](#the-input-and-output-ports)). A joystick has no pots, so the gates never pull its
+  up and down lines; paddles have no up or down switches.
 * The expansion header itself went in board rev C2: with the user pins gone it carried only
   power and DUART channel B, which now has its own FTDI-pinout header J11 ([2.11](#channel-b)).
   Rev C1 boards have J8 (2x8): pin 1 +5 V, 3 +3.3 V, 13 TXDB, 15 RXDB, every even pin ground.
 * Headers for the bench: J7 JTAG (ByteBlaster pinout, the two CPLDs in a chain) and J9, a 2x15
   header with gusmanb's LogicAnalyzer pinout carrying the bus control signals and A1-A4 through
-  100 ohm (see kicad/README.md); both on the left edge of the rev C2 board.
+  100 ohm (see kicad/README.md); both on the left edge of the rev C2 and C3 boards.
 
 ## 2.14 Running without the BIOS
 
@@ -2809,8 +3034,8 @@ is how `make run` keeps C: from one run to the next (it saves to the image it bo
   from C: may find the card untouched; one loaded from D:, or found by a search that reached
   `D:/`, does not).
 * DUART channel A at 38400 8N1 with IMR = RXRDYA, released: the BIOS writes it only when the
-  program asks, and its receive ring may already hold bytes. Channel B and the counter/timer
-  idle.
+  program asks, and its receive ring may already hold bytes. ACR = 0x00; channel B and the
+  counter/timer idle; paddle measuring off and OPR 0 (the paddle capacitors shorted).
 * NTSC timing, page 0 displayed with the console on it.
 * The CPU in user mode with SR = 0x0000, USP pointing at `{return address, argc, argv}` just
   below the argument strings, D0-D7 and A1-A6 cleared (A0 holds the entry address).
@@ -2839,6 +3064,8 @@ What depends on what, if you still want parts of the BIOS:
 | `sys_getchar`, `sys_pollchar`, `sys_key_event`, stdin | the level-2 BIOS handler (vector 26, `INTEN_PS2`, mask below 2) |
 | `sys_serial_getc`, reads of `/dev/ttya` | the level-3 BIOS handler (vector 27, `INTEN_DUART`, `IMR_RXRDYA`, mask below 3); a `/dev/ttya` read waits for ever otherwise |
 | `sys_serial_putc`, writes to `/dev/ttya` | channel A's transmitter as the BIOS set it up; works with interrupts masked (it polls) |
+| `sys_joystick` | nothing but the DUART's input port; works with interrupts masked |
+| `sys_paddles` | the level-1 and level-3 BIOS handlers (vectors 25 and 27, `INTEN_VBLANK` and `INTEN_DUART`, mask 0) and the DUART's ACR, IMR, counter/timer and OPR as the BIOS writes them; otherwise the results stop changing |
 | `sys_ticks`, `sys_wait_vblank`, `sys_sleep_ms` | the level-1 handler (vector 25, enable on, mask 0); the waits spin forever otherwise |
 | `sys_audio_start`, `sys_audio_next`, `sys_audio_last` | the level-4 handler (vector 28 as the BIOS sets it, mask below 4), INTEN written only through the BIOS, and the BIOS data area, which holds the buffers; otherwise nothing plays and a blocking `sys_audio_next` or `sys_audio_last` waits for ever |
 | `sys_exit` | returns to the monitor with a fresh supervisor stack and mask 0: vectors and DUART state you changed stay changed |
@@ -2851,7 +3078,7 @@ per-interrupt overhead you did not write.
 
 There is no clean way back from a full takeover other than the reset button (the POST takes
 about 4 s). A program that wants to return to the monitor must restore the vectors, INTEN, GPIO
-(PS/2 lines released), the DUART's IMR, ACR and counter/timer, page 0 and NTSC timing, leave
+(PS/2 lines released), the DUART's IMR, ACR, counter/timer and OPR, page 0 and NTSC timing, leave
 the BIOS data area intact, and then call `sys_exit`.
 
 ### Other ways in
@@ -2913,6 +3140,7 @@ NTSC figures unless stated; PAL in parentheses. One CPU clock = 83.3 ns.
 | console character, in a string / through `sys_putchar`, *measured* | about 2,600-2,900 / 3,000 |
 | console scroll, *measured* | about 480,000 (40 ms) |
 | serial byte at 38400 baud (`sys_serial_putc`, `/dev/ttya`) | 3,125 (260 us) |
+| paddle measuring, per frame, nothing plugged in / two paddles, *measured* | about 430 / 3,500 (0.2 % / 1.8 % of the CPU) |
 | SD 4-bit read loop (BIOS, `sd4_read512`), per byte | 86.5 |
 | SD block read, data phase / `sys_sd_read_block`, *measured* | 44,300 / about 60,600 (3.7 ms / 5.05 ms, 101 KB/s) |
 | SD block write, `sys_sd_write_block`, *measured* (emulated card busy 16 clocks) | about 160,000 (13.3 ms, of which 6.9 ms CRC16s), plus the card's programming time |
@@ -2956,3 +3184,25 @@ The revision 9 pass found these; all five were fixed the same day:
   with interrupts masked, the data sheet's sum; the routine takes about 155 ms in the emulator
   (*measured*), which is its own polling loop since the emulator's chips finish after a few
   status reads. The spec now quotes both; the board's figure has not been measured.
+
+The revision 11 pass (the joystick port) found these; all were fixed the same day:
+
+* **The discharge.** The first sequence shorted the capacitors for a timed `delay_us(20)`
+  inside the VBLANK interrupt (which ran long: `delay_us`, `fw/serial.c:41`, computes its loop
+  count with a 32-bit division), and the lines' rise then cost a level-3 interrupt that
+  recorded nothing; with the 68681 noticing a change only 26..52 us late, a short discharge
+  could also go unseen on the board. Fixed: `fw/joy.c` now releases the capacitors from the
+  interrupt that reports the rise, so there is no timed wait and the DUART has always seen the
+  discharge. The cost figures above are measured with this sequence.
+* **A joystick on the paddle lines.** `fw/STATUS.md` said a joystick held up or down reads as a
+  paddle at zero; it reads as no paddle (1023, valid bit clear) except in the frame the switch
+  closes (*measured* with `--joy up`). Fixed in `fw/STATUS.md` and the spec.
+* **The emulator's DUART notes** (`emu/duart.c` header, `emu/README.md`) listed the input-port
+  change detector as not modelled. Fixed. The spec now gives the 68681's 38.4 kHz input
+  sampling (26..52 us to notice a change) and the resulting 8-bit resolution.
+* **Stale board notes.** `kicad/board.py:32` called IP0..IP5 unused inputs, and
+  `kicad/ORDER.md` was titled "rev C2" over the rev C3 order. Fixed.
+* **Full scale in counts.** The spec said about 2765 counts where `fw/joy.c` uses 2764. Fixed.
+* **Paddle buttons and the pot's end stop.** The spec now names the buttons (paddle A's on pin
+  4, right; paddle B's on pin 3, left), and the board has a 1 k resistor in series with each
+  pot, so a pot at its end stop no longer puts +5 V straight onto the discharge transistor.

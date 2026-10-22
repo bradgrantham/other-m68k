@@ -9,7 +9,7 @@ PS/2 keyboard; files live on drive C: (the 768 KB FAT12 volume in the flash) and
 `sys_serial_putc`/`sys_serial_getc`) to talk to it.
 
 ```
-make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term}.elf + .srec
+make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest}.elf + .srec
 ```
 
 The `.elf` files are what `run` loads (ELF32 big-endian m68k, one `PT_LOAD` segment at
@@ -35,6 +35,7 @@ serial upload path.
 | `examples/tune.c` | plays "Ode to Joy" (two synthesised voices, square + triangle): 512-sample buffers encoded with `pdm_encode` and handed to the BIOS with a blocking `sys_audio_next`, printing the notes; any key stops; `tune` at the prompt |
 | `examples/abench.c` | measures the CPU left to a program with each audio path active (BIOS stream, empty/C/asm `sys_set_audio_cb` callbacks) in clocks per video line, plus `pdm_init` time and `pdm_encode` cost; `abench` at the prompt |
 | `examples/sdplay.c` | streams a sound file from the card: `sdplay FILE.PDM` plays raw pattern bytes (one per line, made on a host), `sdplay -pcm FILE.PCM` encodes unsigned 8-bit PCM at the line rate on the fly, `sdplay -half FILE.PCM` plays 8-bit PCM at half the line rate (7854 Hz); reports the elapsed time against the ideal and the share of time spent blocked in `sys_audio_next` (the CPU left over). With the 4-bit SD bus (spec rev 7, 5 ms per block) all three keep up; full-rate PCM with on-the-fly encoding has 57 % of the CPU to spare (with the SPI bus of rev B boards it fell 2-3 % short). `ODE.PDM`/`ODE.PCM` on the test image are the tune |
+| `examples/joytest.c` | shows the Atari port live: the joystick mask every frame and, unless started with `-j`, the two paddle positions and their valid bits (`sys_joystick`, `sys_paddles`); any key quits; `joytest` at the prompt (in the emulator: `--joy up,fire --paddle 300,700`) |
 | `examples/bmpview.c` | BMP viewer: streaming separable box scaler + Floyd-Steinberg dither to RGB332 on page 1; also shows raw 320x240 RGB332 blobs; `make host-bmpview` builds it for the host (see below) |
 
 Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
@@ -85,6 +86,14 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   is a plain `void fn(void)` called from the BIOS ISR in supervisor mode, at the interrupt's
   own level, so higher levels can still interrupt it) and
   `sys_set_audio_cb(fn)` (once per video line from HSYNC; the callback owns `IO_AUDIO`).
+* Joystick and paddles (spec rev 11, board rev C3): `sys_joystick()` returns the `JOY_UP`,
+  `JOY_DOWN`, `JOY_LEFT`, `JOY_RIGHT`, `JOY_FIRE` bits of the Atari port, read straight from the
+  DUART input port, no setup. `sys_paddles(&p)` fills `struct paddles` {`a`, `b` 0..`PADDLE_FULL`
+  (1023 = 12 ms), `valid` with `PADDLE_A_VALID`/`PADDLE_B_VALID` for the lines that fell this
+  frame, `frame` = the ticks value}; the first call starts the BIOS measuring (it returns
+  `valid` 0, data follows a frame later), `sys_paddles(NULL)` stops it, exit stops it too. With
+  paddles plugged in, left/right are the paddle buttons. Both calls are cheap enough for every
+  frame; measuring costs the CPU under 0.1 %.
 * Sound (spec rev 6): the BIOS streams bytes to the PDM shifter, one per video line (15707 Hz
   NTSC), from buffers you fill. `b = sys_audio_start(n)` (n up to `AUDIO_BUF_MAX` = 512)
   returns the first buffer; fill it with pattern bytes (`pdm_encode` from unsigned 8-bit

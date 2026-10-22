@@ -225,7 +225,7 @@ install their own handlers by writing RAM vectors (they run in supervisor mode).
 | 2 | PS/2 byte | set-2 decode to ASCII / escape sequences, raw event queue, user hook |
 | 3 | DUART IRQ pin (RXRDYA unmasked) | drains the RX FIFO into a 512-byte ring (overruns counted, `info` shows them), user hook |
 | 4 | HSYNC (15.7 kHz) | `irq_hsync.S`: the audio stream (see Audio); enabled while a buffer is playing or queued or an audio callback or level-4 hook is installed |
-| 7 | NMI button | prints the registers and enters the monitor |
+| 7 | NMI button | prints the registers and enters the monitor | With paddles being measured, IMR.IPC is also set and the level-3 handler feeds `joy_ipc`; the VBLANK handler calls `joy_vblank` every frame (a few register writes and a 20 us wait while paddles are on, nothing otherwise).
 
 One exception to "interrupts stay enabled": each erase-sector write to C: (see "Drive C:")
 runs with all interrupts masked for about 100 ms. The routine counts the `INTSTAT.VBLANK`
@@ -413,6 +413,31 @@ conversion both ways and parse/format of `YYYY-MM-DD HH:MM[:SS]`. `get_fattime()
 files FatFs writes; with the clock unset they get 2026-01-01 00:00. Host-tested
 (`test_clock` in `test/test_main.c`).
 
+## Joystick and paddles (spec rev 11, board rev C3)
+
+`joy.c`. The Atari port J12 hangs off the DUART's I/O pins: the five switches pull IP0..IP4
+low (up, down, left, right, fire) against the 10 k pull-ups, so `joy_read` (`sys_joystick`)
+is one register read, inverted and masked. The paddles are timed: each pot charges a 15 nF
+capacitor, a 74HC14 gate pulls the up (A) or down (B) line low through a diode when it passes
+the threshold, and a dual transistor on OP0 shorts both capacitors (OP0 high, the reset state
+= shorted). `joy_paddles_set(1)` (the first `sys_paddles` call) runs the counter/timer free in
+timer mode from X1/16 (230.4 kHz), enables change-of-state interrupts on IP0/IP1 (ACR 0x73,
+IMR.IPC) and lets `irq_vblank` drive a measurement every frame: short the capacitors; the lines of the paddles that had
+charged rise, the DUART reports the rise through the change interrupt once its 38.4 kHz
+sampler has seen it, and that handler releases the capacitors and notes the count (if nothing
+rose during a frame the next VBLANK releases directly). So the release follows the DUART's
+own view of the discharge and the fall is always a change it can detect. When a line falls the level-3 handler
+reads IPCR (which clears ISR.IPC) and the count; `joy_ipc` stores start - now for that paddle.
+At the next VBLANK the results become the `struct paddles` a program reads: 0..1023 with 1023
+= 12 ms (2764 counts), a valid bit per line that fell, the frame's tick. Off again at program
+exit (`user_cleanup`), which also puts ACR and IMR back to the serial defaults; a program that
+uses the counter/timer itself (guide 2.11) must leave the paddles alone. Cost (*measured* in the emulator): about 430 clocks a frame with no paddle (0.2 %), about
+3,500 with two paddles (1.8 %: the rise and the two falls each cost a level-3 interrupt and
+its DUART accesses); the DUART samples its inputs at 38.4 kHz (26..52 us to notice a fall) and the interrupt
+latency behind the level-4 line handler adds up to ~20 us, so the resolution is about 8 bits.
+Verified in the emulator (`--joy`, `--paddle`): `joytest` shows the held switches and the
+paddle values within 0.5 % of the settings.
+
 ## ELF loader
 
 `elf.c` parses ELF32 big-endian `ET_EXEC` for `EM_68K` with 32-byte program headers;
@@ -576,6 +601,7 @@ direction and `lseek` on them `E_INVAL`.
 | `flashdisk.c`, `flashdisk.h` | C: block layer: reads from the ROM window, writes through the 8 KB erase-sector cache |
 | `flash.c`, `flash.h`, `flash_layout.h`, `flashram.S` | `flashid`, `flash` (image update) and `flash_write_sector` (one 8 KB sector for C:); the RAM-resident routine (in `.data`) and the `struct flash_op` offsets it shares with C |
 | `clock.c`, `clock.h` | wall clock, calendar and FAT stamp conversions, `get_fattime` |
+| `joy.c`, `joy.h` | Atari joystick switches from the DUART input port; paddle timing with the counter/timer and the input-change interrupt |
 | `args.c`, `args.h` | command-line words: quote-aware split, `*`/`?` matching, expansion of program arguments against the filesystem |
 | `lineedit.c`, `lineedit.h` | the monitor's line editor: cursor keys, 32-line history, Tab completion through a callback |
 | `fs.c`, `fs.h` | two volumes, fd table, `O_*` to FatFs mode mapping, `FRESULT` to `E_*`, `struct dirent`, unlink/rename/mkdir/chdir/getcwd/copy/mkfs |

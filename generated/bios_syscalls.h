@@ -43,5 +43,7 @@ int bios_chdir(const char * path);
 int bios_getcwd(unsigned len, char * buf);
 uint32_t bios_time(void);
 int bios_set_time(uint32_t secs);
+int bios_joystick(void);
+int bios_paddles(struct paddles * p);
 
 #endif

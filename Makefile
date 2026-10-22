@@ -28,7 +28,7 @@ hdl:
 # The flash window image: the BIOS image plus the C: volume (flashfs/ and the SDK's example
 # programs), and the two chip images for the TL866. `make run` boots it and keeps what the
 # machine writes to C: in fw/build/flash.img across runs (--rom-save).
-FLASHFS_PROGRAMS = hello plasma ls cat fstest bmpview tune abench sdplay term
+FLASHFS_PROGRAMS = hello plasma ls cat fstest bmpview tune abench sdplay term joytest
 FLASHFS_FILES = flashfs/AUTOEXEC.CMD flashfs/README.TXT $(foreach p,$(FLASHFS_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
 
 flash: fw sdk fw/build/flash.img

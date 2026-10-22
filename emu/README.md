@@ -30,6 +30,7 @@ m68k-emu --rom fw/build/flash.img [options]      # or --rom fw/build/rom.bin: BI
   --serial-log FILE   copy of the serial (DUART channel A) output     --duart-b-log FILE  DUART channel B output (dropped otherwise)
   --type STR          type STR on the PS/2 keyboard (\n = Enter)     --type-delay N   ... starting after N frames (default 120)
   --serial-type STR   feed STR into the serial port (\n = CR)         --serial-type-delay N  ... after N frames (default 120)
+  --joy LIST          hold joystick switches: up,down,left,right,fire       --paddle A,B|pad  paddles at A,B (0..1023) or from a game controller's triggers
   --sd-trace          log SD commands to stderr                      --exit-on-berr   exit with status 2 on the first bus error
   --sd-sdsc           emulate a byte-addressed SDSC card (CSD v1)
   --io-trace          log CPLD2 and DUART register accesses, soft switches and serial RX arrivals with cycle stamps
@@ -147,8 +148,10 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   RX, reset TX, reset error status; break commands accepted and ignored), SR (RXRDY, FFULL,
   TXRDY, TXEMT, OE; PE/FE/RB always 0), a 3-byte receive FIFO with the shift register behind
   it (a fourth byte waits there, a fifth sets OE and replaces it), transmit holding + shift
-  registers. Shared: ISR (TXRDYA/B, RXRDYA/B or FFULLA/B per MR1[6], CTR; DBA/DBB/IPC always
-  0), IMR, IVR (stored, reset 0x0F), ACR, IP (reads 0xFF), IPCR, OPCR, OPR set/reset. The
+  registers. Shared: ISR (TXRDYA/B, RXRDYA/B or FFULLA/B per MR1[6], CTR, IPC from the
+  input-change detector; DBA/DBB always 0), IMR, IVR (stored, reset 0x0F), ACR, IP (the joystick
+  port, see below), IPCR (delta bits per ACR[3:0], cleared by the read), OPCR, OPR set/reset
+  (OP0 drives the paddle discharge). The
   counter/timer works in counter mode (START loads the preload and counts, terminal count sets
   CTR and rolls over, STOP stops and clears CTR, CUR/CLR read the count) and timer mode (runs
   continuously, CTR every 2*N source clocks, START restarts the phase, STOP only clears CTR)
@@ -161,8 +164,8 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   back-to-back bytes keep the line busy. Channel B transmits into `--duart-b-log` (or nowhere)
   and never receives. IRQ = (ISR & IMR) != 0 feeds INTSTAT.DUARTIRQ and the level-3 request.
   Reset per the data sheet: both channels disabled, IMR/ISR/OPR/OPCR 0, MR pointers at MR1.
-  Not modelled: parity/framing/break detection, CTS/RTS, loopback and multidrop modes, the
-  input-port change detector, 1X/16X clock outputs on OP pins, the "do not access" test
+  Not modelled: parity/framing/break detection, CTS/RTS, loopback and multidrop modes,
+  1X/16X clock outputs on OP pins, the "do not access" test
   registers (they read 0xFF with a one-time warning).
 * **Serial** (`serial.c`): the host side of channel A (stdout, `--serial-log`, stdin raw
   mode, `--serial-type` injection) and channel B's log file; no timing of its own. The BIOS
@@ -210,6 +213,18 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   the emulator hissed and whined even at idle, which the board does not.) The result is
   queued to SDL (not with `--headless`) and/or written to `--audio-wav FILE`, which works in every mode and receives
   every sample from cycle 0. GPIO bit 2 (the rev 4 audio bit) is stored but does nothing.
+
+* **Joystick port** (spec rev 11): `joy.c` models the Atari port on the DUART's IP/OP pins.
+  `--joy` holds switches (active low on IP0..IP4); a game controller, if SDL finds one when a
+  window is open, drives them live (d-pad or left stick, any face button = fire). `--paddle A,B`
+  puts paddles on the port: once the BIOS releases the discharge (OPR bit 0 set = OP0 low) the
+  up and down lines fall A/1023 and B/1023 of `PADDLE_FULL_SCALE_US` (12 ms) later, and rise as
+  soon as the capacitors are shorted again; `--paddle pad` takes the positions from the
+  controller's triggers. The DUART model gained the input-change detector: the lines are
+  compared on every tick (once per video line, so the emulated paddle resolution is about 64 us)
+  and on every port read, `IPCR` returns the delta bits and clears them, `ISR.IPC` follows the
+  ACR enables, and `OPR_SET`/`OPR_RESET` drive the discharge. Without `--paddle` the lines never
+  fall, as with a real joystick.
 
 ## Test
 

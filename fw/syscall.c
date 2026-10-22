@@ -11,6 +11,7 @@
 #include "exec.h"
 #include "args.h"
 #include "clock.h"
+#include "joy.h"
 
 uint32_t video_standard = VIDEO_STD_NTSC;
 uint32_t video_page;
@@ -44,6 +45,7 @@ static int user_str_ok(const char *s, uint32_t max)
 void user_cleanup(void)
 {
     fs_close_all();
+    joy_paddles_set(0);                     /* counter/timer and ACR back to the serial defaults */
     audio_stop();                           /* before irq_reset_user: nothing playing lets INTEN.HSYNC drop */
     irq_reset_user();
     bios_video_set_page(0);
@@ -207,6 +209,17 @@ int bios_getcwd(unsigned len, char *buf)
 }
 
 uint32_t bios_time(void) { return clock_get(); }
+
+int bios_joystick(void) { return joy_read(); }
+
+int bios_paddles(struct paddles *p)
+{
+    if (!p) { joy_paddles_set(0); return 0; }
+    if (!user_range_ok(p, sizeof *p)) return E_FAULT;
+    if (!joy_paddles_on()) joy_paddles_set(1);
+    joy_paddles_get(p);
+    return 0;
+}
 int bios_set_time(uint32_t secs) { clock_set(secs); return 0; }
 
 static int sd_to_abi(int rc)

@@ -1,7 +1,7 @@
 <!-- Generated from spec/board.json by tools/gen.py -- DO NOT EDIT; edit the spec and run `make gen`. -->
 # other-m68k hardware reference
 
-68000 SBC: 1 MB SRAM, 1 MB flash ROM window (256 KB BIOS image + 768 KB FAT12 volume), memory-mapped 320x240x8 composite and S-video colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial (two FTDI headers), 8-bit PDM audio (one byte per video line shifted out by CPLD2).
+68000 SBC: 1 MB SRAM, 1 MB flash ROM window (256 KB BIOS image + 768 KB FAT12 volume), memory-mapped 320x240x8 composite and S-video colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, Atari joystick/paddle port on the DUART's I/O pins, bit-banged SD, 68681 DUART serial (two FTDI headers), 8-bit PDM audio (one byte per video line shifted out by CPLD2).
 
 CPU clock 12.000 MHz from a 24 MHz oscillator; one slot = 4 CPU clocks.
 
@@ -208,11 +208,33 @@ Transmitter buffer A.
 
 ### IPCR @ 0xF20009 (R)
 
-Input port change register.
+Input port change register: bits 3..0 the current levels of IP3..IP0, bits 7..4 set when that input changed since the last read (reading clears them and ISR.IPC). Change detection on an input is enabled by its ACR bit 3..0.
+
+| Bit | Name | Description |
+|---|---|---|
+| 0 | IP0 | level of IP0 |
+| 1 | IP1 | level of IP1 |
+| 2 | IP2 | level of IP2 |
+| 3 | IP3 | level of IP3 |
+| 4 | DIP0 | IP0 changed since the last read |
+| 5 | DIP1 | IP1 changed since the last read |
+| 6 | DIP2 | IP2 changed since the last read |
+| 7 | DIP3 | IP3 changed since the last read |
 
 ### ACR @ 0xF20009 (W)
 
 Auxiliary control: bit 7 baud-rate set (0 = set 1, used here: 0xC = 38.4k), bits 6..4 counter/timer mode and source, bits 3..0 IP change interrupt enables.
+
+| Bit | Name | Description |
+|---|---|---|
+| 0 | IPC0_EN | interrupt (ISR.IPC) on a change of IP0 |
+| 1 | IPC1_EN | interrupt (ISR.IPC) on a change of IP1 |
+| 2 | IPC2_EN | interrupt (ISR.IPC) on a change of IP2 |
+| 3 | IPC3_EN | interrupt (ISR.IPC) on a change of IP3 |
+| 4 | CT_MODE0 | counter/timer mode and source, bits 6..4: 000 counter IP2, 001 counter TxCA, 010 counter TxCB, 011 counter X1/16, 100 timer IP2, 101 timer IP2/16, 110 timer X1, 111 timer X1/16 |
+| 5 | CT_MODE1 | see CT_MODE0 |
+| 6 | CT_MODE2 | see CT_MODE0 |
+| 7 | BRG_SET | baud-rate generator set (0 = set 1, used: 0xC = 38.4k) |
 
 ### ISR @ 0xF2000B (R)
 
@@ -301,7 +323,16 @@ Interrupt vector register. Unused: IACK is tied high and interrupts are autovect
 
 ### IP @ 0xF2001B (R)
 
-Input port IP0..IP6 (unlatched).
+Input port IP0..IP5 (unlatched; bits 6 and 7 read 1). On this board the pins carry the joystick port (see "joystick"): a pressed switch reads 0.
+
+| Bit | Name | Description |
+|---|---|---|
+| 0 | IP0 | joystick up / paddle A end-of-charge (Schmitt output through a diode) |
+| 1 | IP1 | joystick down / paddle B end-of-charge |
+| 2 | IP2 | joystick left / paddle button |
+| 3 | IP3 | joystick right / paddle button |
+| 4 | IP4 | joystick fire |
+| 5 | IP5 | spare, pulled up |
 
 ### OPCR @ 0xF2001B (W)
 
@@ -313,7 +344,7 @@ Address-triggered command: start counter/timer.
 
 ### OPR_SET @ 0xF2001D (W)
 
-Output port register: set the bits written as 1.
+Output port register: set the bits written as 1. The OP pins carry the complement of the register bits (reset: register 0, pins high). OP0 drives the paddle discharge transistors: bit 0 set = pin low = transistors off = the paddle capacitors charge; bit 0 clear = discharging (the reset state).
 
 ### STOP_CTR @ 0xF2001F (R)
 
@@ -346,6 +377,8 @@ autovector (VPA asserted by CPLD1 on every IACK; the DUART's IACK pin is tied in
 **filesystem**: drives: Two FatFs volumes with DOS-style letters: C: is the 768 KB FAT12 volume in the flash (always present, see flash.volume_desc), D: is the SD card. Each has its own current directory and there is a current drive, C: after reset. Both are mounted lazily on first use; a card error drops D: and the next access re-initialises it.; paths: A path is [X:][/]dir/.../name. Without a drive letter it refers to the current drive; without a leading slash it is relative to that drive's current directory. "X:" alone names that drive's current directory. Names are VFAT long file names of up to 63 characters (ASCII; case preserved, matched case-insensitively), 8.3 aliases included; a longer or malformed name is E_NAMETOOLONG. Subdirectories, rename, delete and mkdir work on both volumes. Paths that start with /dev/ are devices (serial.devices), not files.; timestamps: Files carry FAT modification dates from the BIOS clock (see "clock"); readdir reports them as dirent.mtime, seconds since 1970-01-01 00:00 local time, 0 when the volume stored none.; search_path: A monitor command word that is not built in is looked up as NAME, NAME.ELF, then NAME.CMD, in the current directory, then C:/, then D:/ (DOS: current directory first, then the path). A word with a drive or directory in it is tried as given, plus .ELF and .CMD. So `D:` then `bmpview foo.bmp` runs C:/BMPVIEW.ELF on D:'s FOO.BMP.; scripts: A .CMD file is a script: its lines are executed as if typed (comments start with # or ;, `echo` prints). A line that runs a program resumes the script when the program exits, so scripts chain programs. ESC aborts a script between lines. C:/AUTOEXEC.CMD runs at boot unless ESC is pressed during the POST.; clock: The BIOS keeps a wall clock as seconds since 1970-01-01 00:00 (local time, no zone) advanced from the VBLANK interrupt using the exact frame length (200,168 or 239,616 CPU clocks). There is no battery: it reads 0 until set with the monitor's `date` command (or sys_set_time), typically from AUTOEXEC.CMD; files written before that get the fixed date 2026-01-01 00:00.
 
 **audio**: enabled: True; lowpass_r_ohm: 1000; lowpass_c_nf: 33; lowpass_desc: First-order RC after the PDM pin (R 1 k, C 33 nF since board rev C1: 4.8 kHz corner; rev B4 had 10 nF). The emulator models exactly this RC on the pin waveform before it samples the result at 48 kHz, so what it plays and writes to --audio-wav is what the jack carries before the divider; without the filter the 63 kHz idle tone and the sigma-delta noise above 24 kHz would alias into the audio band.; desc: AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> 1 k / 33 nF RC low-pass (board rev C1; rev B4 has 10 nF) -> 10 k : 2.2 k divider -> 10 uF DC-blocking cap -> 3.5mm jack. Sampled audio: the program hands the BIOS buffers of PDM pattern bytes (audio_start / audio_next / audio_last, AUDIO_NBUF buffers of up to AUDIO_BUF_MAX bytes, producer/consumer, optionally blocking so the program is paced to the line rate); the BIOS HSYNC interrupt writes one byte per line (15.7 kHz NTSC, 15.6 kHz PAL) and does no other per-sample work. Encoding 8-bit unsigned samples (128 = silence) into patterns is the program's job, normally through the SDK's pdm_init/pdm_encode (first-order sigma-delta, 8-bit accumulator x 7-bit sample table built in RAM). The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click.
+
+**joystick**: connector: J12, DE-9 male (board rev C3), Atari pinout: 1 up, 2 down, 3 left, 4 right, 5 paddle B pot, 6 fire, 7 +5 V (200 mA polyfuse), 8 GND, 9 paddle A pot. Shell to GND. Atari paddle buttons: paddle A's on pin 4 (right), paddle B's on pin 3 (left).; ip_up: 0; ip_down: 1; ip_left: 2; ip_right: 3; ip_fire: 4; ip_spare: 5; op_discharge: 0; pot_c_nf: 15; pot_full_scale_us: 12000; acr_paddles: 0x73; desc: The five switches go through 1 k series resistors to DUART inputs IP0..IP4, which the board already pulls up with 10 k, so a pressed switch reads 0 (sys_joystick inverts and masks them). Paddles: each 1 M pot (pins 9 and 5) charges, through a 1 k series resistor that limits the current when the pot sits at its end stop, a 15 nF capacitor to ground; a 74HC14 Schmitt inverter watches each capacitor and its output pulls the up (paddle A) or down (paddle B) line low through a Schottky diode once the capacitor passes the threshold, so the two lines double as the paddle end-of-charge signals (a joystick never has pots, so its up/down lines are never pulled by the gates; paddles never have the up/down switches). Both capacitors are shorted by a dual NPN driven from OP0 through 4.7 k; OP0 high (the reset state, OPR bit 0 clear) discharges, low releases. Measuring: the BIOS runs the DUART counter/timer in timer mode from X1/16 (230.4 kHz, free-running 16 bits from 0xFFFF, 284 ms wrap) and enables change-of-state interrupts on IP0 and IP1 (ACR = 0x73, IMR.IPC); every VBLANK interrupt it shorts the capacitors; the lines of the paddles that had charged rise, and when the DUART (which samples its inputs at 38.4 kHz) reports that rise through the change interrupt, the level-3 handler releases the capacitors and notes the counter, so the release happens only after the DUART has registered the step and the following fall is always seen, however fast a paddle at zero charges; when a line falls the handler reads IPCR and the counter and stores the elapsed count. If no line rose during a frame (no paddle charged last frame, or none is plugged in) the next VBLANK handler releases directly. IMR is written only when measuring starts and stops. sys_paddles reports each paddle scaled so that 1023 = pot_full_scale_us (12 ms, 2764 counts), clamped, with a valid bit when the line fell during the frame (a paddle at the end stop or no paddle leaves it clear). Paddle measuring is off until the first sys_paddles call and off again at program exit, which also returns the counter/timer and ACR to the serial defaults. The DUART samples its inputs at 38.4 kHz, so a fall is detected 26..52 us after it happens, which together with the interrupt latency behind the level-4 line handler bounds the resolution at about 8 bits. A joystick held up or down while paddles are being measured keeps that line low, so it reads as no paddle (valid clear, 1023) except in the frame the switch closes. Cost (measured in the emulator): about 430 CPU clocks a frame with no paddle plugged in (0.2 %), about 3,500 with two paddles (1.8 %: the rise and the two falls each cost a level-3 interrupt with its DUART register accesses).
 
 **power**: input: USB-C receptacle, 5V only (5.1k CC pull-downs); rails: 5V, 3.3V (SD card only)
 
@@ -397,6 +430,8 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | 37 | getcwd | `int sys_getcwd(unsigned len, char * buf)` | Current drive and directory as "X:/dir/sub" into buf (len bytes, NUL included). Returns the length, E_INVAL if len is 0 or it does not fit, E_NODEV if the current volume is not mounted. |
 | 38 | time | `uint32_t sys_time(void)` | BIOS clock: seconds since 1970-01-01 00:00 local time; 0 if it has not been set since power-on ("filesystem" clock). |
 | 39 | set_time | `int sys_set_time(uint32_t secs)` | Set the BIOS clock (seconds since 1970-01-01 00:00 local time). Used by the monitor's `date` command; a program may set it too. |
+| 40 | joystick | `int sys_joystick(void)` | Joystick switches as a bit mask (JOY_UP, JOY_DOWN, JOY_LEFT, JOY_RIGHT, JOY_FIRE; 1 = pressed), read directly from the DUART input port. With paddles plugged in, left and right are the paddle buttons and up/down are the pot lines (meaningless). |
+| 41 | paddles | `int sys_paddles(struct paddles * p)` | Paddle positions: a and b are 0..PADDLE_FULL (1023 = the nominal 12 ms full scale), valid has PADDLE_A_VALID/PADDLE_B_VALID for the lines that fell during the measured frame (clear: no paddle, or at the end stop; the value is then 1023), frame is the ticks value of the measurement. The first call switches measuring on (that call returns valid 0; data follows a frame later); p == NULL switches it off and leaves the capacitors discharged so up/down read as a joystick again. Off at program exit. |
 
 ### ABI constants
 
@@ -437,6 +472,14 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 | KEY_EXTENDED | 512 |
 | AUDIO_BUF_MAX | 512 |
 | AUDIO_NBUF | 3 |
+| JOY_UP | 1 |
+| JOY_DOWN | 2 |
+| JOY_LEFT | 4 |
+| JOY_RIGHT | 8 |
+| JOY_FIRE | 16 |
+| PADDLE_FULL | 1023 |
+| PADDLE_A_VALID | 1 |
+| PADDLE_B_VALID | 2 |
 
 ### ABI structures
 
@@ -447,6 +490,8 @@ TRAP #15 with the call number in D0.W. Integer args in D1..D3, pointer args in A
 `struct con_info { uint32_t cols; uint32_t rows; uint32_t cursor_x; uint32_t cursor_y; }`
 
 `struct dirent { char name[64]; uint32_t size; uint32_t attr; uint32_t mtime; }`
+
+`struct paddles { uint32_t a; uint32_t b; uint32_t valid; uint32_t frame; }`
 
 ## Glue logic
 

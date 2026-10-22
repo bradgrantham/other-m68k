@@ -304,6 +304,52 @@
    "mpn": "PRPC006SAAN-RC",
    "desc": "pin header 1x6 2.54 mm",
    "assembly": "pcba"
+  },
+  "Joystick (Atari DE-9)|*": {
+   "mfr": "Amphenol ICC",
+   "mpn": "L717SDE09PA4CH4F",
+   "desc": "DE-9 male, right angle, housed, 4-40 boardlocks (Atari joystick port)",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "74HC14|*": {
+   "mfr": "Nexperia",
+   "mpn": "74HC14D,653",
+   "lcsc": "C5612",
+   "desc": "hex Schmitt inverter, SOIC-14",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "MMDT3904|*": {
+   "mfr": "Diodes Incorporated",
+   "mpn": "MMDT3904-7-F",
+   "lcsc": "C8706",
+   "desc": "dual NPN, SOT-363",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "BAT54W|*": {
+   "mfr": "Nexperia",
+   "mpn": "BAT54W,115",
+   "lcsc": "C2290615",
+   "desc": "Schottky diode 30 V 200 mA, SOT-323",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "15nF|Capacitor_SMD:C_0603_1608Metric": {
+   "mfr": "Samsung",
+   "mpn": "CL10B153KB8NNNC",
+   "lcsc": "C1710",
+   "desc": "15 nF 50 V X7R 0603",
+   "assembly": "pcba",
+   "verify": true
+  },
+  "200mA|Fuse:Fuse_1206_3216Metric": {
+   "mfr": "Littelfuse",
+   "mpn": "1206L020YR",
+   "desc": "PTC resettable fuse 0.2 A hold / 0.4 A trip, 1206",
+   "assembly": "pcba",
+   "verify": true
   }
  },
  "by_ref": {

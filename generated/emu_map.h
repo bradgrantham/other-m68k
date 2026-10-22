@@ -93,6 +93,8 @@ static const char *const emu_syscall_names[] = {
     "getcwd",
     "time",
     "set_time",
+    "joystick",
+    "paddles",
 };
 
 #endif

@@ -29,7 +29,7 @@ Decisions taken here that the documents leave open (also listed in kicad/README.
     the DAC load the resistor values in docs/video-encoder.md were computed for; the data
     sheet terminates at the source too).
   * PALJMP: tied low through 10k (NTSC only; the board has no PAL jumper), STND pulled high.
-  * Unused 68681 inputs IP0..IP5: 10 k to VCC each (data sheet: tie unused inputs).
+  * 68681 inputs IP0..IP5: 10 k to VCC each; IP0..IP4 carry the joystick port switches (rev C3), IP5 is spare.
     Crystal: 15 pF on X1 to GND, 0-5 pF on X2 marked DNP (data sheet section 2.2/2.3).
   * ATF1508 dedicated inputs OE1 (84) and OE2/GCLK2 (2) are unused: tied to GND.
   * JTAG header: 1 TCK, 2 GND, 3 TDO, 4 VCC, 5 TMS, 6 GND, 7 n/c, 8 GND, 9 TDI, 10 GND.
@@ -133,6 +133,12 @@ def build():
     j10 = b.part("J10", "other-m68k", "Mini-DIN-4_Shield", "other-m68k:MiniDIN-4_CUI_MD-40SM_Horizontal", "S-video", sheet="video")
     j11 = b.part("J11", "Connector_Generic", "Conn_01x06", "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
                  "FTDI B (GND CTS VCC TXD RXD RTS)", sheet="io")
+    j12 = b.part("J12", "Connector", "DE9_Pins_MountingHoles",
+                 "Connector_Dsub:DSUB-9_Pins_Horizontal_P2.77x2.84mm_EdgePinOffset7.70mm_Housed_MountingHolesOffset9.12mm",
+                 "Joystick (Atari DE-9)", sheet="io")
+    u14 = b.part("U14", "74xx", "74HC14", "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", "74HC14", sheet="io")
+    q1 = b.part("Q1", "Transistor_BJT", "MMDT3904", "Package_TO_SOT_SMD:SOT-363_SC-70-6", "MMDT3904", sheet="io", PcbNear="U14")
+    f2 = b.part("F2", "Device", "Polyfuse", "Fuse:Fuse_1206_3216Metric", "200mA", sheet="io", PcbNear="J12")
     j9 = b.part("J9", "Connector_Generic", "Conn_02x15_Odd_Even", "Connector_PinHeader_2.54mm:PinHeader_2x15_P2.54mm_Vertical",
                 "Logic analyzer (gusmanb 2x15)", sheet="cpu")
     sw1 = b.part("SW1", "Switch", "SW_Push", "Button_Switch_THT:SW_PUSH_6mm", "RESET", sheet="io")
@@ -390,11 +396,40 @@ def build():
     b.net("FTDIB_RXD", j11.pin(5), u10.pin("TXDB"))
     b.power("GND", j11.pin(1))
     j11.nc(2, 3, 6)
-    for i in range(6):                                             # unused inputs tied high
+    for i in range(6):                                             # inputs pulled high (the joystick switches pull them low)
         r = R("10k", "io", near="U10")
         b.net(f"DUART_IP{i}", u10.pin(f"IP{i}"), r.pin(2))
         b.power("VCC", r.pin(1))
-    u10.nc(*[f"OP{i}" for i in range(8)])
+    u10.nc(*[f"OP{i}" for i in range(1, 8)])
+    # ------------------------------------------------------------------ joystick / paddle port (rev C3, spec "joystick")
+    # Switches: 1 k series into IP0..IP4 (up, down, left, right, fire). Paddles: each pot (pins 9, 5)
+    # charges a 15 nF capacitor; a 74HC14 gate watches it and pulls the up/down line low through a
+    # Schottky diode when it passes the threshold (end of charge); both capacitors are shorted by a
+    # dual NPN driven from OP0 (pin high = discharging, the reset state). +5 V through a 200 mA polyfuse.
+    for name, jpin, ip in (("JOY_UP", 1, 0), ("JOY_DOWN", 2, 1), ("JOY_LEFT", 3, 2), ("JOY_RIGHT", 4, 3), ("JOY_FIRE", 6, 4)):
+        r = R("1k", "io", near="J12")
+        b.net(name, j12.pin(jpin), r.pin(1))
+        b.net(f"DUART_IP{ip}", r.pin(2))
+    for name, jpin, gin, gout, qc, dref, ip in (("JOY_POTA", 9, "1", "2", "C1", "D6", 0), ("JOY_POTB", 5, "3", "4", "C2", "D7", 1)):
+        c = C("15nF", "io", near="U14")
+        d = b.part(dref, "Diode", "BAT54W", "Package_TO_SOT_SMD:SOT-323_SC-70", "BAT54W", sheet="io", PcbNear="U14")
+        rs = R("1k", "io", near="J12")                   # a pot at its end stop is ~0 ohm: limit the discharge current
+        b.net(name, j12.pin(jpin), rs.pin(1))
+        b.net(name + "_C", rs.pin(2), c.pin(1), q1.pin(qc), u14.pin(gin))
+        b.power("GND", c.pin(2))
+        b.net(name + "_END", u14.pin(gout), d.pin("3"))
+        b.net(f"DUART_IP{ip}", d.pin("1"))
+    for qb in ("B1", "B2"):
+        r = R("4.7k", "io", near="Q1")
+        b.net("DUART_OP0", u10.pin("OP0"), r.pin(1))
+        b.net(f"JOY_DIS_{qb}", r.pin(2), q1.pin(qb))
+    b.power("GND", q1.pin("E1"), q1.pin("E2"))
+    b.power("GND", u14.pin("5"), u14.pin("9"), u14.pin("11"), u14.pin("13"))     # unused inverter inputs
+    u14.nc("6", "8", "10", "12")
+    b.power("VCC", u14.pin("14"), f2.pin(1))
+    b.power("GND", u14.pin("7"), j12.pin(8), j12.pin("0"))                           # pin "0" = shell / mounting holes
+    b.net("JOY_5V", f2.pin(2), j12.pin(7))
+    decouple(u14, ["14"], "io")
     b.power("VCC", u10.pin("VCC"))
     b.power("GND", u10.pin("GND"))
     decouple(u10, ["40"], "io")

@@ -340,3 +340,18 @@ sys_set_time:
 	moveq #39,%d0
 	trap #15
 	rts
+
+	.globl sys_joystick
+	.type sys_joystick, @function
+sys_joystick:
+	moveq #40,%d0
+	trap #15
+	rts
+
+	.globl sys_paddles
+	.type sys_paddles, @function
+sys_paddles:
+	move.l 4(%sp),%a0
+	moveq #41,%d0
+	trap #15
+	rts
