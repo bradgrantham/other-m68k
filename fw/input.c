@@ -43,6 +43,9 @@ int input_pollchar(void)
     return queue_get(&kbd_q);           /* serial_rx_q is drained by /dev/ttya and serial_getc */
 }
 
+int input_has_esc(void) { return queue_contains(&kbd_q, 0x1B); }
+void input_flush(void) { while (queue_get(&kbd_q) >= 0) ; }
+
 int input_getchar(void)
 {
     int c;

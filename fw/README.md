@@ -1,20 +1,28 @@
 # fw/ -- other-m68k BIOS / monitor ROM (stage 2)
 
-128 KB ROM image (the first 128 KB of the two SST39SF040 flash chips): power-on self test, 68681 DUART serial (38400 8N1), 40x30 video console, PS/2
-keyboard, exception reporting, machine monitor with S-record upload, SD card (native 4-bit bus, bit-banged)
-with a FAT32 filesystem (FatFs R0.15, 8.3 names), an ELF loader (`run`, `sys_exec`) and the
-TRAP #15 system call interface used by user programs (see `../sdk/`), including the file
-and directory calls.
+256 KB ROM image (the first 256 KB of the 1 MB window of the two SST39SF040 flash chips; the
+other 768 KB are drive C:): power-on self test, 68681 DUART serial (38400 8N1), 40x30 video
+console, PS/2 keyboard, exception reporting, a wall clock, machine monitor with S-record
+upload, scripts and file commands, two FAT volumes through FatFs R0.15 with long names and
+directories (C:, the FAT12 volume in the flash, and D:, the SD card on the native 4-bit bus,
+bit-banged), an ELF loader (`run`, `sys_exec`, a DOS-like search path) and the TRAP #15
+system call interface used by user programs (see `../sdk/`), including the file, directory
+and clock calls.
 
 ## Build
 
 ```
-make -C fw            # build/rom.elf, rom.bin (131072 bytes: what `flash` programs), rom.lst,
-                      # rom.map, rom_even.bin (U4, D15..D8) and rom_odd.bin (U5, D7..D0): the two
-                      # 512 KB chip images for the TL866, 0xFF beyond the BIOS image
-make -C fw test       # host unit tests: printf, queue, srec, ps2, console, hexdump, the SD driver
-                      # against the emulator's card model, ELF parser (+ ../sdk/build/hello.elf), FatFs + fd table on
-                      # a FAT32 image made with mkfs.vfat/mcopy (skipped if those are missing)
+make -C fw            # build/rom.elf, rom.bin (262144 bytes: what `flash` programs), rom.lst, rom.map
+make flash            # (top level, part of `make all`) fw/build/c.img: the C: volume image;
+                      # fw/build/flash.img: the 1 MB window, rom.bin + c.img at 256 KB;
+                      # fw/build/rom_even.bin (U4, D15..D8) and rom_odd.bin (U5, D7..D0): its
+                      # byte lanes, the two 512 KB chip images for the TL866
+make run              # (top level) the emulator on flash.img, --rom-save flash.img: C: persists
+make -C fw test       # host unit tests (590 checks): printf, queue, srec, ps2, console, hexdump,
+                      # the SD driver against the emulator's card model, ELF parser
+                      # (+ ../sdk/build/hello.elf), the clock's calendar arithmetic, FatFs + fd
+                      # table on both drives: D: a FAT32 image, C: a FAT12 image in a simulated
+                      # flash array (images made with mkfs.vfat/mcopy; skipped if those are missing)
 make -C fw clean
 ```
 
@@ -23,83 +31,106 @@ freestanding (`-ffreestanding -nostdlib`, own string/printf), `-m68000 -Os -Wall
 linked with `-lgcc` only. All addresses, register bits, syscall numbers and the dispatcher
 come from `../generated/` (`hw.h`, `hw.inc`, `syscalls.h`, `bios_syscalls.h`,
 `syscall_dispatch.inc`, `memory.ld`); nothing is duplicated here. `fatfs/` is vendored
-FatFs R0.15 (ff.c/ff.h/diskio.h unmodified, `ffconf.h` configured, `LICENSE.txt` kept).
+FatFs R0.15 (ff.c/ff.h/ffunicode.c/diskio.h unmodified, `ffconf.h` configured, `LICENSE.txt` kept).
 
-`mkrom.py` sets the last word of the 128 KB image so that the 16-bit big-endian sum of all
-65536 words is zero, then writes the even/odd split padded to the chip size (`ROM_IMAGE_SIZE`
-and `FLASH_CHIP_SIZE` from `generated/hw.h`). The POST sums the image and expects 0; the rest
-of the 1 MB window (`ROM_SIZE`) is not part of the image.
+`mkrom.py rom.bin` pads the image to `ROM_IMAGE_SIZE` (256 KB) and sets its last word so that
+the 16-bit big-endian sum of all 131072 words is zero. The POST sums the image (a long
+counter of `ROM_IMAGE_SIZE / 2` words) and expects 0; the C: volume above it is not part of
+the sum. `mkrom.py --split flash.img rom_even.bin rom_odd.bin rom.bin c.img` builds the 1 MB
+window (rom.bin, 0xFF, the volume image at `FLASH_VOL_OFFSET`) and splits it into the two
+`FLASH_CHIP_SIZE` byte-lane images (sizes from `generated/hw.h`).
+
+`tools/mkflashvol.sh IMAGE file...` makes the C: image the way `format C:` lays out the
+volume: an 0xFF-filled 768 KB file (erased flash), `mkfs.vfat -F 12 -s 8 -f 2 -r 224 -R 16`
+(4 KB clusters, two FATs, 224 root entries, 16 reserved sectors so the data area starts on
+an 8 KB erase sector), then `mcopy` of the files, upper-cased. The top-level `make flash`
+puts `flashfs/AUTOEXEC.CMD`, `flashfs/README.TXT` and the SDK examples on it, each stripped
+with `m68k-unknown-elf-strip` into `fw/build/cfiles/NAME.ELF` (43-62 KB each instead of
+54-75 KB; the loader needs only the program headers): about 475 KB of the 768 KB.
 
 ## Programming the ROM
 
 * **First time, or after a failed update**: TL866 (minipro) with device `SST39SF040`,
-  `rom_even.bin` into U4 (even bytes, D15..D8) and `rom_odd.bin` into U5 (odd bytes, D7..D0).
-* **Afterwards, in system**: copy `rom.bin` to the SD card (any 8.3 name), then in the monitor
-  `flashid` shows the chip IDs (`bfbf/b7b7` = two SST39SF040) and `flash ROM.BIN` reads the
-  image into RAM, checks its size and word sum, asks `y/N`, and hands over to a routine in RAM
-  (`flashram.S`) that erases, programs and verifies the sixteen 8 KB sectors (one `.` per sector
-  on the serial port) and jumps through the new image's reset vectors: the new ROM's POST banner
-  is the confirmation. `reboot` does that jump on its own (SP and PC from `ROM_BASE`).
+  `fw/build/rom_even.bin` into U4 (even bytes, D15..D8) and `rom_odd.bin` into U5 (odd bytes,
+  D7..D0). They hold the whole window, so this installs the BIOS and the initial C: volume.
+* **Afterwards, in system**: copy `rom.bin` to the SD card (or C:), then in the monitor
+  `flashid` shows the chip IDs (`bfbf/b7b7` = two SST39SF040) and `flash D:ROM.BIN` reads the
+  image into RAM, checks its size and word sum, asks `y/N`, and hands over to the routine in
+  BIOS RAM (`flashram.S`, linked into `.data`, so crt0 copies it there at boot) that erases,
+  programs and verifies the thirty-two 8 KB sectors of the image (one `.` per sector on the
+  serial port) and jumps through the new image's reset vectors: the new ROM's POST banner
+  is the confirmation. Only the first `ROM_IMAGE_SIZE` bytes are rewritten: C: survives a
+  BIOS update. `reboot` does that jump on its own (SP and PC from `ROM_BASE`).
   Interrupts are masked during the update and nothing runs from the flash, because the running
   ROM is being replaced under its own feet; **do not press the NMI button** during a flash (the
   vectors point into the ROM being rewritten). On an erase/program timeout or a verify mismatch
   the routine prints which sector failed and stops the CPU: reset and retry `flash` if the
   monitor still boots, otherwise program the chips in the TL866. `flash` stages the image at
-  `USER_BASE` (128 KB plus the 1 KB routine, all inside the user region below both framebuffer
-  pages), so it clobbers user RAM. The same image (`rom.bin`) serves the emulator, `flash` and, split, the TL866.
+  `USER_BASE` (256 KB, 0x8000-0x47FFF, inside the user region below both framebuffer pages),
+  so it clobbers user RAM. The same `rom.bin` serves `flash` and, inside `flash.img`, the
+  emulator and the TL866.
 
-  Tested in the emulator: `--rom A.bin --sd sd.img --type "flashid\nflash ROM.BIN\ny" --rom-save out.bin`
-  with a `ROM.BIN` built with another `FW_VERSION`: the dots, the new banner, and `out.bin`
-  whose first 128 KB equal `ROM.BIN`.
+  Tested in the emulator (rev 9): `--rom flash.img --sd sd.img --type "flashid\nflash D:ROM.BIN\ny" --rom-save out.img`
+  with `ROM.BIN` copied onto the card image: 32 dots and "image verified" on the serial port,
+  the new banner, and `out.img` identical to `flash.img` byte for byte (the BIOS image rewritten
+  with the same contents, the C: volume untouched).
 
 Run in the emulator:
 
 ```
-emu/build/m68k-emu --rom fw/build/rom.bin                       # window + PS/2 keyboard
-emu/build/m68k-emu --rom fw/build/rom.bin --headless --frames 500 --type "help\n"
+make run                                                        # window + PS/2 keyboard, C: kept
+emu/build/m68k-emu --rom fw/build/flash.img --headless --frames 500 --type "help\n"
 ```
+
+`--rom fw/build/flash.img` without `--rom-save` starts from the built C: every time;
+`--rom fw/build/rom.bin` alone boots with C: unformatted (all 0xFF: `C:?> `, `format C:`).
 
 The serial port is the emulator's stdin/stdout (`--serial-log FILE` keeps a copy;
 `--serial-type "text\n"` injects serial input, `--type` types on the PS/2 keyboard). Only
 the POST and the banner reach serial: after that the console is video only, so headless
 runs read the screen with `--text-dump FILE` (the 40x30 text decoded from page 0 at exit).
 
-With an SD card image (see "SD card" below for making one):
+With an SD card image as D: (see "SD card" below for making one):
 
 ```
-make -C sdk
+make flash
 S=/tmp/sdimg; mkdir -p $S
 for p in hello plasma ls cat fstest; do cp sdk/build/$p.elf $S/$(echo $p | tr a-z A-Z).ELF; done
 sh fw/test/mkimage.sh $S/sd.img 64 $S/*.ELF fw/test/data/README.TXT     # mkfs.vfat + mcopy
-./emu/build/m68k-emu --rom fw/build/rom.bin --sd $S/sd.img --headless --frames 1500 \
-    --text-dump $S/screen.txt --type "sd\ndir\nrun hello.elf\nx\n" --type-delay 350 \
+./emu/build/m68k-emu --rom fw/build/flash.img --sd $S/sd.img --headless --frames 1500 \
+    --text-dump $S/screen.txt --type "sd\nD:\ndir\nrun hello.elf\nx\n" --type-delay 350 \
     --no-audio --no-stdin
 ```
 
 `--type-delay 350` leaves the POST (~250 frames: the 1 MB RAM test) time to finish before typing starts; the
-trailing `x` is the key `hello` waits for. Expected log (abridged):
+trailing `x` is the key `hello` waits for. Expected log (abridged; the stamps are the host
+files' times, which mcopy keeps):
 
 ```
-> sd
-SDHC/SDXC (block addressed)
+C:/> sd
+SDHC/SDXC (block addressed), 4-bit bus,
+RCA 1234
 131072 blocks = 64 MB
 CID mid 01 oid EM pnm M68K0 rev 1.0
 sn 00006800 mdt 2024/10
 CSD v2 400e00325b590000007f7f800a400051
-> dir
-HELLO.ELF       54536
-PLASMA.ELF      55124
+C:/> D:
+D:/> dir
+CAT.ELF            61328 26-10-21 21:15
+FSTEST.ELF         61548 26-10-21 21:15
 ...
-README.TXT         33
-6 entries
-> run hello.elf
-run hello.elf: 004000-00cb33 entry 004000
+README.TXT            33 26-10-21 21:15
+6 entries, 310549 bytes
+D:/> run hello.elf
+run hello.elf: 008000-010c33 entry 008000
 Hello from newlib on other-m68k!
 ...
 press a key: got 0x78
 
 [exit 0]
 ```
+
+Without the `D:` and `run`, plain `hello` finds `C:/hello.ELF` on the search path.
 
 Other things verified the same way: `run ls.elf /` (argv), `run cat.elf README.TXT nope.txt`
 (newlib `fopen` -> `sys_open`, `ENOENT` for the missing file), `run fstest.elf exec ls.elf`
@@ -137,7 +168,7 @@ POST serial output, 38400 8N1 (`SERIAL_BAUD`):
 
 ```
 other-m68k POST
-ROM sum 0000 OK          <- 16-bit word sum of the whole ROM, must be 0000
+ROM sum 0000 OK          <- 16-bit word sum of the 256 KB BIOS image, must be 0000
 RAM ... OK               <- one dot per pass: address-in-address, inverted address, byte lanes
 ```
 
@@ -151,25 +182,30 @@ writes even then odd (catches WEU stuck), the upper half odd then even (catches 
 either shows up as `exp 55AA55AA got ...`. The three sweeps take about 50 M clocks, 4 s at
 12 MHz.
 
-After the POST the banner shows board name, firmware version, the stored checksum word,
-RAM size, ID register (0x6802 on the DUART board), NTSC/PAL (PAL is selected with the soft
-switch when `INTSTAT.PALJMP` is set) and the DUART baud rate.
+After the POST the banner shows board name, firmware version, the ROM image size and its
+stored checksum word, the size of C:, RAM size, ID register (0x6802 on the DUART board),
+NTSC/PAL (PAL is selected with the soft switch when `INTSTAT.PALJMP` is set), the DUART baud
+rate and the user RAM range. At the first prompt after reset the monitor runs
+`C:/AUTOEXEC.CMD` (see "Scripts") unless an ESC is waiting in the keyboard queue: hold or
+press ESC during the POST to skip it.
 
 ## Memory use
 
 | range | use |
 |---|---|
 | 0x000000-0x0003FF | vector table, copied from ROM after the RAM test (programs may hook vectors) |
-| 0x000400-0x002070 | BIOS `.data` + `.bss` (input rings 512+256+128 B, console shadow text 1200 B, exception record, FATFS + file table ~1.3 KB, 512 B block buffer, three 512 B audio buffers) |
-| 0x002070-0x004000 | supervisor stack, grows down from `SYS_STACK_TOP` (0x4000) |
-| 0x004000-0x0DA7FF | user program (858 KB); USP starts at 0x0DA7FC |
+| 0x000400-0x004B80 | BIOS `.data` + `.bss`: the flash RAM routine (0.9 KB, `.data`), the 8 KB C: erase-sector cache, two FATFS objects (C: and D:, with their 512-byte windows), file table, input rings 512+256+128 B, console shadow text 1200 B, exception record, the script stack, two 512 B block buffers, three 512 B audio buffers |
+| 0x004B80-0x008000 | supervisor stack, grows down from `SYS_STACK_TOP` (0x8000) |
+| 0x008000-0x0DA7FF | user program (842 KB); USP starts at 0x0DA7FC |
 | 0x0DA800-0x0ED3FF | framebuffer page 1 (user programs may use it as RAM if they do not double buffer) |
 | 0x0ED400-0x0FFFFF | framebuffer page 0 = the console |
 
-ROM use: about 39 KB of 128 KB (`make` prints the sizes; `mkrom` prints the bytes used), of
-which FatFs is roughly 12 KB. BIOS `.data`+`.bss` is 0x1C70 bytes (ends at 0x2070; the three
-512-byte audio buffers, the FATFS object with its 512-byte sector window, 8 `FIL` and 4 `DIR`
-slots and the monitor's block buffer are the largest items), leaving about 8 KB of
+ROM use: about 59 KB of 256 KB (`make` prints the sizes: text ~59 KB, data ~0.9 KB, bss
+~17.4 KB; `mkrom` prints the bytes used), of which FatFs with the long-name and code-page
+437 tables is roughly 16 KB. BIOS `.data`+`.bss` is 0x4780 bytes in SYSDATA (31 KB,
+0x400-0x7FFF; it ends at 0x4B80; the 8 KB erase-sector cache, the three 512-byte audio
+buffers, the two FATFS objects, the flash routine, the script stack, 8 `FIL` and 4 `DIR`
+slots and the monitor's block buffers are the largest items), leaving about 13 KB of
 supervisor stack.
 
 ## Vectors and the overlay
@@ -185,11 +221,17 @@ install their own handlers by writing RAM vectors (they run in supervisor mode).
 
 | level | source | handler |
 |---|---|---|
-| 1 | VBLANK | `ticks++`, user hook (`sys_set_irq_handler(1, fn)`) |
+| 1 | VBLANK | `ticks++`, the wall clock (`clock_tick`, see "Clock"), user hook (`sys_set_irq_handler(1, fn)`) |
 | 2 | PS/2 byte | set-2 decode to ASCII / escape sequences, raw event queue, user hook |
 | 3 | DUART IRQ pin (RXRDYA unmasked) | drains the RX FIFO into a 512-byte ring (overruns counted, `info` shows them), user hook |
 | 4 | HSYNC (15.7 kHz) | `irq_hsync.S`: the audio stream (see Audio); enabled while a buffer is playing or queued or an audio callback or level-4 hook is installed |
 | 7 | NMI button | prints the registers and enters the monitor |
+
+One exception to "interrupts stay enabled": each erase-sector write to C: (see "Drive C:")
+runs with all interrupts masked for about 100 ms. The routine counts the `INTSTAT.VBLANK`
+flags it sees and clears them, and `ticks` and the clock are advanced by that count
+afterwards; serial receive bytes beyond the DUART's 3-byte FIFO are lost meanwhile and
+audio repeats its last pattern.
 
 ## Audio
 
@@ -281,9 +323,13 @@ CMD24, the four CRC16s, start bit, data, CRCs, end bit, then the CRC status toke
 (010 accepted, 101 rejected = `SD_ERR_TOKEN`) and the busy wait (up to ~400 ms). Card status
 error bits (OUT_OF_RANGE, ADDRESS_ERROR, ILLEGAL_COMMAND, COM_CRC_ERROR ...) map to
 `SD_ERR_RANGE/CMD/CRC`. Errors are `SD_ERR_*` (`sd_strerror`), mapped to `E_IO`/`E_NODEV`/
-`E_INVAL` at the syscall boundary. The `sd` monitor command re-initialises the card and prints
-type, bus width, RCA, capacity, CID and CSD; `sd rd <lba>` hex-dumps a block. Multi-block
-commands are not used.
+`E_INVAL` at the syscall boundary. The `sd` monitor command re-initialises the card (dropping
+D:'s mount and its open files and directories) and prints type, bus width, RCA, capacity,
+CID and CSD; `sd rd <lba>` hex-dumps a block. Multi-block commands are not used.
+
+The socket has no card-detect line, so the card is treated as fixed media: removing it
+while powered is unsupported (open files lose their data, the FAT may be left
+inconsistent). `sd` still re-initialises the card on request.
 
 Measured in the emulator (`sdbench`, 300 reads / 60 writes through the syscalls): 5.05 ms per
 block read (101 KB/s; the SPI driver took 17 ms), 13.3 ms per block write (data 4.9 ms, CRCs
@@ -293,20 +339,79 @@ CPU to spare (it fell 2-3 % short with SPI).
 
 ## Filesystem
 
-FatFs R0.15 (`fatfs/`, `ffconf.h`: read/write, `FF_USE_LFN 0` so only 8.3 names,
-`FF_FS_RPATH 0` (no current directory; paths are from the root, leading `/` optional),
-`FF_VOLUMES 1`, `FF_FS_TINY 1`, code page 437, `FF_FS_NORTC 1` with a fixed timestamp
-2026-10-20, no mkfs). `diskio.c` sits on `sd.c`. The volume is mounted lazily on the first
-file or directory call; `fs.c` keeps a table of 8 files (fd 3..10) and 4 directory handles
-(0..3), maps `FRESULT` to the ABI's `E_*` codes and implements `O_CREAT` (open-always),
-`O_CREAT|O_TRUNC` (create-always), `O_TRUNC` alone (`f_truncate`) and `O_APPEND` (seek to
-the end before every write). A disk error or `sd` drops the mount and the card state, so
-the next call re-initialises and remounts (open descriptors are closed). A user program's
-descriptors are closed by `user_cleanup` when it exits.
+Spec rev 9 (`filesystem` in `spec/board.json`): two volumes with DOS drive letters. C: is
+the 768 KB FAT12 volume in the flash (FatFs physical drive 0, `flashdisk.c`, see "Drive
+C:"), D: the SD card (drive 1, `sd.c`); `diskio.c` routes between them. FatFs R0.15
+(`fatfs/`, `ffconf.h`): read/write, `FF_USE_LFN 1` with `FF_MAX_LFN 63` (static name
+buffer; `ffunicode.c`, code page 437), `FF_FS_RPATH 2` (current directory, `f_chdir`,
+`f_chdrive`, `f_getcwd`), `FF_VOLUMES 2` with `FF_STR_VOLUME_ID 1` and `FF_VOLUME_STRS
+"C","D"`, `FF_USE_CHMOD 1` (for `f_utime`), `FF_USE_MKFS 1` (`format C:`), `FF_FS_NORTC 0`
+with `get_fattime()` from the clock, `FF_FS_TINY 1` (all partial-sector traffic goes through
+each volume's 512-byte window). The monitor's wildcards are its own case-insensitive glob,
+not `f_findfirst`.
 
-Long file names on the card appear as their 8.3 aliases (`LONGNA~1.TXT`), names longer than
-8.3 cannot be created (`E_NAMETOOLONG`), and lookups are case-insensitive. Removing, renaming and
-making directories have no syscalls in the ABI, so they are not exposed (FatFs has them).
+Paths are `[X:][/]dir/.../name`: without a drive letter they refer to the current drive,
+without a leading slash to that drive's current directory, and `X:` alone names that
+drive's current directory. Each volume keeps its own current directory and there is a
+current drive, C: after reset. Names are long names of up to 63 characters (case kept,
+matched case-insensitively), 8.3 aliases included; a longer or malformed name is
+`E_NAMETOOLONG` ("bad name (max 63 chars)"). `/dev/ttya` is unchanged (see "Serial port").
+
+`fs.c` registers both volumes in `fs_init`; each is mounted lazily on first use. It keeps a
+table of 8 files (fd 3..10) and 4 directory handles (0..3) shared by both drives, maps
+`FRESULT` to the ABI's `E_*` codes and implements `O_CREAT` (open-always), `O_CREAT|O_TRUNC`
+(create-always), `O_TRUNC` alone (`f_truncate`) and `O_APPEND` (seek to the end before every
+write). Besides open/close/read/write/lseek/size and opendir/readdir/closedir it has
+`fs_stat`, `fs_unlink` (file or empty directory; `E_ACCES` for read-only, `E_EXIST` for a
+non-empty directory), `fs_rename` (also moves within a volume), `fs_mkdir`, `fs_chdir` (a
+bare `X:` switches the current drive), `fs_getcwd` (`X:/dir`), `fs_copy` (keeps the
+source's stamp with `f_utime`; a failed copy deletes the partial destination), `fs_mkfs`
+(C: only), `fs_sync` (writes back the C: cache) and `fs_close_all` (a program ended: closes
+every slot and flushes the cache; `user_cleanup` calls it). `readdir`'s `struct dirent`
+carries the long name in `name[64]`, `size`, `attr` and `mtime` (seconds since 1970 from
+the FAT stamp, 0 if none). A disk error on D: or `sd` calls `fs_invalidate`, which forgets
+the card state and drops only D:'s open files and directories; the next call re-initialises
+and remounts. C: and `/dev/ttya` descriptors are not affected.
+
+System calls 33-39 (spec rev 9) expose the rest: `unlink`, `rename`, `mkdir`, `chdir`,
+`getcwd(len, buf)`, `time` and `set_time` (see `generated/syscalls.h`). `exec` takes an
+explicit path (no search path; relative paths use the current directory).
+
+## Drive C: (flash volume)
+
+FAT12, 512-byte sectors, 1536 of them, 4 KB clusters, two FATs, 224 root entries, the data
+area aligned to the 8 KB erase sector (`format C:` and `tools/mkflashvol.sh` make the same
+layout), at `ROM_BASE + FLASH_VOL_OFFSET` (0xE40000). `flashdisk.c` reads sectors straight
+from the ROM window. Writes go through one 8 KB erase-sector cache: a write loads the
+enclosing erase sector into RAM and patches the 512-byte sector there (a sector that
+compares equal does not dirty the cache); reads of a sector in the dirty cache come from
+it. The cache is flushed when a write lands in another erase sector, on `CTRL_SYNC`
+(`f_sync`, `f_close`), before every monitor prompt and before a program starts. FatFs
+writes a file's data in order (16 sectors per erase sector, one cycle) and rewrites FAT and
+directory sectors with mostly identical contents, so the cache coalesces well: copying
+200 KB from D: to a freshly formatted C: took 32 cycles in the emulator, the format
+included. `flashdisk_programs` counts the cycles (`info` shows it).
+
+A flush is `flash_write_sector` (`flash.c`): op 2 of `flashram.S`, which runs from BIOS RAM
+with interrupts masked, erases the 8 KB sector, programs its 4096 words (0xFFFF words
+skipped) and verifies them; about 100 ms (erase up to 25 ms, each word program up to
+20 us). While it polls it counts and clears the `INTSTAT.VBLANK` flags (`op->vblanks`);
+`flash.c` adds them to `ticks` and the clock afterwards. Serial RX bytes beyond the DUART's
+3-byte FIFO are lost during a flush and audio repeats its last pattern. The volume lives in
+its own erase sectors above `ROM_IMAGE_SIZE`, so `flash` never touches it; the emulator's
+`--rom-save` keeps it across runs.
+
+## Clock
+
+`clock.c`: seconds since 1970-01-01 00:00 local time (no zone), 0 until set (`date`,
+`sys_set_time`; there is no battery, so typically from `AUTOEXEC.CMD`). The VBLANK ISR
+calls `clock_tick`, which adds the exact frame length in CPU clocks (764 x 262 = 200,168
+NTSC, 768 x 312 = 239,616 PAL) to an accumulator and counts a second each time it passes
+12,000,000, so the clock does not drift with the 59.95/50.08 Hz frame rate. Calendar
+conversion is H. Hinnant's days-from-civil / civil-from-days (1970-2106), plus FAT stamp
+conversion both ways and parse/format of `YYYY-MM-DD HH:MM[:SS]`. `get_fattime()` stamps
+files FatFs writes; with the clock unset they get 2026-01-01 00:00. Host-tested
+(`test_clock` in `test/test_main.c`).
 
 ## ELF loader
 
@@ -320,7 +425,8 @@ report a bad file to the caller; an I/O error during the copy ends in the monito
 Launch convention (`user_launch`, shared with `sdk/crt0.S`): the argument strings and the
 NULL-terminated `argv` array are placed just below `USER_STACK_TOP`, then the user stack is
 set up as for a call `_start(argc, argv)`: `USP -> {return address = user_exit_stub, argc,
-argv}`. `argv[0]` is the path given to `run`/`sys_exec`, the remaining words of the argument
+argv}`. `argv[0]` is the path given to `run`/`sys_exec` (for a command found on the search
+path, the path it was found under, e.g. `C:/hello.ELF`), the remaining words of the argument
 string are split on blanks (at most 16 arguments). `go` uses the same path with `argc = 0`
 and `argv[0] == NULL`. The return address makes a bare `rts` from the entry point a
 `sys_exit(0)`. `run` sets the `go` default to the new entry point, but a newlib program
@@ -349,7 +455,10 @@ program therefore drops you back in the monitor with its registers on the screen
 
 ## Monitor
 
-All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
+All numbers are hex (`0x` optional). Lines up to 127 characters; Backspace/DEL edit, ^U/^C
+clear the line. The prompt is the current drive and directory (`C:/> `, `D:/GAMES> `), or
+`X:?> ` when the current drive cannot be mounted (no card, unformatted C:). Before every
+prompt the monitor writes back the C: cache.
 
 | command | action |
 |---|---|
@@ -357,23 +466,50 @@ All numbers are hex (`0x` optional). Backspace/DEL edit, ^U/^C clear the line.
 | `md [addr] [len]` | dump memory, 8 bytes per line (continues from the last address; dumps over 256 bytes stop on a key) |
 | `mb addr v...` / `mw addr v...` / `ml addr v...` | write bytes / words / longs |
 | `fill addr len v` | fill bytes |
-| `go [addr]` | run a program in user mode (default: the last S-record entry point, else 0x4000) |
+| `go [addr]` | run a program in user mode (default: the last S-record or `run` entry point, else 0x8000) |
 | `regs` | registers of the last exception |
 | `srec` | receive S-records on serial port A (ESC on the keyboard or the port aborts) |
 | `reset` | RESET instruction, then the reset path |
 | `led n` | LEDs (bit 0 = LED0, bit 1 = LED1) |
 | `page n` | display framebuffer page 0 or 1 |
 | `ticks` | VBLANK counter |
-| `ramtest` | destructive test of 0x4000-0xFFFFF (user RAM and both framebuffers) |
+| `ramtest` | destructive test of 0x8000-0xFFFFF (user RAM and both framebuffers) |
 | `beep` | 1 kHz for 200 ms (0xFF/0x00 patterns to `IO_AUDIO`) |
 | `cls` | clear the console |
-| `info` | banner, tick rate, INTSTAT, INTEN and GPIO shadows, DUART SRA, RX overruns, PS/2 errors |
-| `sd` | re-initialise the card; print type, capacity, CID, CSD (also drops the FAT mount) |
+| `info` | banner, tick rate, INTSTAT, INTEN and GPIO shadows, DUART SRA, RX overruns, PS/2 errors, `go` default, current directory, clock, C: erase/program cycles since boot (and whether the cache is dirty) |
+| `sd` | re-initialise the card; print type, bus width, RCA, capacity, CID, CSD (also drops D:'s mount and open files) |
 | `sd rd lba` | hex dump of one 512-byte block |
-| `dir [path]` (`ls`) | list a directory: name, size or `<DIR>` |
-| `cat file` (`type`) | print a file (CRs dropped; files over 1 KB stop on a key) |
+| `C:` / `D:` | make that drive current |
+| `cd [path]` | no argument: print the current drive and directory; else change a directory (`cd D:/GAMES` sets D:'s without switching drives, `cd D:` switches) |
+| `dir [path\|pattern]` (`ls`) | list a directory, or the entries matching `*`/`?` in the last component (`dir D:*.BMP`): long name (a name over 16 characters gets its own line), size or `<DIR>`, stamp `yy-mm-dd hh:mm`, then entries and bytes; ESC stops |
+| `cat file` (`type`) | print a file (CRs dropped; ESC stops) |
+| `copy src dst` (`cp`) | copy files; `src` may hold `*`/`?` in its last component (then `dst` must be a directory or a drive); `dst` is a file, a directory or a drive (`copy D:*.ELF C:`). Stamps are kept; a failed copy (full volume) leaves no partial file; ESC stops between files |
+| `del file` (`rm`) | delete files (wildcards ok; not directories) |
+| `ren old new` (`mv`) | rename, or move to another directory on the same drive |
+| `mkdir dir` / `rmdir dir` | create / remove an empty directory |
+| `date [YYYY-MM-DD [HH:MM[:SS]]]` | set the clock; no argument: show it and prompt for a new value (Enter keeps it) |
+| `format C:` | after `y/N`, recreate C: as an empty FAT12 volume (D: is not supported) |
+| `echo text` | print the text (for scripts) |
+| `exit` | end the innermost script |
 | `run file [args...]` | load an ELF into user RAM and run it with `argv` (see "ELF loader") |
-| `name [args...]` | any word that is not a built-in command runs `NAME.ELF` from the card with the rest of the line as arguments: `bmpview adobe2.bmp` is `run bmpview.elf adobe2.bmp`. Only a missing file gives "unknown command"; other loader errors are reported as by `run`. Built-ins win: `ls` is the monitor's directory listing, `run ls.elf` the program. |
+| `name [args...]` | any word that is not a built-in command is looked up as `NAME`, `NAME.ELF`, `NAME.CMD` in the current directory (taken as an absolute path), then in `C:/`, then `D:/`; a word with a drive or directory in it is tried only there. An ELF runs with the rest of the line as arguments (`bmpview adobe2.bmp` is `run C:/bmpview.ELF adobe2.bmp` when the program lives on C:), a `.CMD` file runs as a script. Only a missing file gives "unknown command"; other loader errors are reported as by `run`. Built-ins win: `ls` is the monitor's directory listing, `ls.elf` or `run ls.elf` the program. |
+| `flashid`, `flash file`, `reboot` | see "Programming the ROM" |
+
+`help` lists all of these. Long-running output (`cat`, `dir`, `copy`) stops only on ESC and
+leaves other typed-ahead keys in the queue for the next command (`input_has_esc` looks into
+the keyboard queue without draining it; `input_flush` drains it after an ESC).
+
+### Scripts
+
+A `.CMD` file found on the search path is a script: its lines are executed as if typed but
+not echoed (the screen is 40 columns); lines starting with `#` or `;`, or the word `rem`,
+are comments; `echo` prints. A line that runs a program resumes the script after the
+program exits: `user_launch` never returns (the exit lands in `monitor_restart`), so a
+script's state is its path and byte offset in static data and the file is reopened for each
+line. Scripts nest 4 deep (a script line naming another `.CMD`); `exit` ends the innermost
+one, ESC between lines aborts all of them. `C:/AUTOEXEC.CMD` runs at the first prompt after
+reset unless ESC was pressed during the POST; the one `make flash` installs comes from
+`flashfs/AUTOEXEC.CMD`.
 
 ### S-record upload
 
@@ -381,7 +517,7 @@ Type `srec` in the monitor (on the keyboard: serial is not console input), then 
 `.srec` produced by the SDK (`objcopy -O srec`) over the serial port, for example
 `cat prog.srec > /dev/ttyUSB0`. The monitor reads serial port A directly without echoing
 (at 38400 baud a record arrives every ~11 ms and echoing one would take longer, so the
-512-byte ring would overflow), stores S1/S2/S3 data (only into 0x4000-0xFFFFF; records
+512-byte ring would overflow), stores S1/S2/S3 data (only into 0x8000-0xFFFFF; records
 outside that are counted and dropped), and finishes at the S7/S8/S9 record or at the first
 non-record line, printing `srec: N records, M bytes, start-end, entry E`. Then `go` runs
 it. In the emulator, type `srec` with `--type` and send the file with a delayed
@@ -395,7 +531,7 @@ return address that performs `sys_exit(0)`, so a program may simply `rts`). Prog
 `generated/HARDWARE.md`, "System calls") and `sys_set_irq_handler` for interrupt hooks,
 which are called from the BIOS ISRs in supervisor mode at the interrupt's own level (higher
 levels can still interrupt them). `sys_exit` closes the program's
-files, restores the BIOS interrupt enables, drops user hooks, the audio callback and any
+files (flushing the C: cache), restores the BIOS interrupt enables, drops user hooks, the audio callback and any
 queued audio buffers, selects page 0 and prints `[exit N]`. `sys_exec(path, args)` loads another ELF over the
 current program and starts it (`argv[0] = path`, `args` split on blanks); it returns only
 on failure, before anything was overwritten.
@@ -420,9 +556,13 @@ direction and `lseek` on them `E_INVAL`.
 | `serial.c`, `input.c`, `queue.c`, `ps2.c`, `irq.c` | GPIO shadow, polled DUART TX, input rings, PS/2 decoder, ISRs (DUART RX drain) |
 | `exception.c`, `syscall.c`, `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | as named; `syscall.c` holds the user pointer checks and the fs/SD/exec call wrappers |
 | `sd.c`, `sd.h`, `sd4.S` | SD driver on the native 4-bit bus (init, CMD17/CMD24, CSD/CID); asm command, idle-clock, read, write and CRC16 paths |
-| `fatfs/` | FatFs R0.15 (`ff.c`, `ff.h`, `diskio.h`, configured `ffconf.h`, `LICENSE.txt`) |
-| `diskio.c` | FatFs media layer on `sd.c` |
-| `fs.c`, `fs.h` | fd table, `O_*` to FatFs mode mapping, `FRESULT` to `E_*`, `struct dirent` |
+| `fatfs/` | FatFs R0.15 (`ff.c`, `ff.h`, `ffunicode.c`, `diskio.h`, configured `ffconf.h`, `LICENSE.txt`) |
+| `diskio.c` | FatFs media layer: drive 0 (C:) on `flashdisk.c`, drive 1 (D:) on `sd.c` |
+| `flashdisk.c`, `flashdisk.h` | C: block layer: reads from the ROM window, writes through the 8 KB erase-sector cache |
+| `flash.c`, `flash.h`, `flash_layout.h`, `flashram.S` | `flashid`, `flash` (image update) and `flash_write_sector` (one 8 KB sector for C:); the RAM-resident routine (in `.data`) and the `struct flash_op` offsets it shares with C |
+| `clock.c`, `clock.h` | wall clock, calendar and FAT stamp conversions, `get_fattime` |
+| `fs.c`, `fs.h` | two volumes, fd table, `O_*` to FatFs mode mapping, `FRESULT` to `E_*`, `struct dirent`, unlink/rename/mkdir/chdir/getcwd/copy/mkfs |
 | `elf.c`, `elf.h`, `exec.c`, `exec.h` | ELF32 parsing, `exec_prepare`/`exec_load`, `user_launch` (argv convention) |
-| `test/test_main.c`, `test_sd.c`, `test_elf.c`, `test_fs.c`, `test.h` | host unit tests (`make test`); `test/mkimage.sh` builds the FAT32 image, `test/data/` its files |
-| `rom.ld`, `mkrom.py`, `Makefile` | link, checksum/split, build |
+| `test/test_main.c`, `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`, `test.h` | host unit tests (`make test`, including `test_clock`); `test/mkimage.sh` builds the FAT32 image (D:), `../tools/mkflashvol.sh` the FAT12 image (C:) that `test_fs.c` loads into a RAM array with a simulated `flash_write_sector` (erase to 0xFF, programming clears bits, cycles counted); `test/data/` their files |
+| `rom.ld`, `mkrom.py`, `Makefile` | link, checksum, window image and chip split, build |
+| `../tools/mkflashvol.sh`, `../flashfs/` | the C: volume image and the files the top-level `make flash` puts on it besides the programs |

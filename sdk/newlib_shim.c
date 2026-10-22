@@ -4,7 +4,8 @@
  *
  *   fd 0       console input  (read(): a small line editor with echo; the keyboard)
  *   fd 1, 2    console output (the video console) via sys_write
- *   fd >= 3    SD card files via sys_open/read/write/lseek/close (8.3 names, see fw/README.md),
+ *   fd >= 3    files on C: (flash) or D: (card) via sys_open/read/write/lseek/close (long
+ *              names, directories, current drive and directory: see fw/README.md),
  *              or devices: open("/dev/ttya") is serial port A, which the BIOS releases
  *              after the POST; those fds fstat() as character devices and report isatty(),
  *              so stdio line-buffers them (newlib asks fstat first, then isatty)
@@ -35,7 +36,7 @@ enum { NL_O_ACCMODE = O_ACCMODE, NL_O_APPEND = O_APPEND, NL_O_CREAT = O_CREAT, N
 
 extern char __heap_start[];
 char *__env[1] = { 0 };
-char **environ = __env;
+extern char **environ;              /* newlib defines it (environ.o); getenv/TZ pull it in */
 
 static int map_err(int r)
 {
@@ -202,7 +203,18 @@ int getpid(void)
 }
 
 int link(const char *a, const char *b) { (void)a; (void)b; errno = ENOSYS; return -1; }
-int unlink(const char *a) { (void)a; errno = ENOSYS; return -1; }
+int unlink(const char *path) { return map_err(sys_unlink(path)) < 0 ? -1 : 0; }
+int rename(const char *o, const char *n) { return map_err(sys_rename(o, n)) < 0 ? -1 : 0; }
+int mkdir(const char *path, mode_t mode) { (void)mode; return map_err(sys_mkdir(path)) < 0 ? -1 : 0; }
+int rmdir(const char *path) { return map_err(sys_unlink(path)) < 0 ? -1 : 0; }
+int chdir(const char *path) { return map_err(sys_chdir(path)) < 0 ? -1 : 0; }
+
+char *getcwd(char *buf, size_t size)
+{
+    int r = sys_getcwd((unsigned)size, buf);
+    if (r < 0) { errno = (r == E_INVAL) ? ERANGE : (r == E_NODEV ? ENODEV : EINVAL); return 0; }
+    return buf;
+}
 
 /* sys_ticks() counts frames. The frame length in CPU clocks comes from the video standard
  * the BIOS selected at boot (video_info.standard; it cannot change while a program runs):
@@ -233,14 +245,27 @@ clock_t times(struct tms *t)
     return ms;
 }
 
+/* The BIOS clock (sys_time, seconds since 1970, local time, 0 until the monitor's `date`
+ * command or sys_set_time sets it) with the fraction of the second taken from the frame
+ * counter; before the clock is set this is the uptime, as it always was. time(),
+ * localtime() and friends build on this; there is no time zone (TZ is ignored). */
 int gettimeofday(struct timeval *tv, void *tz)
 {
     (void)tz;
     if (tv) {
         uint64_t c = uptime_clocks();
-        tv->tv_sec = (time_t)(c / CPU_CLOCK_HZ);
+        uint32_t now = sys_time();
+        tv->tv_sec = now ? (time_t)now : (time_t)(c / CPU_CLOCK_HZ);
         tv->tv_usec = (suseconds_t)((uint32_t)(c % CPU_CLOCK_HZ) / (CPU_CLOCK_HZ / 1000000));
     }
+    return 0;
+}
+
+int settimeofday(const struct timeval *tv, const struct timezone *tz)
+{
+    (void)tz;
+    if (!tv) { errno = EINVAL; return -1; }
+    sys_set_time((uint32_t)tv->tv_sec);
     return 0;
 }
 

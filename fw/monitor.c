@@ -1,13 +1,19 @@
-/* Machine monitor: line editor, S-record upload (explicit `srec` or auto-detected from a
- * line starting with "S<digit>"), memory commands and user program launch. */
+/* Machine monitor: line editor, S-record upload (`srec`), memory commands, two-volume file
+ * management (C: flash, D: card), scripts (.CMD) and user program launch with a DOS-like
+ * search path (spec "filesystem"). */
 #include "bios.h"
 #include "sd.h"
 #include "fs.h"
 #include "exec.h"
 #include "flash.h"
+#include "flashdisk.h"
+#include "clock.h"
 
-#define LINE_MAX 96
+#define LINE_MAX 128
 #define SREC_LINE_MAX 520
+#define SCRIPT_DEPTH 4
+
+static char cur_drive = 'C';
 
 uint32_t last_entry = USER_BASE;
 static uint32_t md_next = USER_BASE;
@@ -163,26 +169,6 @@ static int need_hex(int argc, char **argv, int i, uint32_t *v)
 
 /* ---- commands ----------------------------------------------------------------------- */
 
-static void cmd_help(void)
-{
-    kprintf("help           this list (hex args)\n"
-            "md [a] [len]   dump memory\n"
-            "mb/mw/ml a v.. write bytes/words/longs\n"
-            "fill a len v   fill bytes\n"
-            "go [a]         run in user mode\n"
-            "regs           last exception\n"
-            "srec           receive S-records on serial A\n"
-            "reset led n  page n  ticks  cls\n"
-            "ramtest  beep  info\n"
-            "sd [rd lba]    card info / dump block\n"
-            "dir [path]     list directory\n"
-            "cat file       print a file\n"
-            "run file [args] load ELF and run\n"
-            "name [args]    any other word runs NAME.ELF from the card\n"
-            "flashid        flash chip IDs\n"
-            "flash file     reprogram the ROM from an image file, then `reboot`\n");
-}
-
 static void cmd_md(int argc, char **argv)
 {
     uint32_t addr = md_next, len = 64;
@@ -300,6 +286,11 @@ static void cmd_info(void)
     kprintf("GPIO %04x DUART SRA %02x rx overruns %u ps2 err %u\n", gpio_shadow, DUART_SRA,
             serial_rx_overruns, ps2_errors);
     kprintf("go default %06x\n", last_entry);
+    char cwd[FS_PATH_MAX], d[20];
+    if (fs_getcwd(cwd, sizeof cwd) < 0) strcpy(cwd, "?");
+    if (clock_get()) clock_format(clock_get(), d); else strcpy(d, "not set");
+    kprintf("cwd %s  clock %s\n", cwd, d);
+    kprintf("C: %u erase/program cycles since boot%s\n", flashdisk_programs, flashdisk_dirty() ? ", cache dirty" : "");
 }
 
 /* ---- SD card and files ------------------------------------------------------------- */
@@ -340,23 +331,6 @@ static void cmd_sd(int argc, char **argv)
     kprintf("\n");
 }
 
-static void cmd_dir(int argc, char **argv)
-{
-    const char *path = argc > 1 ? argv[1] : "/";
-    int h = fs_opendir(path);
-    if (h < 0) { kprintf("dir %s: %s\n", path, fs_strerror(h)); return; }
-    struct dirent ent;
-    int n = 0, rc;
-    while ((rc = fs_readdir(h, &ent)) > 0) {
-        if (ent.attr & ATTR_DIR) kprintf("%-12s    <DIR>\n", ent.name);
-        else kprintf("%-12s %8u\n", ent.name, ent.size);
-        n++;
-    }
-    fs_closedir(h);
-    if (rc < 0) kprintf("dir: %s\n", fs_strerror(rc));
-    else kprintf("%d entries\n", n);
-}
-
 static void cmd_cat(int argc, char **argv)
 {
     if (argc < 2) { kprintf("cat file\n"); return; }
@@ -367,7 +341,7 @@ static void cmd_cat(int argc, char **argv)
     while ((n = fs_read(fd, blockbuf, sizeof blockbuf)) > 0) {
         for (int i = 0; i < n; i++) if (blockbuf[i] != '\r') putchar_both(blockbuf[i]);
         total += (uint32_t)n;
-        if (total > 1024 && input_pollchar() >= 0) break;   /* long files stop on a key (as md) */
+        if (input_has_esc()) { input_flush(); break; }      /* ESC stops a long file */
     }
     if (n < 0) kprintf("\ncat: %s\n", fs_strerror(n));
     fs_close(fd);
@@ -388,6 +362,338 @@ static void cmd_flash(int argc, char **argv)
     flash_update(argv[1]);
 }
 
+
+/* ---- names and wildcards -------------------------------------------------------------- */
+
+static int lower(int c) { return (c >= 'A' && c <= 'Z') ? c + 32 : c; }
+
+/* DOS-style pattern match, case-insensitive: * any run, ? one character. */
+static int glob(const char *pat, const char *s)
+{
+    for (;;) {
+        if (*pat == '*') {
+            while (*pat == '*') pat++;
+            if (!*pat) return 1;
+            for (; *s; s++) if (glob(pat, s)) return 1;
+            return 0;
+        }
+        if (!*s) return *pat == 0;
+        if (*pat != '?' && lower(*pat) != lower(*s)) return 0;
+        pat++; s++;
+    }
+}
+
+static int has_wild(const char *s) { return strchr(s, '*') || strchr(s, '?'); }
+
+/* Split "D:/GAMES/STAR.BMP" (the name may hold * and ?) into dir "D:/GAMES/" (kept with its separator, so names can be
+ * appended) and name "*.BMP". A path without a separator is a name in the current dir. */
+static void split_path(const char *path, char *dir, const char **name)
+{
+    const char *p = path + strlen(path);
+    while (p > path && p[-1] != '/' && p[-1] != '\\' && p[-1] != ':') p--;
+    memcpy(dir, path, (size_t)(p - path));
+    dir[p - path] = 0;
+    *name = p;
+}
+
+/* The directory to open for a split prefix: "" is the current directory; a trailing
+ * separator comes off unless it is the root ("/", "C:/"). */
+static const char *dir_for_open(char *dir)
+{
+    size_t n = strlen(dir);
+    if (n > 1 && (dir[n - 1] == '/' || dir[n - 1] == '\\') && dir[n - 2] != ':') dir[n - 1] = 0;
+    return dir;
+}
+
+static int is_dir_path(const char *path, int *exists)
+{
+    struct dirent e;
+    size_t n = strlen(path);
+    *exists = 0;
+    if (!n) return 1;
+    if (path[n - 1] == '/' || path[n - 1] == '\\' || path[n - 1] == ':') return 1;
+    if (fs_stat(path, &e) == 0) { *exists = 1; return (e.attr & ATTR_DIR) != 0; }
+    return 0;
+}
+
+/* dir + name into out (FS_PATH_MAX), adding a separator when dir has none. */
+static int join_path(char *out, const char *dir, const char *name)
+{
+    size_t n = strlen(dir);
+    int sep = n && dir[n - 1] != '/' && dir[n - 1] != '\\' && dir[n - 1] != ':';
+    if (n + sep + strlen(name) + 1 > FS_PATH_MAX) return 0;
+    strcpy(out, dir);
+    if (sep) out[n++] = '/';
+    strcpy(out + n, name);
+    return 1;
+}
+
+/* ---- files and directories ------------------------------------------------------------- */
+
+static void fmt_stamp(uint32_t mtime, char *out)       /* "yy-mm-dd hh:mm" or blanks */
+{
+    if (!mtime) { strcpy(out, "              "); return; }
+    struct clock_tm t;
+    clock_to_tm(mtime, &t);
+    ksnprintf(out, 16, "%02d-%02d-%02d %02d:%02d", t.year % 100, t.mon, t.day, t.hour, t.min);
+}
+
+static void cmd_dir(int argc, char **argv)
+{
+    char dir[FS_PATH_MAX];
+    const char *pat = "*";
+    if (argc > 1) {
+        int exists;
+        if (has_wild(argv[1]) || !is_dir_path(argv[1], &exists)) split_path(argv[1], dir, &pat);
+        else strcpy(dir, argv[1]);
+    } else dir[0] = 0;
+    int h = fs_opendir(dir_for_open(dir));
+    if (h < 0) { kprintf("dir %s: %s\n", dir[0] ? dir : ".", fs_strerror(h)); return; }
+    struct dirent ent;
+    int n = 0, rc;
+    uint32_t bytes = 0;
+    char stamp[16];
+    while ((rc = fs_readdir(h, &ent)) > 0) {
+        if (!glob(pat, ent.name)) continue;
+        fmt_stamp(ent.mtime, stamp);
+        if (strlen(ent.name) > 16) kprintf("%s\n%16s", ent.name, "");
+        else kprintf("%-16s", ent.name);
+        if (ent.attr & ATTR_DIR) kprintf("   <DIR> %s\n", stamp);
+        else { kprintf("%8u %s\n", ent.size, stamp); bytes += ent.size; }
+        n++;
+        if (input_has_esc()) { input_flush(); break; }      /* ESC stops a long listing */
+    }
+    fs_closedir(h);
+    if (rc < 0) kprintf("dir: %s\n", fs_strerror(rc));
+    else kprintf("%d entries, %u bytes\n", n, bytes);
+}
+
+static void cmd_cd(int argc, char **argv)
+{
+    if (argc < 2) {
+        char cwd[FS_PATH_MAX];
+        int rc = fs_getcwd(cwd, sizeof cwd);
+        if (rc < 0) kprintf("cd: %s\n", fs_strerror(rc)); else kprintf("%s\n", cwd);
+        return;
+    }
+    int rc = fs_chdir(argv[1]);
+    if (rc) kprintf("cd %s: %s\n", argv[1], fs_strerror(rc));
+    else if (argv[1][0] && argv[1][1] == ':' && argv[1][2] == 0) cur_drive = (char)(lower(argv[1][0]) - 32);
+}
+
+static void cmd_drive(const char *d)
+{
+    char name[3] = { (char)(lower(d[0]) - 32), ':', 0 };
+    int rc = fs_chdir(name);
+    if (rc) kprintf("%s: %s\n", name, fs_strerror(rc));
+    else cur_drive = name[0];
+}
+
+/* For each file matching `spec` (a path whose last component may hold wildcards) call
+ * fn(dir, name, ctx). Returns the number of matches or E_*. */
+static int for_each_match(const char *spec, int (*fn)(const char *dir, const char *name, void *ctx), void *ctx)
+{
+    char dir[FS_PATH_MAX], opendir_name[FS_PATH_MAX];
+    const char *pat;
+    split_path(spec, dir, &pat);
+    strcpy(opendir_name, dir);
+    int h = fs_opendir(dir_for_open(opendir_name));
+    if (h < 0) return h;
+    struct dirent ent;
+    int n = 0, rc;
+    while ((rc = fs_readdir(h, &ent)) > 0) {
+        if ((ent.attr & ATTR_DIR) || !glob(pat, ent.name)) continue;
+        n++;
+        if (fn(dir, ent.name, ctx)) { rc = -1; break; }
+    }
+    fs_closedir(h);
+    return rc < 0 ? (rc == -1 ? n : rc) : n;
+}
+
+static uint8_t blockbuf2[SD_BLOCK_SIZE];        /* copy transfer buffer (blockbuf is for sd rd/cat) */
+
+struct copy_ctx { const char *dst; int dst_is_dir; int errors; };
+
+static int copy_one(const char *dir, const char *name, void *vctx)
+{
+    struct copy_ctx *c = vctx;
+    char src[FS_PATH_MAX], dst[FS_PATH_MAX];
+    if (!join_path(src, dir, name) || !(c->dst_is_dir ? join_path(dst, c->dst, name) : (strcpy(dst, c->dst), 1))) {
+        kprintf("copy: path too long\n"); c->errors++; return 1;
+    }
+    kprintf("%s -> %s", src, dst);
+    int rc = fs_copy(src, dst, blockbuf2, sizeof blockbuf2);
+    if (rc < 0) { kprintf(": %s\n", fs_strerror(rc)); c->errors++; }
+    else kprintf("  %d bytes\n", rc);
+    if (input_has_esc()) { input_flush(); return 1; }       /* ESC stops a long copy */
+    return 0;
+}
+
+static void cmd_copy(int argc, char **argv)
+{
+    if (argc < 3) { kprintf("copy src dst   (src may hold * and ?; dst a file, a directory or a drive)\n"); return; }
+    struct copy_ctx c;
+    int exists;
+    c.dst = argv[2];
+    c.dst_is_dir = is_dir_path(argv[2], &exists);
+    c.errors = 0;
+    if (has_wild(argv[1]) && !c.dst_is_dir) { kprintf("copy: with wildcards dst must be a directory\n"); return; }
+    if (!has_wild(argv[1]) && !c.dst_is_dir) {
+        struct dirent e;
+        int rc = fs_stat(argv[1], &e);
+        if (rc == 0 && (e.attr & ATTR_DIR)) { kprintf("copy: %s is a directory\n", argv[1]); return; }
+        rc = copy_one("", argv[1], &c);
+        (void)rc;
+        return;
+    }
+    int n = for_each_match(argv[1], copy_one, &c);
+    if (n < 0) kprintf("copy %s: %s\n", argv[1], fs_strerror(n));
+    else if (n == 0) kprintf("copy: no match for %s\n", argv[1]);
+    else kprintf("%d file%s, %d error%s\n", n, n == 1 ? "" : "s", c.errors, c.errors == 1 ? "" : "s");
+}
+
+static int del_one(const char *dir, const char *name, void *ctx)
+{
+    (void)ctx;
+    char path[FS_PATH_MAX];
+    if (!join_path(path, dir, name)) return 0;
+    int rc = fs_unlink(path);
+    if (rc) kprintf("del %s: %s\n", path, fs_strerror(rc));
+    return 0;
+}
+
+static void cmd_del(int argc, char **argv)
+{
+    if (argc < 2) { kprintf("del file   (wildcards ok; rmdir for directories)\n"); return; }
+    if (has_wild(argv[1])) {
+        int n = for_each_match(argv[1], del_one, 0);
+        if (n < 0) kprintf("del %s: %s\n", argv[1], fs_strerror(n));
+        else kprintf("%d file%s\n", n, n == 1 ? "" : "s");
+        return;
+    }
+    struct dirent e;
+    int rc = fs_stat(argv[1], &e);
+    if (rc == 0 && (e.attr & ATTR_DIR)) { kprintf("del: %s is a directory (rmdir)\n", argv[1]); return; }
+    if (rc == 0) rc = fs_unlink(argv[1]);
+    if (rc) kprintf("del %s: %s\n", argv[1], fs_strerror(rc));
+}
+
+static void cmd_rmdir(int argc, char **argv)
+{
+    if (argc < 2) { kprintf("rmdir dir   (must be empty)\n"); return; }
+    struct dirent e;
+    int rc = fs_stat(argv[1], &e);
+    if (rc == 0 && !(e.attr & ATTR_DIR)) { kprintf("rmdir: %s is not a directory\n", argv[1]); return; }
+    if (rc == 0) rc = fs_unlink(argv[1]);
+    if (rc) kprintf("rmdir %s: %s\n", argv[1], fs_strerror(rc));
+}
+
+static void cmd_mkdir(int argc, char **argv)
+{
+    if (argc < 2) { kprintf("mkdir dir\n"); return; }
+    int rc = fs_mkdir(argv[1]);
+    if (rc) kprintf("mkdir %s: %s\n", argv[1], fs_strerror(rc));
+}
+
+static void cmd_ren(int argc, char **argv)
+{
+    if (argc < 3) { kprintf("ren old new   (new may be another directory on the same drive)\n"); return; }
+    int rc = fs_rename(argv[1], argv[2]);
+    if (rc) kprintf("ren %s: %s\n", argv[1], fs_strerror(rc));
+}
+
+static void cmd_format(int argc, char **argv)
+{
+    if (argc < 2 || !((argv[1][0] | 0x20) == 'c' && argv[1][1] == ':' && argv[1][2] == 0)) {
+        kprintf("format C:   (erase and recreate the flash volume; D: is not supported)\n");
+        return;
+    }
+    kprintf("Erase everything on C: and create an empty volume? (y/N) ");
+    int c = input_getchar();
+    kprintf("%c\n", (c >= ' ' && c < 127) ? c : ' ');
+    if (c != 'y' && c != 'Y') { kprintf("format: cancelled\n"); return; }
+    kprintf("formatting (interrupts off while each sector is written)...\n");
+    int rc = fs_mkfs("C:", blockbuf2, sizeof blockbuf2);
+    if (rc) kprintf("format: %s\n", fs_strerror(rc));
+    else kprintf("C: formatted\n");
+}
+
+/* ---- clock ------------------------------------------------------------------------------ */
+
+static int read_line(char *buf, int max);
+
+static void set_date(const char *text)
+{
+    uint32_t secs;
+    if (!clock_parse(text, &secs)) { kprintf("date: use YYYY-MM-DD HH:MM[:SS]\n"); return; }
+    clock_set(secs);
+}
+
+static void cmd_date(const char *rest)
+{
+    char d[20];
+    while (*rest == ' ') rest++;
+    if (*rest) { set_date(rest); return; }
+    if (clock_get()) { clock_format(clock_get(), d); kprintf("%s\n", d); }
+    else kprintf("clock not set\n");
+    kprintf("new date and time (YYYY-MM-DD HH:MM, Enter keeps): ");
+    static char line[32];
+    int n = read_line(line, sizeof line);
+    if (n > 0) set_date(line);
+}
+
+/* ---- scripts ------------------------------------------------------------------------------ */
+
+/* A .CMD file's lines are executed as typed. Running a program does not return to this
+ * code (the program's exit lands in monitor_restart), so a script's position is kept in
+ * static state (path and byte offset) and the file is reopened for every line. */
+struct script { char path[FS_PATH_MAX]; uint32_t offset; };
+static struct script scripts[SCRIPT_DEPTH];
+static int script_depth;
+
+static int script_start(const char *path)
+{
+    if (script_depth == SCRIPT_DEPTH) { kprintf("%s: scripts nested too deep\n", path); return -1; }
+    if (strlen(path) >= FS_PATH_MAX) return -1;
+    strcpy(scripts[script_depth].path, path);
+    scripts[script_depth].offset = 0;
+    script_depth++;
+    return 0;
+}
+
+/* Next line of the innermost script into buf; its length, or -1 when the script has ended
+ * (it is popped). CR, LF and CRLF end a line. */
+static int script_line(char *buf, int max)
+{
+    struct script *s = &scripts[script_depth - 1];
+    int fd = fs_open(O_RDONLY, s->path);
+    int n = -1;
+    if (fd >= 0 && fs_lseek(fd, (int)s->offset, SEEK_SET) >= 0) n = fs_read(fd, buf, (unsigned)max - 1);
+    if (fd >= 0) fs_close(fd);
+    if (n <= 0) {
+        if (n < 0) kprintf("%s: %s\n", s->path, fs_strerror(n));
+        script_depth--;
+        return -1;
+    }
+    int len = 0;
+    while (len < n && buf[len] != '\n' && buf[len] != '\r') len++;
+    int consumed = len;
+    if (consumed < n && buf[consumed] == '\r') consumed++;
+    if (consumed < n && buf[consumed] == '\n') consumed++;
+    if (consumed == len && len == n && n == max - 1) { kprintf("%s: line too long\n", s->path); }
+    s->offset += (uint32_t)consumed;
+    buf[len] = 0;
+    return len;
+}
+
+static void cmd_exit(void)
+{
+    if (script_depth) script_depth--;
+    else kprintf("exit: not in a script\n");
+}
+
+/* ---- programs ----------------------------------------------------------------------------- */
+
 /* Load `path` and run it with the raw argument string `args`.  Returns the loader's error
  * (E_NOENT if there is no such file) without printing when `quiet_noent` is set, so the
  * caller can fall back to "unknown command". */
@@ -403,8 +709,9 @@ static int run_file(const char *path, char *args, int quiet_noent)
     kprintf("run %s: %06x-%06x entry %06x\n", img.path, img.lowest, img.highest - 1, img.entry);
     last_entry = img.entry;
     con_cursor_show(0);
+    fs_sync();
     user_launch(img.entry, img.path, args);
-    return 0;   /* not reached: the program returns through the monitor's longjmp */
+    return 0;   /* not reached: the program returns through monitor_restart */
 }
 
 /* Split `rest` (the raw line after the command word) into the first word and the rest. */
@@ -428,37 +735,94 @@ static void cmd_run(char *rest)
     run_file(path, args, 0);
 }
 
-static int ends_with_elf(const char *s)
+static int ends_with(const char *s, const char *ext)
 {
-    size_t n = strlen(s);
-    if (n < 4) return 0;
-    const char *e = s + n - 4;
-    return e[0] == '.' && (e[1] | 0x20) == 'e' && (e[2] | 0x20) == 'l' && (e[3] | 0x20) == 'f';
+    size_t n = strlen(s), m = strlen(ext);
+    if (n < m) return 0;
+    for (size_t i = 0; i < m; i++) if (lower(s[n - m + i]) != lower(ext[i])) return 0;
+    return 1;
 }
 
-/* An unknown command word NAME is tried as NAME.ELF on the card: `bmpview adobe2.bmp` is
- * `run bmpview.elf adobe2.bmp`.  Only a missing file falls through to "unknown command";
- * any other loader error (no card, bad ELF, too big) is reported as `run` would. */
-static void run_unknown(char *rest)
+/* The search path (spec filesystem.search_path): WORD, WORD.ELF and WORD.CMD in the
+ * current directory, then C:/, then D:/; a word with a drive or directory in it is only
+ * tried where it says. Fills `out` with the first existing file; 1 found, 0 not. */
+static int resolve_command(const char *word, char *out)
 {
-    static char path[LINE_MAX + 4];
-    char *args;
-    char *word = first_word(rest, &args);
-    strcpy(path, word);
-    if (!ends_with_elf(word)) strcpy(path + strlen(word), ".elf");
-    if (run_file(path, args, 1) == E_NOENT)
-        kprintf("unknown command '%s' (try help, or %s on the card)\n", word, path);
+    static const char *const exts[] = { "", ".ELF", ".CMD" };
+    char cwd[FS_PATH_MAX];
+    const char *dirs[3] = { "", "C:/", "D:/" };
+    int ndirs = 3;
+    if (strchr(word, ':')) ndirs = 1;                   /* a drive given: only there */
+    else if (fs_getcwd(cwd, sizeof cwd) >= 0) {
+        if (word[0] == '/' || word[0] == '\\') { cwd[2] = 0; ndirs = 1; }      /* absolute on the current drive */
+        else if (strchr(word, '/') || strchr(word, '\\')) ndirs = 1;
+        dirs[0] = cwd;              /* the current directory, as an absolute path: a script keeps
+                                       working after it changes the directory or the drive */
+    }
+    struct dirent e;
+    for (int d = 0; d < ndirs; d++)
+        for (int x = 0; x < 3; x++) {
+            if (!join_path(out, dirs[d], word)) continue;
+            if (strlen(out) + strlen(exts[x]) >= FS_PATH_MAX) continue;
+            strcpy(out + strlen(out), exts[x]);
+            if (fs_stat(out, &e) == 0 && !(e.attr & ATTR_DIR)) return 1;
+        }
+    return 0;
+}
+
+/* An unknown command word NAME runs NAME.ELF (a program) or NAME.CMD (a script) found on
+ * the search path: `bmpview adobe2.bmp` is `run C:/BMPVIEW.ELF adobe2.bmp` when the
+ * program lives on C:. */
+static void run_unknown(char *word, char *args)
+{
+    static char path[FS_PATH_MAX];
+    if (!resolve_command(word, path)) {
+        kprintf("unknown command '%s' (try help; or %s.ELF / .CMD in ., C:/, D:/)\n", word, word);
+        return;
+    }
+    if (ends_with(path, ".cmd")) { script_start(path); return; }
+    run_file(path, args, 0);
+}
+
+/* ---- dispatch -------------------------------------------------------------------------------- */
+
+static void cmd_help(void)
+{
+    kprintf("help           this list (hex args)\n"
+            "md [a] [len]   dump memory\n"
+            "mb/mw/ml a v.. write bytes/words/longs\n"
+            "fill a len v   fill bytes\n"
+            "go [a]         run in user mode\n"
+            "regs           last exception\n"
+            "srec           S-records from serial A\n"
+            "reset led n  page n  ticks  cls\n"
+            "ramtest  beep  info  flashid\n"
+            "sd [rd lba]    card info / dump block\n"
+            "C:  D:  cd [path]   drive / directory\n"
+            "dir [path|pat] cat file  echo text\n"
+            "copy src dst   (wildcards ok)\n"
+            "del ren mkdir rmdir   file management\n"
+            "date [Y-M-D H:M]  show/set the clock\n"
+            "format C:      empty flash volume\n"
+            "run file [args] load ELF and run\n"
+            "name [args]    NAME.ELF or NAME.CMD\n"
+            "               from ., C:/, D:/\n"
+            "exit           end a script\n"
+            "flash file     reprogram the ROM\n");
 }
 
 static void execute(char *line)
 {
     static char raw[LINE_MAX];
     char *argv[12];
-    if (!strncmp(line, "run", 3) && (line[3] == 0 || line[3] == ' ' || line[3] == '\t')) {
-        cmd_run(line + 3);
-        return;
-    }
-    strcpy(raw, line);                  /* split() cuts the line into words */
+    strcpy(raw, line);                  /* split() cuts `line` into words; raw keeps the arguments intact */
+    char *rest;
+    char *word = first_word(raw, &rest);
+    if (!*word) return;
+    if (!strcmp(word, "run")) { cmd_run(rest); return; }
+    if (!strcmp(word, "echo")) { kprintf("%s\n", rest); return; }
+    if (!strcmp(word, "date")) { cmd_date(rest); return; }
+    if (!strcmp(word, "rem") || word[0] == '#' || word[0] == ';') return;
     int argc = split(line, argv, 12);
     if (!argc) return;
     const char *c = argv[0];
@@ -482,18 +846,51 @@ static void execute(char *line)
     else if (!strcmp(c, "sd")) cmd_sd(argc, argv);
     else if (!strcmp(c, "dir") || !strcmp(c, "ls")) cmd_dir(argc, argv);
     else if (!strcmp(c, "cat") || !strcmp(c, "type")) cmd_cat(argc, argv);
+    else if (!strcmp(c, "cd")) cmd_cd(argc, argv);
+    else if (!strcmp(c, "copy") || !strcmp(c, "cp")) cmd_copy(argc, argv);
+    else if (!strcmp(c, "del") || !strcmp(c, "rm")) cmd_del(argc, argv);
+    else if (!strcmp(c, "ren") || !strcmp(c, "mv")) cmd_ren(argc, argv);
+    else if (!strcmp(c, "mkdir")) cmd_mkdir(argc, argv);
+    else if (!strcmp(c, "rmdir")) cmd_rmdir(argc, argv);
+    else if (!strcmp(c, "format")) cmd_format(argc, argv);
+    else if (!strcmp(c, "exit")) cmd_exit();
     else if (!strcmp(c, "flashid")) cmd_flashid();
     else if (!strcmp(c, "flash")) cmd_flash(argc, argv);
     else if (!strcmp(c, "reboot")) cpu_reboot();
-    else run_unknown(raw);
+    else if (strlen(c) == 2 && c[1] == ':' && ((lower(c[0]) >= 'a' && lower(c[0]) <= 'z'))) cmd_drive(c);
+    else run_unknown(word, rest);
+}
+
+static void print_prompt(void)
+{
+    char cwd[FS_PATH_MAX];
+    if (fs_getcwd(cwd, sizeof cwd) >= 0) kprintf("%s> ", cwd);
+    else kprintf("%c:?> ", cur_drive);
+}
+
+/* At the first prompt after reset: C:/AUTOEXEC.CMD, unless ESC was pressed during the POST
+ * (any ESC waiting in the keyboard queue). */
+static void autoexec(void)
+{
+    if (input_has_esc()) { input_flush(); kprintf("AUTOEXEC.CMD skipped\n"); return; }
+    if (fs_stat("C:/AUTOEXEC.CMD", 0) == 0) script_start("C:/AUTOEXEC.CMD");
 }
 
 void monitor_main(void)
 {
     static char line[LINE_MAX];
+    static int booted;
+    if (!booted) { booted = 1; autoexec(); }
     for (;;) {
-        kprintf("> ");
-        int n = read_line(line, LINE_MAX);
+        fs_sync();                          /* nothing stays in the flash write cache across a prompt */
+        int n;
+        if (script_depth) {
+            if (input_has_esc()) { input_flush(); script_depth = 0; kprintf("script aborted\n"); continue; }
+            n = script_line(line, LINE_MAX);         /* not echoed: the screen is 40 columns */
+        } else {
+            print_prompt();
+            n = read_line(line, LINE_MAX);
+        }
         if (n > 0) execute(line);
     }
 }

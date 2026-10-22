@@ -1,5 +1,6 @@
 /* Host unit tests for the pure-C BIOS modules. Build/run: make -C fw test */
 #include "test.h"
+#include "clock.h"
 
 int fails, checks;
 
@@ -196,6 +197,47 @@ static void test_hexdump(void)
     CHECK_STR(line, "e1fffe 00 41                   .A");
 }
 
+/* ---- clock.c: calendar arithmetic and the frame-driven second ---- */
+void test_clock(void)
+{
+    struct clock_tm t;
+    uint32_t s;
+    char b[20];
+    static const struct { uint32_t secs; int y, mo, d, h, mi, se; } v[] = {
+        { 0, 1970, 1, 1, 0, 0, 0 }, { 315532800u, 1980, 1, 1, 0, 0, 0 }, { 951868800u, 2000, 3, 1, 0, 0, 0 },
+        { 1709251198u, 2024, 2, 29, 23, 59, 58 }, { 1792618200u, 2026, 10, 21, 21, 30, 0 },
+        { 2147483648u, 2038, 1, 19, 3, 14, 8 }, { 4107542400u, 2100, 3, 1, 0, 0, 0 },
+    };
+    for (unsigned i = 0; i < sizeof v / sizeof v[0]; i++) {
+        clock_to_tm(v[i].secs, &t);
+        CHECK(t.year == v[i].y && t.mon == v[i].mo && t.day == v[i].d && t.hour == v[i].h && t.min == v[i].mi && t.sec == v[i].se);
+        CHECK_EQ(clock_from_tm(&t), v[i].secs);
+        clock_format(v[i].secs, b);
+        CHECK(clock_parse(b, &s) && s == v[i].secs);
+    }
+    clock_format(1792618200u, b); CHECK_STR(b, "2026-10-21 21:30:00");
+    CHECK(clock_parse("2026-10-21 21:30", &s) && s == 1792618200u);
+    CHECK(clock_parse("2026-10-21", &s) && s == 1792618200u - 21 * 3600 - 30 * 60);
+    CHECK(clock_parse("2026-10-21  21:30:07 ", &s) && s == 1792618207u);
+    CHECK(!clock_parse("2026-13-01", &s)); CHECK(!clock_parse("2026-02-29", &s)); CHECK(clock_parse("2024-02-29", &s));
+    CHECK(!clock_parse("2026-10-21 24:00", &s)); CHECK(!clock_parse("26-10-21", &s)); CHECK(!clock_parse("2026-10-21x", &s));
+    CHECK(!clock_parse("1969-12-31", &s));
+    /* FAT stamps: 2-second resolution, 1980 base */
+    uint32_t ft = clock_to_fat(1792618207u);
+    CHECK_EQ(ft >> 16, ((2026 - 1980) << 9) | (10 << 5) | 21); CHECK_EQ(ft & 0xFFFF, (21 << 11) | (30 << 5) | 3);
+    CHECK_EQ(clock_from_fat(ft >> 16, ft & 0xFFFF), 1792618206u);
+    CHECK_EQ(clock_from_fat(0, 0), 0);
+    CHECK_EQ(clock_to_fat(0) >> 16, (0 << 9) | (1 << 5) | 1);              /* clamps to 1980-01-01 */
+    /* the second advances from frames: 60 NTSC frames (200168 clocks each) pass 12 MHz once */
+    clock_set(0); clock_tick(); CHECK_EQ(clock_get(), 0);                  /* unset: stays 0 */
+    clock_set(100);
+    for (int i = 0; i < 59; i++) clock_tick();
+    CHECK_EQ(clock_get(), 100);
+    clock_tick(); CHECK_EQ(clock_get(), 101);
+    clock_add_frames(600); CHECK_EQ(clock_get(), 111);
+    clock_set(0);
+}
+
 int main(int argc, char **argv)
 {
     test_printf();
@@ -207,7 +249,8 @@ int main(int argc, char **argv)
     test_sd();
     test_audio();
     test_elf(argc > 2 ? argv[2] : 0);
-    test_fs(argc > 1 ? argv[1] : 0);
+    test_clock();
+    test_fs(argc > 1 ? argv[1] : 0, argc > 3 ? argv[3] : 0);
     printf("%d checks, %d failures\n", checks, fails);
     return fails ? 1 : 0;
 }

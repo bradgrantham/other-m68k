@@ -1,14 +1,81 @@
-# fw/ + sdk/ status (stage 2, spec revision 2)
+# fw/ + sdk/ status (stage 2, spec revision 9)
 
 **State: stage 2 implemented and verified in the DUART emulator with an SD image: SD card
-driver, FatFs R0.15 (8.3 names), file/directory system calls, ELF loader with argv,
-`sys_exec`, monitor `sd`/`dir`/`cat`/`run`. Not yet run on real hardware.**
-`make -C fw` builds a 131072-byte `rom.bin` with 35188 bytes of text + 18 data (about 35 KB
-of the 128 KB used; FatFs is ~12 KB of that) and no warnings; `make -C fw test` passes
-293 host checks (the FAT tests need `mkfs.vfat` and `mcopy`, present here); `make -C sdk`
-builds `libsys.a` and `hello/plasma/ls/cat/fstest.elf/.srec`. `.data+.bss` is 0x1584 bytes
-(ends at 0x1994), leaving ~9.8 KB of supervisor stack. See README.md for usage, the exact
-emulator commands and their output.
+driver, FatFs R0.15 on two drives (C: in the flash, D: the card; long names, directories),
+file/directory/clock system calls, ELF loader with argv, `sys_exec`, monitor file commands,
+scripts and search path. Not yet run on real hardware.**
+`make -C fw` builds a 262144-byte `rom.bin` with 59050 bytes of text + 918 data + 17388 bss
+(about 59 KB of the 256 KB used; FatFs with the LFN tables is ~16 KB of that) and no
+warnings; the top-level `make flash` adds `c.img`, `flash.img` and the chip images;
+`make -C fw test` passes 590 host checks (the FAT tests need `mkfs.vfat` and `mcopy`,
+present here); `make -C sdk` builds `libsys.a` and the examples' `.elf/.srec`. `.data+.bss`
+is 0x4780 bytes (ends at 0x4B80), leaving ~13 KB of supervisor stack below 0x8000. See
+README.md for usage, the exact emulator commands and their output.
+
+## Spec rev 9: drive C: in the flash, long names, directories, clock, scripts (2026-10-21)
+
+* Flash split: the ROM image is 256 KB (`ROM_IMAGE_SIZE` 0x40000; the POST checksum loop
+  counts `ROM_IMAGE_SIZE/2` words with a long counter); the other 768 KB of the window, from
+  `FLASH_VOL_OFFSET` 0x40000, are a FAT12 volume mounted as C:. `flash` rewrites only the
+  first 256 KB, so C: survives a BIOS update. `make -C fw` now makes only `rom.bin`; the
+  top-level `make flash` (in `make all`) makes `fw/build/c.img` (`tools/mkflashvol.sh`:
+  `flashfs/AUTOEXEC.CMD`, `flashfs/README.TXT` and the stripped SDK examples),
+  `fw/build/flash.img` (`mkrom.py --split`: rom.bin + c.img at 256 KB) and
+  `rom_even.bin`/`rom_odd.bin` (its byte lanes). `make run` boots `flash.img` with
+  `--rom-save` so C: persists across emulator runs.
+* RAM: SYSDATA grew from 15 KB to 31 KB (0x400-0x7FFF) for the 8 KB erase-sector cache, the
+  second FATFS object, the flash routine (now in `.data`, copied by crt0; nothing is copied
+  into user RAM any more) and the script stack. `USER_BASE` is 0x8000; the user region is
+  0x8000-0xDA7FF (842 KB), to 0xED3FF without framebuffer page 1; programs link at 0x8000.
+* `flashdisk.c` (FatFs drive 0): reads straight from the window, writes through one 8 KB
+  erase-sector cache (unchanged sectors do not dirty it; dirty reads come from it), flushed
+  when it must move, on `CTRL_SYNC`, before every monitor prompt and before a program
+  starts. A flush is `flash_write_sector` -> `flashram.S` op 2: erase + program + verify
+  with interrupts masked, ~100 ms; the routine counts and clears the VBLANK flags it sees
+  (`op->vblanks`) and `flash.c` adds them to `ticks` and the clock. Serial RX bytes beyond
+  the 3-byte FIFO are lost meanwhile; audio repeats its pattern. `flashdisk_programs` counts
+  cycles (`info`). Emulator: 200 KB copied from D: to a freshly formatted C: = 32 cycles,
+  format included; `copy D:*.ELF C:/` of five programs (310 KB) = 44.
+* FatFs: `FF_USE_LFN 1` (`ffunicode.c`, CP437), `FF_MAX_LFN 63`, `FF_FS_RPATH 2`,
+  `FF_VOLUMES 2` with `"C","D"` volume strings, `FF_USE_CHMOD 1` (`f_utime` keeps stamps on
+  copy), `FF_USE_MKFS 1` (`format C:`), `FF_FS_NORTC 0` (`get_fattime` from the clock),
+  still `FF_FS_TINY 1`. `fs.c`: both volumes registered in `fs_init` (lazy mount);
+  `fs_invalidate` drops only D:'s files/directories; new `fs_sync`, `fs_stat`, `fs_unlink`,
+  `fs_rename`, `fs_mkdir`, `fs_chdir`, `fs_getcwd`, `fs_copy` (keeps the stamp, deletes a
+  partial destination), `fs_mkfs` (C: only); `fs_close_all` also flushes the cache.
+  `struct dirent` gained `mtime`; `name[64]` holds the long name; `E_NAMETOOLONG` now means
+  over 63 characters or malformed. Syscalls 33-39: `unlink`, `rename`, `mkdir`, `chdir`,
+  `getcwd(len, buf)`, `time`, `set_time`; `exec` takes an explicit path (no search path).
+* `clock.c`: seconds since 1970 local time, advanced in the VBLANK ISR by the exact frame
+  length (200,168 / 239,616 clocks against 12,000,000), 0 until set; Hinnant's
+  days-from-civil, FAT stamps, parse/format; files written before the clock is set get
+  2026-01-01 00:00.
+* Monitor: prompt is the current directory (`C:/> `, `X:?> ` if unmounted); `C:`/`D:`,
+  `cd`, `dir [path|pattern]` (long names, sizes, stamps), `copy` (wildcards; dst file,
+  directory or drive), `del`/`rm`, `ren`/`mv`, `mkdir`, `rmdir`, `date`, `format C:`,
+  `echo`, `exit`; `info` shows cwd, clock and C: cycles. Unknown words go through the search
+  path (NAME, NAME.ELF, NAME.CMD in the current directory, then C:/, then D:/); `.CMD`
+  files are scripts (not echoed, `#`/`;`/`rem` comments, a program line resumes the script
+  after the program exits, 4 levels, ESC between lines aborts all); `C:/AUTOEXEC.CMD` runs
+  at the first prompt unless ESC is waiting in the keyboard queue. `cat`, `dir`, `copy`
+  stop on ESC only and keep other type-ahead (`input_has_esc` / `input_flush`).
+  `LINE_MAX` is 128.
+* Host tests (590): `test_fs.c` runs C: from `fw/build/test/c.img` (made by
+  `mkflashvol.sh`) in a RAM array with a simulated `flash_write_sector` (erase to 0xFF,
+  programming clears bits, cycles counted) and D: from the FAT32 image: long names,
+  directories, chdir/getcwd, rename/unlink, stamps from the clock, cache coalescing, filling
+  the volume, `fs_copy` both ways, invalidation. `test_clock` covers the calendar.
+  `TEST_SRCS` gained `clock.c`, `flashdisk.c`, `fatfs/ffunicode.c`.
+* SDK: shim `unlink`, `rename`, `mkdir`, `rmdir`, `chdir`, `getcwd`; `gettimeofday` returns
+  the BIOS clock once set (uptime before), `settimeofday` sets it; `environ` is newlib's.
+  `ls` lists the current directory with long names, sizes and stamps.
+* SD: no card-detect line, the card is fixed media (removal while powered unsupported);
+  `sd` still re-initialises.
+* Verified in the emulator: banner `ROM 256K ... C: 768K`, `dir` of C: (12 files, 475 KB),
+  `D:` + `dir` + `run hello.elf` (loads 008000-010c33), `date`, `info`, `copy D:*.ELF C:/`,
+  and `flash D:ROM.BIN` (32 dots, reboot, C: intact). A first rev 9 build had the `flash`
+  image update hang: op 2's code, inserted ahead of the image-update block in `flashram.S`,
+  captured the dispatch's local label `1f`; the branch targets are named labels now.
 
 ## Spec rev 7: native 4-bit SD bus (2026-10-21)
 
@@ -82,7 +149,8 @@ is addressed by bytes with CMD16.
   block is ~17 ms, so card init + mount + loading the 35 KB `hello.elf` is ~2.5 s. Byte-addressed
   SDSC (v1/v2) and block-addressed SDHC both handled (host-tested; the emulator is SDHC).
 * `fatfs/`: FatFs R0.15 from elm-chan (ff.c unmodified, `ffconf.h`: RW, LFN off, RPATH 0,
-  1 volume, TINY, CP437, NORTC fixed 2026-10-20, no mkfs). `diskio.c` on `sd.c`. Lazy mount
+  1 volume, TINY, CP437, NORTC fixed 2026-10-20, no mkfs; rev 9 changed all but RW, TINY and
+  CP437, see above). `diskio.c` on `sd.c`. Lazy mount
   on first use; `sd` command and disk errors drop the mount so the next call re-inits.
 * `fs.c/h`: 8 `FIL` + 4 `DIR` table (fd 3..10, dir handles 0..3), `O_*` -> FatFs modes
   (`O_TRUNC` without `O_CREAT` = `f_truncate`, `O_APPEND` = seek-to-end per write),
@@ -114,7 +182,8 @@ is addressed by bytes with CMD16.
   (`flashid`, `flash FILE`, `reboot`; `cpu_reboot` in crt0.S). The image is staged at
   `USER_BASE` (128 KB, inside the user region), size and word sum checked, chip IDs checked, then a
   position-independent routine copied to `USER_BASE + ROM_IMAGE_SIZE` erases/programs/verifies
-  the 16 sectors with interrupts masked and jumps through the new reset vectors. Nothing may run
+  the 16 sectors with interrupts masked and jumps through the new reset vectors. (Rev 9: a
+  256 KB image, 32 sectors, staged at 0x8000; the routine lives in `.data` in BIOS RAM.) Nothing may run
   from the flash after the first erase (first attempt printed progress from C and read garbled
   `.rodata` once the sector holding it had been rewritten: the emulator models this). The POST
   checksum and the banner use `ROM_IMAGE_SIZE`; `mkrom.py` pads the chip images to
@@ -137,16 +206,27 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 
 * 8.3 names only (`FF_USE_LFN 0`); long names show as `~1` aliases, lookups are
   case-insensitive, creating a non-8.3 name is `E_NAMETOOLONG`. No current directory (`cd`),
-  no unlink/mkdir/rename (no syscalls in the ABI).
+  no unlink/mkdir/rename (no syscalls in the ABI). (Resolved in spec rev 9: long names up to
+  63 characters, a current directory per drive and a current drive, `cd`, syscalls 33-37.)
+* A write to C: masks interrupts for ~100 ms per erase sector: serial RX beyond the
+  DUART's 3-byte FIFO is lost and audio holds its pattern meanwhile (VBLANK ticks and the
+  clock are corrected). There is no wear levelling: the first two erase sectors (boot
+  sector, FATs, root directory) take a cycle on nearly every file change; the cache keeps
+  the count down (`info` shows it).
+* The clock has no battery: 0 after every power-on until `date` (or `AUTOEXEC.CMD`) sets
+  it; no time zone.
+* The SD card is fixed media (no card-detect line); removing it while powered can lose
+  open files' data and leave the FAT inconsistent.
 * Write support: `sd_write_block`, `O_CREAT/O_TRUNC/O_APPEND`, `write`, `lseek` past EOF
   are implemented and tested on the host (fake card, FAT image) and in the emulator
   (`fstest.elf` creates/appends `TEST.TXT`). Not tested on a real card; data CRC16 is not
   checked and multi-block commands are not used (one CMD17/CMD24 per 512 bytes).
 * A program's files are closed at exit; the monitor's `cat`/`run` use the same table.
-  Descriptors do not survive `sd` (remount).
+  D: descriptors do not survive `sd` (remount); C: and `/dev/ttya` ones do (rev 9).
 * `sd rd` dumps all 64 lines; it is not key-abortable because the emulator (and a fast
   terminal) type ahead and the abort would eat the next command's first character (same
-  reason `md` is only abortable above 256 bytes; monitor `cat` is abortable after 1 KB).
+  reason `md` is only abortable above 256 bytes). Rev 9: `cat`, `dir` and `copy` stop on
+  ESC only, which they find in the keyboard queue without consuming other keys.
 * Argument string for `sys_exec` is limited to 255 bytes, 16 words; path 127 bytes.
 * `go` after `run` re-enters the image without reloading `.data`; a newlib program's stdio
   state is stale and nothing prints (seen in the emulator). Use `run` again.
@@ -196,11 +276,13 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `ps2.c` | set-2 decoder: F0/E0/E1, shift/ctrl/caps, arrows/Home/End/Ins/Del/PgUp/PgDn/F1-F12 escape sequences, raw events |
 | `irq.c` | ISRs (`interrupt_handler` attribute, verified `rte` in rom.lst), DUART RX FIFO drain, user hooks, INTEN shadow |
 | `exception.c` | names, register dump, `exception_entry` |
-| `syscall.c` | `syscall_dispatch` with the generated `.inc`, all 30 `bios_*` (fs/SD/exec real since stage 2), user pointer checks, `user_cleanup` |
-| `sd.c/h`, `sd4.S` (was `sdspi.S`), `diskio.c`, `fatfs/`, `fs.c/h`, `elf.c/h`, `exec.c/h` | stage 2 (see above; SD rewritten for spec rev 7) |
-| `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | monitor, S-record parser, dump line, kprintf/ksnprintf |
-| `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, FatFs/fd table |
-| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma,ls,cat,fstest}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
+| `syscall.c` | `syscall_dispatch` with the generated `.inc`, all 40 `bios_*` (0-39; fs/SD/exec real since stage 2, unlink..set_time since rev 9), user pointer checks, `user_cleanup` |
+| `sd.c/h`, `sd4.S` (was `sdspi.S`), `diskio.c`, `fatfs/`, `fs.c/h`, `elf.c/h`, `exec.c/h` | stage 2 (see above; SD rewritten for spec rev 7; two volumes, LFN and the new fs calls in rev 9) |
+| `flash.c/h`, `flash_layout.h`, `flashram.S`, `flashdisk.c/h`, `clock.c/h` | rev 3 ROM update; rev 9 C: block layer, sector write (op 2), wall clock |
+| `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | monitor (file commands, scripts, search path since rev 9), S-record parser, dump line, kprintf/ksnprintf |
+| `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, clock, FatFs/fd table on C: and D:, audio |
+| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
+| `../tools/mkflashvol.sh`, `../flashfs/` | C: volume image and its text files (rev 9) |
 
 ## Design as built (differences from the original plan)
 
@@ -263,12 +345,15 @@ Stage 2:
   the spec or note that `syscalls.h` and `<fcntl.h>` must not be included together.
 * `readdir`'s `struct dirent.name[64]` is far more than 8.3 needs (13); fine as is but
   only if LFN is ever enabled would it fill up; a `mtime` field could be added later.
+  (Resolved in spec rev 9: LFN is on, `name[64]` holds up to 63 characters, `mtime` added.)
 * The spec has no `unlink`/`mkdir`/`rename`/`stat` syscalls; FatFs provides them and the
   SDK's `stat()` is emulated with open+lseek. Suggest adding `stat(path, struct stat_info*)`
-  and `unlink` at least.
+  and `unlink` at least. (Rev 9 added `unlink`, `rename`, `mkdir`, `chdir`, `getcwd`; there
+  is still no `stat` syscall, so the shim's `stat()` still opens the file or directory.)
 * `exec`'s "does not return on success" should say it returns a negative error only before
   any user memory is overwritten (headers checked first), and that `sys_exit` of the new
-  program returns to the monitor, not to the caller.
+  program returns to the monitor, not to the caller. (Resolved: the spec's `exec` text says
+  so.)
 * A 32 MB FAT32 volume is below the FAT32 cluster minimum (65525 clusters at 512 B/cluster);
   `mkfs.fat -F 32` and FatFs both need >= ~33 MB with 512-byte clusters. Test images are 64 MB.
 

@@ -36,5 +36,12 @@ int bios_set_audio_cb(void * cb);
 uint8_t * bios_audio_start(unsigned bufsize);
 uint8_t * bios_audio_next(const uint8_t * filled, int block);
 int bios_audio_last(const uint8_t * filled, int block);
+int bios_unlink(const char * path);
+int bios_rename(const char * old, const char * new);
+int bios_mkdir(const char * path);
+int bios_chdir(const char * path);
+int bios_getcwd(unsigned len, char * buf);
+uint32_t bios_time(void);
+int bios_set_time(uint32_t secs);
 
 #endif

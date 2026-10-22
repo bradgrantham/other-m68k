@@ -9,6 +9,7 @@
 #include "sd.h"
 #include "fs.h"
 #include "exec.h"
+#include "clock.h"
 
 uint32_t video_standard = VIDEO_STD_NTSC;
 uint32_t video_page;
@@ -172,6 +173,39 @@ int bios_readdir(int handle, struct dirent *ent)
 }
 
 int bios_closedir(int handle) { return fs_closedir(handle); }
+
+int bios_unlink(const char *path)
+{
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_FAULT;
+    return fs_unlink(path);
+}
+
+int bios_rename(const char *oldp, const char *newp)
+{
+    if (!user_str_ok(oldp, FS_PATH_MAX) || !user_str_ok(newp, FS_PATH_MAX)) return E_FAULT;
+    return fs_rename(oldp, newp);
+}
+
+int bios_mkdir(const char *path)
+{
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_FAULT;
+    return fs_mkdir(path);
+}
+
+int bios_chdir(const char *path)
+{
+    if (!user_str_ok(path, FS_PATH_MAX)) return E_FAULT;
+    return fs_chdir(path);
+}
+
+int bios_getcwd(unsigned len, char *buf)
+{
+    if (!len || !user_range_ok(buf, len)) return E_FAULT;
+    return fs_getcwd(buf, len);
+}
+
+uint32_t bios_time(void) { return clock_get(); }
+int bios_set_time(uint32_t secs) { clock_set(secs); return 0; }
 
 static int sd_to_abi(int rc)
 {

@@ -42,7 +42,7 @@ counter), CPLD2 drives MA18..MA17. Both run from the same 24 MHz clock and load 
 edges: at E4 CPLD2 loads the CPU's A19..A18 while CPLD1 loads A17..A1; at E1 CPLD2 loads
 `FB_PAGE_HI` (the fixed address bits 19..18 of both framebuffer pages) while CPLD1 loads the
 17-bit video counter. The two framebuffer pages therefore sit in the same 256 KB quarter,
-the top one (0xDA800 and 0xED400), which leaves 0x004000-0xDA7FF (858 KB) contiguous for
+the top one (0xDA800 and 0xED400), which leaves 0x008000-0xDA7FF (842 KB) contiguous for
 user programs. Nothing in the timing analysis below changes: the extra bits have the same
 clock-to-output as CPLD1's and the SRAM sees one address change per edge.
 
@@ -182,9 +182,11 @@ glue adds nothing but the ROMWE strobe; the unlock sequence is the only write pr
 While a program or erase is in progress the chips return status instead of data, so the
 routine that issues the commands runs from RAM with interrupts masked (the vector table and
 the handlers live in ROM), and the NMI button must not be pressed meanwhile. The BIOS
-image occupies the first 128 KB of the window (`ROM_IMAGE_SIZE`); the TL866 programs blank
-chips with the even/odd images for the first boot, after that `flash` in the monitor
-rewrites them in place.
+image occupies the first 256 KB of the window (`ROM_IMAGE_SIZE`) and the remaining 768 KB
+hold the FAT12 volume the BIOS mounts as drive C: (written through the same command sequence,
+one 8 KB sector at a time from a RAM-resident routine, spec `flash.volume_desc`); the TL866
+programs blank chips with the even/odd images of the whole window for the first boot, after
+that `flash` in the monitor rewrites the BIOS image in place and leaves C: alone.
 
 ## 4. Video (CPLD1 counters, CPLD2 pixel path)
 

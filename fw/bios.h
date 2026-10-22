@@ -49,6 +49,7 @@ int queue_put(struct queue *q, uint8_t c);  /* 0 ok, -1 full */
 int queue_get(struct queue *q);             /* byte or -1 */
 int queue_empty(const struct queue *q);
 int queue_count(const struct queue *q);
+int queue_contains(const struct queue *q, uint8_t c);
 
 /* ---- srec.c: Motorola S-record line parser ---- */
 struct srec_state {
@@ -108,7 +109,9 @@ void delay_us(uint32_t us);
 
 /* ---- input.c ---- */
 void input_init(void);
-int input_pollchar(void);               /* keyboard; -1 if none (serial is not console input) */
+int input_pollchar(void);
+int input_has_esc(void);        /* an ESC is waiting in the keyboard queue (type-ahead kept) */
+void input_flush(void);         /* drop everything typed ahead */               /* keyboard; -1 if none (serial is not console input) */
 int input_getchar(void);                /* blocking */
 int input_key_event(void);              /* -1 if none */
 extern struct queue serial_rx_q;

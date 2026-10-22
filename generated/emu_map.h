@@ -86,6 +86,13 @@ static const char *const emu_syscall_names[] = {
     "audio_start",
     "audio_next",
     "audio_last",
+    "unlink",
+    "rename",
+    "mkdir",
+    "chdir",
+    "getcwd",
+    "time",
+    "set_time",
 };
 
 #endif

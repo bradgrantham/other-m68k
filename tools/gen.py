@@ -144,6 +144,8 @@ def flash_consts(d):
     base = n(rom["base"])
     return [("FLASH_CHIP_SIZE", "%sUL" % hx(f["chip_size"])),
             ("FLASH_SECTOR_BYTES", "%sUL /* CPU view: two chips x %s */" % (hx(2 * n(f["sector_size"])), hx(f["sector_size"]))),
+            ("FLASH_VOL_OFFSET", "%sUL /* FAT12 volume (drive C:) offset in the ROM window */" % hx(f["volume_offset"])),
+            ("FLASH_VOL_SIZE", "%sUL" % hx(f["volume_size"])),
             ("FLASH_CMD1", "%sUL" % hx(base + 2 * n(f["cmd_addr1"]))),
             ("FLASH_CMD2", "%sUL" % hx(base + 2 * n(f["cmd_addr2"]))),
             ("FLASH_MFR_ID", hx(f["mfr_id"], 2)), ("FLASH_DEV_ID", hx(f["dev_id"], 2)),
@@ -442,6 +444,7 @@ def gen_doc(d):
         A("## Flash ROM"); A("")
         A("%s. Chip %d KB, sectors %d bytes per chip (%d bytes in the CPU's word view)." % (f["device"], n(f["chip_size"]) // 1024, n(f["sector_size"]), 2 * n(f["sector_size"]))); A("")
         A(f["desc"]); A("")
+        A(f["volume_desc"]); A("")
         A("| Constant | Value |"); A("|---|---|")
         for k, v in flash_consts(d):
             A("| %s | %s |" % (k, v.split(" /*")[0]))
@@ -484,7 +487,7 @@ def gen_doc(d):
         if not isinstance(vv, list):
             return str(vv)
         return ", ".join("`%s` (%s)" % (x["path"], x["desc"]) if isinstance(x, dict) else str(x) for x in vv)
-    for k in ("serial", "ps2", "sd", "audio", "power", "reset"):
+    for k in ("serial", "ps2", "sd", "filesystem", "audio", "power", "reset"):
         A("**%s**: %s" % (k, "; ".join("%s: %s" % (kk, peripheral_value(vv)) for kk, vv in d[k].items()))); A("")
     A("## System calls"); A(""); A(d["syscall"]["desc"]); A("")
     A("| # | Name | Prototype | Description |"); A("|---|---|---|---|")

@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define BOARD_NAME "other-m68k"
-#define BOARD_REVISION 8
+#define BOARD_REVISION 9
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL
 #define SLOT_CPU_CLOCKS 4
@@ -16,7 +16,7 @@
 #define ROM_BASE 0xE00000UL
 #define ROM_SIZE 0x100000UL
 #define ROM_END  (ROM_BASE + ROM_SIZE)
-#define ROM_IMAGE_SIZE 0x020000UL /* bytes of the window the BIOS image occupies */
+#define ROM_IMAGE_SIZE 0x040000UL /* bytes of the window the BIOS image occupies */
 #define IO_BASE 0xF00000UL
 #define IO_SIZE 0x010000UL
 #define IO_END  (IO_BASE + IO_SIZE)
@@ -30,6 +30,8 @@
 /* ---- flash (see spec "flash"): word writes, chip byte address N = ROM_BASE + 2N ---- */
 #define FLASH_CHIP_SIZE 0x080000UL
 #define FLASH_SECTOR_BYTES 0x002000UL /* CPU view: two chips x 0x001000 */
+#define FLASH_VOL_OFFSET 0x040000UL /* FAT12 volume (drive C:) offset in the ROM window */
+#define FLASH_VOL_SIZE 0x0C0000UL
 #define FLASH_CMD1 0xE0AAAAUL
 #define FLASH_CMD2 0xE05554UL
 #define FLASH_MFR_ID 0xBF
@@ -43,10 +45,10 @@
 #define VECTORS_SIZE 0x000400UL
 #define VECTORS_END  (VECTORS_BASE + VECTORS_SIZE)
 #define SYSDATA_BASE 0x000400UL
-#define SYSDATA_SIZE 0x003C00UL
+#define SYSDATA_SIZE 0x007C00UL
 #define SYSDATA_END  (SYSDATA_BASE + SYSDATA_SIZE)
-#define USER_BASE 0x004000UL
-#define USER_SIZE 0x0D6800UL
+#define USER_BASE 0x008000UL
+#define USER_SIZE 0x0D2800UL
 #define USER_END  (USER_BASE + USER_SIZE)
 #define FB1_BASE 0x0DA800UL
 #define FB1_SIZE 0x012C00UL

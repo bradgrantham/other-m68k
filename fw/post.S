@@ -25,13 +25,14 @@ post_run:
 	lea	1f,%a4
 	jmp	post_puts
 1:
-/* ---- ROM checksum: 16-bit sum of the 65536 words of the BIOS image must be 0 (mkrom.py);
-   the rest of the 1 MB flash window is not part of the image ----------------------- */
+/* ---- ROM checksum: 16-bit sum of the ROM_IMAGE_SIZE/2 words of the BIOS image must be 0
+   (mkrom.py); the rest of the 1 MB flash window (the C: volume) is not part of the image -- */
 	lea	ROM_BASE,%a1
 	moveq	#0,%d6
-	move.w	#(ROM_IMAGE_SIZE / 2) - 1,%d1
+	move.l	#(ROM_IMAGE_SIZE / 2),%d1
 2:	add.w	(%a1)+,%d6
-	dbf	%d1,2b
+	subq.l	#1,%d1
+	bne	2b
 	lea	str_romsum,%a5
 	lea	3f,%a4
 	jmp	post_puts

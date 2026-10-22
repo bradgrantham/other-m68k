@@ -1,13 +1,15 @@
-/* File descriptor table and POSIX-ish semantics over FatFs R0.15 (8.3 names, one volume,
- * tiny mode: all partial-sector traffic goes through the FATFS window), plus the /dev/
- * devices, which share the descriptor slots. */
+/* File descriptor table and POSIX-ish semantics over FatFs R0.15 (two volumes, long file
+ * names up to 63 characters, relative paths, tiny mode: all partial-sector traffic goes
+ * through each volume's FATFS window), plus the /dev/ devices, which share the descriptor
+ * slots. */
 #include "bios.h"
 #include "fs.h"
 #include "sd.h"
+#include "clock.h"
+#include "flashdisk.h"
 #include "ff.h"
 
-static FATFS fatfs;
-static int fs_mounted;
+static FATFS fatfs[FF_VOLUMES];         /* [FS_PDRV_FLASH] = C:, [FS_PDRV_SD] = D: */
 
 enum { DEV_NONE = 0, DEV_TTYA };
 struct fs_file { FIL fil; uint8_t used; uint8_t append; uint8_t mode; uint8_t dev; };
@@ -22,20 +24,21 @@ static int fs_err(FRESULT r)
     switch (r) {
     case FR_OK: return 0;
     case FR_NO_FILE: case FR_NO_PATH: return E_NOENT;
-    case FR_INVALID_NAME: return E_NAMETOOLONG;   /* not an 8.3 name */
+    case FR_INVALID_NAME: return E_NAMETOOLONG;   /* malformed or longer than 63 characters */
     case FR_INVALID_DRIVE: case FR_INVALID_PARAMETER: return E_INVAL;
     case FR_EXIST: return E_EXIST;
-    case FR_DENIED: return E_NOSPC;         /* directory full / no free cluster (our own checks cover the rest) */
+    case FR_DENIED: return E_NOSPC;         /* directory full / no free cluster (callers map the other causes) */
     case FR_INVALID_OBJECT: return E_BADF;
     case FR_TOO_MANY_OPEN_FILES: return E_NFILE;
     case FR_NOT_ENOUGH_CORE: return E_NOMEM;
+    case FR_WRITE_PROTECTED: return E_ACCES;
     case FR_NOT_READY: case FR_NO_FILESYSTEM:
         fs_invalidate();                    /* no card / no FAT volume: retry from scratch next time */
         return E_NODEV;
     case FR_DISK_ERR:
         fs_invalidate();
         return E_IO;
-    default: return E_IO;                   /* INT_ERR, WRITE_PROTECTED, NOT_ENABLED, MKFS, TIMEOUT, LOCKED */
+    default: return E_IO;                   /* INT_ERR, NOT_ENABLED, MKFS, TIMEOUT, LOCKED */
     }
 }
 
@@ -45,40 +48,48 @@ const char *fs_strerror(int err)
     case 0: return "ok";
     case E_NOENT: return "not found";
     case E_IO: return "I/O error";
-    case E_NODEV: return "no card or no FAT volume";
-    case E_NAMETOOLONG: return "not an 8.3 name";
+    case E_NODEV: return "volume not mounted (no card, or not formatted)";
+    case E_NAMETOOLONG: return "bad name (max 63 chars)";
     case E_FAULT: return "bad address";
     case E_NOEXEC: return "not a runnable ELF";
     case E_BADF: return "bad descriptor";
     case E_NOMEM: return "does not fit in user RAM";
-    case E_EXIST: return "exists";
+    case E_EXIST: return "exists / not empty";
     case E_NOTDIR: return "not a directory";
     case E_ISDIR: return "is a directory";
     case E_INVAL: return "invalid argument";
     case E_NFILE: return "too many open files";
     case E_NOSPC: return "no space";
+    case E_ACCES: return "read-only";
     case E_NOSYS: return "not implemented";
     default: return "error";
     }
 }
 
-/* ---- mount ------------------------------------------------------------------------- */
+/* ---- volumes ------------------------------------------------------------------------- */
 
-int fs_mount(void)
+void fs_init(void)
 {
-    if (fs_mounted) return 0;
-    FRESULT r = f_mount(&fatfs, "", 1);
-    if (r != FR_OK) return fs_err(r);
-    fs_mounted = 1;
-    return 0;
+    f_mount(&fatfs[FS_PDRV_FLASH], "C:", 0);    /* deferred: mounted on first access */
+    f_mount(&fatfs[FS_PDRV_SD], "D:", 0);
 }
 
+/* The card is gone or answered wrongly: FatFs re-initialises the drive and re-reads the
+ * volume on the next access once disk_status reports STA_NOINIT (sd_card.ready = 0), and
+ * its mount id check makes every open object on D: fail with FR_INVALID_OBJECT; drop the
+ * slots that point there so the fds read as closed. C: and the devices are untouched. */
 void fs_invalidate(void)
 {
-    fs_mounted = 0;
     sd_card.ready = 0;
-    for (int i = 0; i < FS_NFILES; i++) if (!files[i].dev) files[i].used = 0;   /* devices survive card errors */
-    for (int i = 0; i < FS_NDIRS; i++) dirs[i].used = 0;
+    for (int i = 0; i < FS_NFILES; i++)
+        if (files[i].used && !files[i].dev && files[i].fil.obj.fs == &fatfs[FS_PDRV_SD]) files[i].used = 0;
+    for (int i = 0; i < FS_NDIRS; i++)
+        if (dirs[i].used && dirs[i].dir.obj.fs == &fatfs[FS_PDRV_SD]) dirs[i].used = 0;
+}
+
+int fs_sync(void)
+{
+    return flashdisk_flush() ? E_IO : 0;
 }
 
 /* ---- files --------------------------------------------------------------------------- */
@@ -129,20 +140,15 @@ int fs_open(int flags, const char *path)
     int dev = dev_lookup(path);
     if (dev < 0) return E_NOENT;
     int i;
+    for (i = 0; i < FS_NFILES && files[i].used; i++) ;
+    if (i == FS_NFILES) return E_NFILE;
     if (dev) {                              /* a device: no card needed, create/trunc/append ignored */
-        for (i = 0; i < FS_NFILES && files[i].used; i++) ;
-        if (i == FS_NFILES) return E_NFILE;
         files[i].used = 1;
         files[i].dev = (uint8_t)dev;
         files[i].append = 0;
         files[i].mode = (acc == O_WRONLY) ? FA_WRITE : (acc == O_RDWR) ? FA_READ | FA_WRITE : FA_READ;
         return FS_FD_BASE + i;
     }
-    int rc = fs_mount();
-    if (rc) return rc;
-    for (i = 0; i < FS_NFILES && files[i].used; i++) ;
-    if (i == FS_NFILES) return E_NFILE;
-
     BYTE mode = (acc == O_WRONLY) ? FA_WRITE : (acc == O_RDWR) ? FA_READ | FA_WRITE : FA_READ;
     if (flags & (O_CREAT | O_TRUNC | O_APPEND)) {
         if (acc == O_RDONLY) return E_INVAL;
@@ -232,10 +238,20 @@ int fs_size(int fd)
 
 /* ---- directories ------------------------------------------------------------------------ */
 
+static void fill_dirent(struct dirent *ent, const FILINFO *fno)
+{
+    memset(ent, 0, sizeof *ent);
+    strcpy(ent->name, fno->fname);          /* the long name, or the 8.3 name if there is none (<= 63 + NUL) */
+    ent->size = fno->fsize;
+    ent->attr = 0;
+    if (fno->fattrib & AM_DIR) ent->attr |= ATTR_DIR;
+    if (fno->fattrib & AM_RDO) ent->attr |= ATTR_READONLY;
+    if (fno->fattrib & AM_HID) ent->attr |= ATTR_HIDDEN;
+    ent->mtime = clock_from_fat(fno->fdate, fno->ftime);
+}
+
 int fs_opendir(const char *path)
 {
-    int rc = fs_mount();
-    if (rc) return rc;
     int i;
     for (i = 0; i < FS_NDIRS && dirs[i].used; i++) ;
     if (i == FS_NDIRS) return E_NFILE;
@@ -252,13 +268,7 @@ int fs_readdir(int handle, struct dirent *ent)
     FRESULT r = f_readdir(&dirs[handle].dir, &fno);
     if (r != FR_OK) return fs_err(r);
     if (fno.fname[0] == 0) return 0;
-    memset(ent, 0, sizeof *ent);
-    strcpy(ent->name, fno.fname);           /* 8.3: at most 12 chars + NUL */
-    ent->size = fno.fsize;
-    ent->attr = 0;
-    if (fno.fattrib & AM_DIR) ent->attr |= ATTR_DIR;
-    if (fno.fattrib & AM_RDO) ent->attr |= ATTR_READONLY;
-    if (fno.fattrib & AM_HID) ent->attr |= ATTR_HIDDEN;
+    fill_dirent(ent, &fno);
     return 1;
 }
 
@@ -270,10 +280,120 @@ int fs_closedir(int handle)
     return fs_err(r);
 }
 
+/* ---- names ------------------------------------------------------------------------------- */
+
+/* The root of a volume ("", "/", "C:", "C:/") is not a directory entry FatFs can stat; treat
+ * it as an existing directory. */
+static int is_root(const char *path)
+{
+    if (path[0] && path[1] == ':') path += 2;
+    return path[0] == 0 || ((path[0] == '/' || path[0] == '\\') && path[1] == 0);
+}
+
+int fs_stat(const char *path, struct dirent *ent)
+{
+    if (dev_lookup(path)) return E_NOENT;
+    if (is_root(path)) {
+        if (ent) { memset(ent, 0, sizeof *ent); ent->attr = ATTR_DIR; }
+        return 0;
+    }
+    FILINFO fno;
+    FRESULT r = f_stat(path, &fno);
+    if (r != FR_OK) return fs_err(r);
+    if (ent) fill_dirent(ent, &fno);
+    return 0;
+}
+
+int fs_unlink(const char *path)
+{
+    FRESULT r = f_unlink(path);
+    if (r == FR_DENIED) {                   /* read-only entry, or a directory that is not empty */
+        FILINFO fno;
+        if (f_stat(path, &fno) == FR_OK && (fno.fattrib & AM_RDO)) return E_ACCES;
+        return E_EXIST;
+    }
+    return fs_err(r);
+}
+
+int fs_rename(const char *oldp, const char *newp)
+{
+    return fs_err(f_rename(oldp, newp));
+}
+
+int fs_mkdir(const char *path)
+{
+    return fs_err(f_mkdir(path));
+}
+
+int fs_chdir(const char *path)
+{
+    if (path[0] && path[1] == ':' && path[2] == 0) return fs_err(f_chdrive(path));
+    return fs_err(f_chdir(path));
+}
+
+int fs_getcwd(char *buf, unsigned len)
+{
+    FRESULT r = f_getcwd(buf, len);
+    if (r == FR_NOT_ENOUGH_CORE) return E_INVAL;
+    if (r != FR_OK) return fs_err(r);
+    return (int)strlen(buf);
+}
+
+/* ---- copy -------------------------------------------------------------------------------- */
+
+int fs_copy(const char *src, const char *dst, uint8_t *buf, unsigned buflen)
+{
+    FIL in, out;
+    FILINFO fno;
+    FRESULT r = f_stat(src, &fno);
+    if (r != FR_OK) return fs_err(r);
+    if (fno.fattrib & AM_DIR) return E_ISDIR;
+    r = f_open(&in, src, FA_READ);
+    if (r != FR_OK) return fs_err(r);
+    r = f_open(&out, dst, FA_WRITE | FA_CREATE_ALWAYS);
+    if (r != FR_OK) { f_close(&in); return fs_err(r); }
+    uint32_t total = 0;
+    int rc = 0;
+    for (;;) {
+        UINT got = 0, put = 0;
+        r = f_read(&in, buf, buflen, &got);
+        if (r != FR_OK) { rc = fs_err(r); break; }
+        if (!got) break;
+        r = f_write(&out, buf, got, &put);
+        if (r != FR_OK) { rc = fs_err(r); break; }
+        if (put < got) { rc = E_NOSPC; break; }
+        total += got;
+    }
+    f_close(&in);
+    r = f_close(&out);
+    if (!rc && r != FR_OK) rc = fs_err(r);
+    if (rc) { f_unlink(dst); return rc; }   /* no partial files (a full volume is the usual cause) */
+    f_utime(dst, &fno);                     /* keep the source's stamp */
+    return (int)total;
+}
+
+/* ---- format ------------------------------------------------------------------------------ */
+
+int fs_mkfs(const char *drive, uint8_t *buf, unsigned buflen)
+{
+    if (!((drive[0] | 0x20) == 'c' && drive[1] == ':' && drive[2] == 0)) return E_INVAL;
+    if (buflen < FF_MAX_SS) return E_INVAL;
+    fs_close_all();
+    /* FAT12, no partition table, two FATs, 224 root entries, 4 KB clusters, data area
+     * aligned to the 8 KB erase sector (spec flash.volume_desc) */
+    MKFS_PARM p = { FM_FAT | FM_SFD, 2, FLASHDISK_BLOCK, 224, 4096 };
+    FRESULT r = f_mkfs("C:", &p, buf, buflen);
+    if (r == FR_MKFS_ABORTED) return E_INVAL;
+    if (r != FR_OK) return fs_err(r);
+    f_mount(&fatfs[FS_PDRV_FLASH], "C:", 0);       /* forget the old (unmountable) state */
+    return fs_sync();
+}
+
 void fs_close_all(void)
 {
     for (int i = 0; i < FS_NFILES; i++)
         if (files[i].used) { if (!files[i].dev) f_close(&files[i].fil); files[i].used = 0; }
     for (int i = 0; i < FS_NDIRS; i++)
         if (dirs[i].used) { f_closedir(&dirs[i].dir); dirs[i].used = 0; }
+    flashdisk_flush();
 }

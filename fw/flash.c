@@ -2,26 +2,28 @@
  * /CE tied low, /OE = ROMOE, /WE = ROMWE from CPLD1 on any write in the ROM region.
  * Addresses and chip facts come from generated/hw.h (spec "flash").
  *
- * The image is read from the SD card into user RAM (USER_BASE.., 128 KB, followed by the
- * RAM routine; all inside the user region, below both framebuffer pages), checked (size and
- * the mkrom.py word sum), then handed to the RAM-resident routine in flashram.S which,
- * with interrupts masked, erases/programs/verifies the flash one FLASH_SECTOR_BYTES
- * sector at a time and jumps through the new image's reset vectors.  Nothing may run
- * from the flash once the first sector is erased (this ROM is being replaced under its
- * own feet), hence no C code after the hand-over. */
+ * Image update: the image is read from a file into user RAM (USER_BASE.., ROM_IMAGE_SIZE
+ * bytes, below both framebuffer pages), checked (size and the mkrom.py word sum), then
+ * handed to flash_ram_op in flashram.S, which lives in .data (BIOS RAM) and, with
+ * interrupts masked, erases/programs/verifies the flash one FLASH_SECTOR_BYTES sector at
+ * a time and jumps through the new image's reset vectors.  Nothing may run from the
+ * flash once the first sector is erased (this ROM is being replaced under its own feet),
+ * hence no C code after the hand-over.
+ *
+ * Sector write (flash_write_sector): the same routine's op 2, for the C: volume; it
+ * returns, and reports how many VBLANKs passed while interrupts were off. */
 #include "bios.h"
 #include "fs.h"
 #include "flash.h"
+#include "clock.h"
 
-extern const uint8_t flash_ram_start[], flash_ram_end[];
+extern int flash_ram_op(struct flash_op *op);        /* flashram.S, in .data */
 
 #define IMAGE_BUF   ((uint8_t *)USER_BASE)
-#define RAM_CODE    ((uint8_t *)(USER_BASE + ROM_IMAGE_SIZE))
-#define RAM_CODE_MAX 1024
-typedef int (*flash_ram_fn)(struct flash_op *);
 
-_Static_assert(USER_BASE + ROM_IMAGE_SIZE + RAM_CODE_MAX <= USER_END, "image staging area leaves the user region (framebuffers)");
+_Static_assert(USER_BASE + ROM_IMAGE_SIZE <= USER_END, "image staging area leaves the user region (framebuffers)");
 _Static_assert(ROM_IMAGE_SIZE % FLASH_SECTOR_BYTES == 0, "image is not a whole number of sectors");
+_Static_assert(FLASH_VOL_OFFSET >= ROM_IMAGE_SIZE && FLASH_VOL_OFFSET % FLASH_SECTOR_BYTES == 0, "volume overlaps the image or a sector");
 _Static_assert(sizeof(struct flash_op) == FO_SIZE, "flash_op layout");
 
 /* Poll loop iterations: one iteration is ~40 clocks (3.3 us at 12 MHz); allow 30x the
@@ -29,18 +31,14 @@ _Static_assert(sizeof(struct flash_op) == FO_SIZE, "flash_op layout");
 #define ERASE_LOOPS ((uint32_t)FLASH_T_SECTOR_ERASE_MS * 10000UL)
 #define PROG_LOOPS  ((uint32_t)FLASH_T_BYTE_PROGRAM_US * 3UL + 32UL)
 
-static flash_ram_fn load_ram_code(void)
-{
-    size_t n = (size_t)(flash_ram_end - flash_ram_start);
-    if (n > RAM_CODE_MAX) return 0;
-    memcpy(RAM_CODE, flash_ram_start, n);
-    return (flash_ram_fn)(uintptr_t)RAM_CODE;
-}
-
-static int run_op(flash_ram_fn fn, struct flash_op *op)
+static int run_op(struct flash_op *op)
 {
     uint16_t sr = irq_disable();
-    int rc = fn(op);
+    int rc = flash_ram_op(op);
+    if (op->vblanks) {                      /* frames the masked VBLANK interrupt missed */
+        ticks += op->vblanks;
+        clock_add_frames(op->vblanks);
+    }
     irq_restore(sr);
     return rc;
 }
@@ -57,12 +55,10 @@ static void op_init(struct flash_op *op)
 int flash_read_id(uint16_t *mfr, uint16_t *dev)
 {
     struct flash_op op;
-    flash_ram_fn fn = load_ram_code();
-    if (!fn) return 0;
     op_init(&op);
     op.op = 0;
     op.dst = ROM_BASE;
-    run_op(fn, &op);
+    run_op(&op);
     *mfr = op.id_mfr;
     *dev = op.id_dev;
     uint16_t want_mfr = (uint16_t)((FLASH_MFR_ID << 8) | FLASH_MFR_ID);
@@ -103,15 +99,13 @@ static int read_image(const char *path)
 void flash_update(const char *path)
 {
     if (read_image(path) < 0) return;
-    flash_ram_fn fn = load_ram_code();
-    if (!fn) { kprintf("flash: RAM routine too large\n"); return; }
     uint16_t mfr, dev;
     if (!flash_read_id(&mfr, &dev)) {
         kprintf("flash: chip ID %04x/%04x, expected %02x%02x/%02x%02x: not SST39SF040s (EPROMs fitted?)\n",
                 mfr, dev, FLASH_MFR_ID, FLASH_MFR_ID, FLASH_DEV_ID, FLASH_DEV_ID);
         return;
     }
-    kprintf("Reprogram the ROM (%u sectors of %u bytes) from %s? Do not press NMI. (y/N) ",
+    kprintf("Reprogram the ROM (%u sectors of %u bytes) from %s? C: is not touched. Do not press NMI. (y/N) ",
             (unsigned)(ROM_IMAGE_SIZE / FLASH_SECTOR_BYTES), (unsigned)FLASH_SECTOR_BYTES, path);
     int c = input_getchar();
     kprintf("%c\n", (c >= ' ' && c < 127) ? c : ' ');
@@ -127,6 +121,18 @@ void flash_update(const char *path)
     op.nwords = ROM_IMAGE_SIZE / 2;
     op.sector_words = FLASH_SECTOR_BYTES / 2;
     irq_disable();
-    fn(&op);                            /* never returns: reboots or stops */
+    flash_ram_op(&op);                  /* never returns: reboots or stops */
     kprintf("flash: unexpected return from the RAM routine\n");
+}
+
+int flash_write_sector(void *dst, const uint16_t *src)
+{
+    struct flash_op op;
+    op_init(&op);
+    op.op = 2;
+    op.dst = (uint32_t)(uintptr_t)dst;
+    op.src = (uint32_t)(uintptr_t)src;
+    op.nwords = FLASH_SECTOR_BYTES / 2;
+    op.sector_words = FLASH_SECTOR_BYTES / 2;
+    return run_op(&op);
 }

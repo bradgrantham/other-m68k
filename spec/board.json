@@ -1,14 +1,14 @@
 {
   "board": {
     "name": "other-m68k",
-    "revision": 8,
+    "revision": 9,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,
     "cpu_clock_hz": 12000000,
     "cpu_clock_div": 2,
     "slot_fast_clocks": 8,
     "slot_cpu_clocks": 4,
-    "desc": "68000 SBC: 1 MB SRAM, 1 MB flash ROM window (128 KB BIOS image), memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 8-bit PDM audio (one byte per video line shifted out by CPLD2)."
+    "desc": "68000 SBC: 1 MB SRAM, 1 MB flash ROM window (256 KB BIOS image + 768 KB FAT12 volume), memory-mapped 320x240x8 composite colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, bit-banged SD, 68681 DUART serial, 8-bit PDM audio (one byte per video line shifted out by CPLD2)."
   },
   "memory_map": [
     {
@@ -25,8 +25,8 @@
       "size": "0x100000",
       "kind": "rom",
       "device": "2x SST39SF040-70 (512Kx8 NOR flash, 70 ns, 5 V), word wide, CE tied low",
-      "desc": "1 MB flash window; the BIOS image occupies the first 128 KB (ROM_IMAGE_SIZE, checksum in its last word), the rest is free (erased 0xFF). Reads: zero wait states, not subject to slot alignment. Writes get DTACK and reach the chips (ROMWE), so the firmware can reprogram itself in place with the JEDEC command sequence (see \"flash\"). Vectors at offset 0 (overlaid at 0x000000 at reset).",
-      "image_size": "0x020000"
+      "desc": "1 MB flash window. The BIOS image occupies the first 256 KB (ROM_IMAGE_SIZE, checksum in its last word); the remaining 768 KB (FLASH_VOL_OFFSET..) hold a FAT12 volume that the BIOS mounts as drive C: (see \"flash\" volume_desc). Reads: zero wait states, not subject to slot alignment. Writes get DTACK and reach the chips (ROMWE), so the firmware can reprogram itself in place and write the volume with the JEDEC command sequence (see \"flash\"). Vectors at offset 0 (overlaid at 0x000000 at reset).",
+      "image_size": "0x040000"
     },
     {
       "name": "IO",
@@ -59,6 +59,8 @@
     "device": "SST39SF040-70-4C-PHE, one per byte lane (U4 = D15..D8 even bytes, U5 = D7..D0 odd bytes)",
     "chip_size": "0x080000",
     "sector_size": "0x001000",
+    "volume_offset": "0x040000",
+    "volume_size": "0x0C0000",
     "cmd_addr1": "0x5555",
     "cmd_addr2": "0x2AAA",
     "mfr_id": "0xBF",
@@ -66,7 +68,8 @@
     "t_byte_program_us": 20,
     "t_sector_erase_ms": 25,
     "t_chip_erase_ms": 100,
-    "desc": "Both chips see the same command sequence because every command is issued as a WORD write with the byte repeated in both halves: chip byte address N is CPU address ROM_BASE + 2N, so the JEDEC unlock addresses 0x5555/0x2AAA become FLASH_CMD1 = ROM_BASE + 0xAAAA and FLASH_CMD2 = ROM_BASE + 0x5554. Program a word: 0xAAAA->CMD1, 0x5555->CMD2, 0xA0A0->CMD1, data->address, then poll until a read returns the data (each byte shows toggling DQ6 / inverted DQ7 while busy; at most 20 us). Erase the 8 KB (CPU view) sector holding address X: 0xAAAA->CMD1, 0x5555->CMD2, 0x8080->CMD1, 0xAAAA->CMD1, 0x5555->CMD2, 0x3030->X, poll until 0xFFFF (at most 25 ms). ID: 0xAAAA->CMD1, 0x5555->CMD2, 0x9090->CMD1; read ROM_BASE -> 0xBFBF, ROM_BASE+2 -> 0xB7B7; 0xF0F0 anywhere exits. Programming only clears bits: erase first. The chips cannot be read (code cannot run from them) while an operation is in progress, so the routine that issues commands runs from RAM with interrupts masked; the NMI button must not be pressed meanwhile. Only word writes are used; a byte write would present the same byte to both chips (the 68000 duplicates write data on both bus halves) and is not part of the protocol."
+    "desc": "Both chips see the same command sequence because every command is issued as a WORD write with the byte repeated in both halves: chip byte address N is CPU address ROM_BASE + 2N, so the JEDEC unlock addresses 0x5555/0x2AAA become FLASH_CMD1 = ROM_BASE + 0xAAAA and FLASH_CMD2 = ROM_BASE + 0x5554. Program a word: 0xAAAA->CMD1, 0x5555->CMD2, 0xA0A0->CMD1, data->address, then poll until a read returns the data (each byte shows toggling DQ6 / inverted DQ7 while busy; at most 20 us). Erase the 8 KB (CPU view) sector holding address X: 0xAAAA->CMD1, 0x5555->CMD2, 0x8080->CMD1, 0xAAAA->CMD1, 0x5555->CMD2, 0x3030->X, poll until 0xFFFF (at most 25 ms). ID: 0xAAAA->CMD1, 0x5555->CMD2, 0x9090->CMD1; read ROM_BASE -> 0xBFBF, ROM_BASE+2 -> 0xB7B7; 0xF0F0 anywhere exits. Programming only clears bits: erase first. The chips cannot be read (code cannot run from them) while an operation is in progress, so the routine that issues commands runs from RAM with interrupts masked; the NMI button must not be pressed meanwhile. Only word writes are used; a byte write would present the same byte to both chips (the 68000 duplicates write data on both bus halves) and is not part of the protocol.",
+    "volume_desc": "Drive C: is a FAT12 volume (512-byte sectors, 1536 of them, 4 KB clusters, two FATs, 224 root entries, data aligned to the 8 KB erase sector) in the window at ROM_BASE + FLASH_VOL_OFFSET. The BIOS reads it directly from the flash and writes it through an 8 KB erase-sector cache: a sector write loads the enclosing erase sector into RAM, patches it and, when the cache must move or the file is synced/closed, erases and reprograms the whole 8 KB from a RAM-resident routine with interrupts masked (about 100 ms: erase up to 25 ms plus 4096 word programs; the routine counts the VBLANK flags it sees meanwhile so the tick counter and the clock stay right, but serial receive bytes beyond the DUART's 3-byte FIFO are lost and audio repeats its last pattern). The volume lives in its own erase sectors, so the monitor's `flash` command, which rewrites only the first ROM_IMAGE_SIZE bytes, leaves it intact, and programming the chips in the TL866 from rom_even.bin/rom_odd.bin (built from fw/build/flash.img = BIOS image + volume image) installs both. The emulator's --rom-save keeps writes across runs. The monitor's `format C:` recreates an empty volume."
   },
   "ram_layout": [
     {
@@ -78,14 +81,14 @@
     {
       "name": "SYSDATA",
       "base": "0x000400",
-      "size": "0x003C00",
-      "desc": "BIOS .data/.bss; supervisor stack grows down from the top (0x004000)."
+      "size": "0x007C00",
+      "desc": "BIOS .data/.bss (31 KB: file tables for two volumes, the 8 KB flash erase-sector cache, the flash RAM routine, the script stack); supervisor stack grows down from the top (0x008000)."
     },
     {
       "name": "USER",
-      "base": "0x004000",
-      "size": "0x0D6800",
-      "desc": "User program load region (ELF link address 0x004000). User stack grows down from the top (0x0DA800). Extends to 0x0ED400 if page 1 of the framebuffer is not used."
+      "base": "0x008000",
+      "size": "0x0D2800",
+      "desc": "User program load region (ELF link address 0x008000). User stack grows down from the top (0x0DA800). Extends to 0x0ED400 if page 1 of the framebuffer is not used."
     },
     {
       "name": "FB1",
@@ -810,7 +813,15 @@
     "mode": "Native SD bus (not SPI), 4-bit data, bit-banged through SDIO. All six lines (CLK, CMD, DAT0..3) are open-drain from the 5 V CPLD2 with 10 k pull-ups to 3.3 V; the CPU drives a line low or releases it and reads every line back from SDIO. Commands carry CRC7 (48-bit frames on CMD, responses R1/R2/R3/R6/R7 read back on CMD). Data blocks are 512 bytes sent as 1024 nibbles on DAT3..0 (MSB nibble first), start bit (all four lines low), then 16 CRC16-CCITT bits per line, end bit; the BIOS ignores the CRC on reads and computes the four CRC16s on writes. Initialisation: 74+ clocks, CMD0, CMD8 (SDHC), ACMD41 until ready (HCS set), CMD2 (CID), CMD3 (RCA), CMD7 (select), ACMD6 (4-bit bus), CMD16 512 (SDSC); block I/O with CMD17 / CMD24 (single block), busy on DAT0 after a write. Speed: two clock pulses per byte of data (a nibble per pulse) instead of eight in SPI mode.",
     "connector": "microSD push-push socket",
     "power": "3.3V LDO; CLK, CMD, DAT0..3 open-drain from CPLD2 (drive low / release) with 10 k pull-ups to 3.3 V; no level dividers.",
-    "filesystem": "FAT12/16/32 via FatFs (LFN off). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine)."
+    "filesystem": "Drive D:. FAT12/16/32 via FatFs (long file names on, see \"filesystem\"). A FAT32 volume needs >= 65525 clusters: use cards/images of 64 MB or more for FAT32 (smaller ones are FAT16, also fine). The socket has no card-detect line: the card is treated as fixed media; removing it while powered is unsupported (an open file loses its data and the FAT may be left inconsistent)."
+  },
+  "filesystem": {
+    "drives": "Two FatFs volumes with DOS-style letters: C: is the 768 KB FAT12 volume in the flash (always present, see flash.volume_desc), D: is the SD card. Each has its own current directory and there is a current drive, C: after reset. Both are mounted lazily on first use; a card error drops D: and the next access re-initialises it.",
+    "paths": "A path is [X:][/]dir/.../name. Without a drive letter it refers to the current drive; without a leading slash it is relative to that drive's current directory. \"X:\" alone names that drive's current directory. Names are VFAT long file names of up to 63 characters (ASCII; case preserved, matched case-insensitively), 8.3 aliases included; a longer or malformed name is E_NAMETOOLONG. Subdirectories, rename, delete and mkdir work on both volumes. Paths that start with /dev/ are devices (serial.devices), not files.",
+    "timestamps": "Files carry FAT modification dates from the BIOS clock (see \"clock\"); readdir reports them as dirent.mtime, seconds since 1970-01-01 00:00 local time, 0 when the volume stored none.",
+    "search_path": "A monitor command word that is not built in is looked up as NAME, NAME.ELF, then NAME.CMD, in the current directory, then C:/, then D:/ (DOS: current directory first, then the path). A word with a drive or directory in it is tried as given, plus .ELF and .CMD. So `D:` then `bmpview foo.bmp` runs C:/BMPVIEW.ELF on D:'s FOO.BMP.",
+    "scripts": "A .CMD file is a script: its lines are executed as if typed (comments start with # or ;, `echo` prints). A line that runs a program resumes the script when the program exits, so scripts chain programs. ESC aborts a script between lines. C:/AUTOEXEC.CMD runs at boot unless ESC is pressed during the POST.",
+    "clock": "The BIOS keeps a wall clock as seconds since 1970-01-01 00:00 (local time, no zone) advanced from the VBLANK interrupt using the exact frame length (200,168 or 239,616 CPU clocks). There is no battery: it reads 0 until set with the monitor's `date` command (or sys_set_time), typically from AUTOEXEC.CMD; files written before that get the fixed date 2026-01-01 00:00."
   },
   "audio": {
     "enabled": true,
@@ -961,7 +972,7 @@
           "path"
         ]
       ],
-      "desc": "Open a file on the SD card (8.3 names, O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. Paths starting with /dev/ open a device instead (serial.devices); /dev/ttya needs no card."
+      "desc": "Open a file (path syntax and names: \"filesystem\"; O_* flags from the ABI; O_CREAT/O_TRUNC/O_APPEND values differ from newlib's, the SDK shim translates). Returns fd >= 3 or a negative error; fds 0..2 are the console. Paths starting with /dev/ open a device instead (serial.devices); /dev/ttya needs no card."
     },
     {
       "num": 12,
@@ -1045,7 +1056,7 @@
           "path"
         ]
       ],
-      "desc": "Open a directory; returns handle or negative error."
+      "desc": "Open a directory (\"\" or \".\" is the current directory); returns handle or negative error."
     },
     {
       "num": 17,
@@ -1061,7 +1072,7 @@
           "ent"
         ]
       ],
-      "desc": "Next entry; 1 if filled, 0 at end, negative error."
+      "desc": "Next entry; 1 if filled, 0 at end, negative error. dirent.name is the long name (the 8.3 name if there is no long one), mtime the modification time (seconds since 1970, 0 if none)."
     },
     {
       "num": 18,
@@ -1184,7 +1195,7 @@
           "args"
         ]
       ],
-      "desc": "Load and run another ELF executable from the SD card with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor."
+      "desc": "Load and run another ELF executable (path syntax as for open; no search path) with argument string `args`. Returns a negative error only if the file cannot be opened or does not fit user RAM, before any user memory is overwritten; otherwise the new program replaces the caller and its exit returns to the monitor."
     },
     {
       "num": 27,
@@ -1260,6 +1271,93 @@
         ]
       ],
       "desc": "Hand in the final buffer (filled may be NULL for none) and end the stream. block != 0 waits until everything queued has played; block == 0 returns at once and the queued buffers finish playing on their own. When the last byte has played the handler writes the idle pattern 0xAA and disables the HSYNC interrupt, so idle audio costs no CPU. Returns 0, or E_INVAL if the stream was not started. Exiting the program stops the stream at once instead: queued buffers are dropped, the idle pattern is written and the interrupt is disabled."
+    },
+    {
+      "num": 33,
+      "name": "unlink",
+      "ret": "int",
+      "args": [
+        [
+          "const char *",
+          "path"
+        ]
+      ],
+      "desc": "Delete a file or an empty directory. E_NOENT if missing, E_EXIST if the directory is not empty, E_ACCES if the entry is read-only."
+    },
+    {
+      "num": 34,
+      "name": "rename",
+      "ret": "int",
+      "args": [
+        [
+          "const char *",
+          "old"
+        ],
+        [
+          "const char *",
+          "new"
+        ]
+      ],
+      "desc": "Rename or move a file or directory within one volume (`new` may be a different directory; a bare name keeps the directory). E_EXIST if `new` exists."
+    },
+    {
+      "num": 35,
+      "name": "mkdir",
+      "ret": "int",
+      "args": [
+        [
+          "const char *",
+          "path"
+        ]
+      ],
+      "desc": "Create a directory. E_EXIST if the name is taken."
+    },
+    {
+      "num": 36,
+      "name": "chdir",
+      "ret": "int",
+      "args": [
+        [
+          "const char *",
+          "path"
+        ]
+      ],
+      "desc": "Change the current directory of a volume, or with a bare \"X:\" the current drive (DOS semantics: `chdir(\"D:/GAMES\")` sets D:'s directory without switching to it). The setting is global and survives program exit."
+    },
+    {
+      "num": 37,
+      "name": "getcwd",
+      "ret": "int",
+      "args": [
+        [
+          "unsigned",
+          "len"
+        ],
+        [
+          "char *",
+          "buf"
+        ]
+      ],
+      "desc": "Current drive and directory as \"X:/dir/sub\" into buf (len bytes, NUL included). Returns the length or E_INVAL if it does not fit, E_NODEV if the current volume is not mounted."
+    },
+    {
+      "num": 38,
+      "name": "time",
+      "ret": "uint32_t",
+      "args": [],
+      "desc": "BIOS clock: seconds since 1970-01-01 00:00 local time; 0 if it has not been set since power-on (\"filesystem\" clock)."
+    },
+    {
+      "num": 39,
+      "name": "set_time",
+      "ret": "int",
+      "args": [
+        [
+          "uint32_t",
+          "secs"
+        ]
+      ],
+      "desc": "Set the BIOS clock (seconds since 1970-01-01 00:00 local time). Used by the monitor's `date` command; a program may set it too."
     }
   ],
   "abi": {
@@ -1338,6 +1436,10 @@
         [
           "uint32_t",
           "attr"
+        ],
+        [
+          "uint32_t",
+          "mtime"
         ]
       ]
     },
@@ -1378,7 +1480,7 @@
       "AUDIO_BUF_MAX": 512,
       "AUDIO_NBUF": 3
     },
-    "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host. User program entry: USP points at {return address (exit stub), argc, argv} as for a C `_start(argc, argv)`; argv[0] is the path as given to `run`/`exec`, further words split on blanks (at most 16 words, 255 bytes). The monitor's `go` enters with argc 0 and argv[0] NULL. Filenames are 8.3 (FatFs with LFN off), case-insensitive; E_NAMETOOLONG for anything else. Pointers passed to syscalls must lie in user RAM (USER_BASE..RAM_END, framebuffers included) or the call fails with E_FAULT."
+    "desc": "Structures and constants shared by BIOS, SDK and emulator. Struct fields are 32-bit (or char arrays) so layout is identical for the m68k and the host. User program entry: USP points at {return address (exit stub), argc, argv} as for a C `_start(argc, argv)`; argv[0] is the path as given to `run`/`exec`, further words split on blanks (at most 16 words, 255 bytes). The monitor's `go` enters with argc 0 and argv[0] NULL. File names are VFAT long names of up to 63 characters, case-insensitive (see \"filesystem\"); E_NAMETOOLONG for anything longer or malformed. Pointers passed to syscalls must lie in user RAM (USER_BASE..RAM_END, framebuffers included) or the call fails with E_FAULT."
   },
   "glue": {
     "cpld1": {

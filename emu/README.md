@@ -19,10 +19,10 @@ make emu / make run    # from the top level
 ```
 
 ```
-m68k-emu --rom fw/build/rom.bin [options]
+m68k-emu --rom fw/build/flash.img [options]      # or --rom fw/build/rom.bin: BIOS only, C: unformatted
 
-  --rom FILE          ROM image (<= 1 MB, padded with 0xFF)          --sd FILE        SD card image, any multiple of 512 bytes (read/write)
-  --rom-save FILE     write the flash contents to FILE at exit if a program/erase changed them
+  --rom FILE          ROM window image (<= 1 MB, padded with 0xFF): flash.img = BIOS + C: volume    --sd FILE        SD card image, any multiple of 512 bytes (read/write)
+  --rom-save FILE     write the flash contents to FILE at exit if a program/erase changed them (`make run` passes flash.img itself, so C: persists)
   --scale N           window scale (default 3, nearest-neighbour)    --pal            fit the PAL jumper (INTSTAT.PALJMP = 1)
   --fast              no real-time pacing (audio off)                --headless       no window, no audio (works without a display)
   --frames N          exit after N frames                            --trace          disassemble each instruction to stderr

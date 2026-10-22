@@ -283,3 +283,60 @@ sys_audio_last:
 	moveq #32,%d0
 	trap #15
 	rts
+
+	.globl sys_unlink
+	.type sys_unlink, @function
+sys_unlink:
+	move.l 4(%sp),%a0
+	moveq #33,%d0
+	trap #15
+	rts
+
+	.globl sys_rename
+	.type sys_rename, @function
+sys_rename:
+	move.l 4(%sp),%a0
+	move.l 8(%sp),%a1
+	moveq #34,%d0
+	trap #15
+	rts
+
+	.globl sys_mkdir
+	.type sys_mkdir, @function
+sys_mkdir:
+	move.l 4(%sp),%a0
+	moveq #35,%d0
+	trap #15
+	rts
+
+	.globl sys_chdir
+	.type sys_chdir, @function
+sys_chdir:
+	move.l 4(%sp),%a0
+	moveq #36,%d0
+	trap #15
+	rts
+
+	.globl sys_getcwd
+	.type sys_getcwd, @function
+sys_getcwd:
+	move.l 4(%sp),%d1
+	move.l 8(%sp),%a0
+	moveq #37,%d0
+	trap #15
+	rts
+
+	.globl sys_time
+	.type sys_time, @function
+sys_time:
+	moveq #38,%d0
+	trap #15
+	rts
+
+	.globl sys_set_time
+	.type sys_set_time, @function
+sys_set_time:
+	move.l 4(%sp),%d1
+	moveq #39,%d0
+	trap #15
+	rts

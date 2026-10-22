@@ -1,6 +1,7 @@
 /* Interrupt service routines (autovectors 25..27; 28 = HSYNC is in irq_hsync.S) and user hook management.
  * NMI (vector 31) goes through the exception path and lands in the monitor. */
 #include "bios.h"
+#include "clock.h"
 
 volatile uint32_t ticks;
 volatile uint32_t ticks_per_sec = 60;
@@ -42,6 +43,7 @@ __attribute__((interrupt_handler)) void irq_vblank(void)
 {
     IO_INTSTAT = INTSTAT_VBLANK;
     ticks++;
+    clock_tick();
     if (irq_user_hook[IRQ_VBLANK_LEVEL]) irq_user_hook[IRQ_VBLANK_LEVEL]();
 }
 

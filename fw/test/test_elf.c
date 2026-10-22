@@ -28,12 +28,12 @@ void test_elf(const char *hello_elf)
     struct elf_phdr ph;
 
     make_elf(img, 0x4000, 2);
-    make_phdr(img + ELF_HDR_SIZE, ELF_PT_LOAD, 0x1000, 0x4000, 0x800, 0xA00);
+    make_phdr(img + ELF_HDR_SIZE, ELF_PT_LOAD, 0x1000, USER_BASE, 0x800, 0xA00);
     make_phdr(img + ELF_HDR_SIZE + ELF_PHDR_SIZE, 4 /* PT_NOTE */, 0, 0, 0x10, 0x10);
     CHECK_EQ(elf_parse_header(img, sizeof img, &hi), 0);
     CHECK_EQ(hi.entry, 0x4000); CHECK_EQ(hi.phnum, 2); CHECK_EQ(hi.phoff, ELF_HDR_SIZE); CHECK_EQ(hi.phentsize, 32);
     elf_parse_phdr(img + hi.phoff, &ph);
-    CHECK_EQ(ph.type, ELF_PT_LOAD); CHECK_EQ(ph.offset, 0x1000); CHECK_EQ(ph.vaddr, 0x4000);
+    CHECK_EQ(ph.type, ELF_PT_LOAD); CHECK_EQ(ph.offset, 0x1000); CHECK_EQ(ph.vaddr, USER_BASE);
     CHECK_EQ(ph.filesz, 0x800); CHECK_EQ(ph.memsz, 0xA00);
     CHECK(elf_segment_fits(&ph));
     elf_parse_phdr(img + hi.phoff + ELF_PHDR_SIZE, &ph);

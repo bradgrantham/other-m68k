@@ -36,5 +36,12 @@ case SYS_set_audio_cb: ret = (uint32_t)bios_set_audio_cb((void *)f->a0); break;
 case SYS_audio_start: ret = (uint32_t)bios_audio_start((unsigned)f->d1); break;
 case SYS_audio_next: ret = (uint32_t)bios_audio_next((const uint8_t *)f->a0, (int)f->d1); break;
 case SYS_audio_last: ret = (uint32_t)bios_audio_last((const uint8_t *)f->a0, (int)f->d1); break;
+case SYS_unlink: ret = (uint32_t)bios_unlink((const char *)f->a0); break;
+case SYS_rename: ret = (uint32_t)bios_rename((const char *)f->a0, (const char *)f->a1); break;
+case SYS_mkdir: ret = (uint32_t)bios_mkdir((const char *)f->a0); break;
+case SYS_chdir: ret = (uint32_t)bios_chdir((const char *)f->a0); break;
+case SYS_getcwd: ret = (uint32_t)bios_getcwd((unsigned)f->d1, (char *)f->a0); break;
+case SYS_time: ret = (uint32_t)bios_time(); break;
+case SYS_set_time: ret = (uint32_t)bios_set_time((uint32_t)f->d1); break;
 default: ret = (uint32_t)E_NOSYS; break;
 }

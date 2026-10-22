@@ -34,13 +34,16 @@ assumes the previous ones pass.
 * Type in the monitor; `dir` on a FAT32 card; `beep`.
 
 ## 6. Run a program
-* `run hello.elf` from the SD card, or type `srec`, send an S-record over serial and `go`.
+* `hello` (the monitor finds HELLO.ELF on C: or the card), `dir C:`, `copy D:X.ELF C:`, or type
+  `srec`, send an S-record over serial and `go`.
 
 ## Programming
 * ROM: the two SST39SF040 flash chips are programmed once in the TL866 (minipro device
-  `SST39SF040`): `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0).
-  Every later update is done in system: `rom.bin` on the SD card, `flashid`, `flash ROM.BIN`,
-  answer `y`, watch the 16 dots on the serial port (the flash routine runs from RAM while the ROM with the console code is rewritten) and the new banner (see `fw/README.md`).
+  `SST39SF040`): `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0),
+  built by the top-level `make flash` from `flash.img` = the 256 KB BIOS image plus the C: volume
+  (AUTOEXEC.CMD and the example programs), so the first boot already has a populated C:.
+  Every later update is done in system: `rom.bin` on the SD card, `flashid`, `flash D:ROM.BIN`,
+  answer `y`, watch the 32 dots on the serial port (the flash routine runs from RAM while the ROM with the console code is rewritten) and the new banner (see `fw/README.md`).
   Do not press NMI or reset while it runs; a failed update is recovered with the TL866.
 * CPLDs: FT232H as JTAG adapter; `openocd -f interface/ftdi/um232h.cfg` with the SVF produced
   from the JED.

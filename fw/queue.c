@@ -37,3 +37,14 @@ int queue_count(const struct queue *q)
 {
     return (q->head - q->tail) & (q->size - 1);
 }
+
+/* Consumer side: is byte c anywhere in the queue? (A scan for ESC that keeps type-ahead.) */
+int queue_contains(const struct queue *q, uint8_t c)
+{
+    uint16_t t = q->tail, h = q->head;
+    while (t != h) {
+        if (q->buf[t] == c) return 1;
+        t = (uint16_t)((t + 1) & (q->size - 1));
+    }
+    return 0;
+}

@@ -7,7 +7,7 @@
 	.equ ROM_BASE, 0xE00000
 	.equ ROM_SIZE, 0x100000
 	.equ ROM_END, 0xF00000
-	.equ ROM_IMAGE_SIZE, 0x020000
+	.equ ROM_IMAGE_SIZE, 0x040000
 	.equ IO_BASE, 0xF00000
 	.equ IO_SIZE, 0x010000
 	.equ IO_END, 0xF10000
@@ -21,10 +21,10 @@
 	.equ VECTORS_SIZE, 0x000400
 	.equ VECTORS_END, 0x000400
 	.equ SYSDATA_BASE, 0x000400
-	.equ SYSDATA_SIZE, 0x003C00
-	.equ SYSDATA_END, 0x004000
-	.equ USER_BASE, 0x004000
-	.equ USER_SIZE, 0x0D6800
+	.equ SYSDATA_SIZE, 0x007C00
+	.equ SYSDATA_END, 0x008000
+	.equ USER_BASE, 0x008000
+	.equ USER_SIZE, 0x0D2800
 	.equ USER_END, 0x0DA800
 	.equ FB1_BASE, 0x0DA800
 	.equ FB1_SIZE, 0x012C00
@@ -34,6 +34,8 @@
 	.equ FB0_END, 0x100000
 	.equ FLASH_CHIP_SIZE, 0x080000
 	.equ FLASH_SECTOR_BYTES, 0x002000
+	.equ FLASH_VOL_OFFSET, 0x040000
+	.equ FLASH_VOL_SIZE, 0x0C0000
 	.equ FLASH_CMD1, 0xE0AAAA
 	.equ FLASH_CMD2, 0xE05554
 	.equ FLASH_MFR_ID, 0xBF
@@ -41,7 +43,7 @@
 	.equ FLASH_T_BYTE_PROGRAM_US, 20
 	.equ FLASH_T_SECTOR_ERASE_MS, 25
 	.equ FLASH_T_CHIP_ERASE_MS, 100
-	.equ SYS_STACK_TOP, 0x004000
+	.equ SYS_STACK_TOP, 0x008000
 	.equ VIDEO_WIDTH, 320
 	.equ VIDEO_HEIGHT, 240
 	.equ VIDEO_BPP, 8
@@ -334,3 +336,10 @@
 	.equ SYS_audio_start, 30
 	.equ SYS_audio_next, 31
 	.equ SYS_audio_last, 32
+	.equ SYS_unlink, 33
+	.equ SYS_rename, 34
+	.equ SYS_mkdir, 35
+	.equ SYS_chdir, 36
+	.equ SYS_getcwd, 37
+	.equ SYS_time, 38
+	.equ SYS_set_time, 39
