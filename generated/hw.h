@@ -40,6 +40,10 @@
 #define FLASH_T_SECTOR_ERASE_MS 25
 #define FLASH_T_CHIP_ERASE_MS 100
 
+/* ---- audio output filter (spec "audio"): first-order RC after the PDM pin ---- */
+#define AUDIO_LP_R_OHM 1000
+#define AUDIO_LP_C_NF 33
+
 /* ---- RAM layout ---- */
 #define VECTORS_BASE 0x000000UL
 #define VECTORS_SIZE 0x000400UL

@@ -200,11 +200,15 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   HSYNC); a write in slot k leaves the pattern rotated right by k at the next line start, which
   changes bit order but not density. The shifter is evaluated lazily in time order (rotations
   are applied up to each write, each line start and the end of each frame) and every change of
-  bit 7 goes to the renderer as a cycle-stamped edge. The edges are box-filtered into 48 kHz mono
-  samples once per frame (250 clocks per sample exactly, an exact integral however many edges
-  fall in a sample, which is what the board's RC low-pass does to the ~126 kHz PDM stream),
-  high-passed like the coupling capacitor, and queued to SDL (off with `--no-audio`, `--fast` or
-  `--headless`) and/or written to `--audio-wav FILE`, which works in every mode and receives
+  bit 7 goes to the renderer as a cycle-stamped edge. The renderer runs the board's RC low-pass
+  (`AUDIO_LP_R_OHM` / `AUDIO_LP_C_NF` from the spec, 1 k / 33 nF = 4.8 kHz) over the pin waveform
+  exactly, integrates its output over 240 kHz sub-samples, low-passes at 20 kHz with a 95-tap
+  windowed-sinc FIR (the anti-alias filter of the sound card the jack would feed) and decimates
+  to 48 kHz mono, then a one-pole high-pass stands in for the DC-blocking capacitor. (Up to
+  2026-10-22 it box-averaged the pin straight into 48 kHz samples, which let the 63 kHz idle
+  tone and the sigma-delta noise above 24 kHz alias into the audio band at about -14 dB:
+  the emulator hissed and whined even at idle, which the board does not.) The result is
+  queued to SDL (not with `--headless`) and/or written to `--audio-wav FILE`, which works in every mode and receives
   every sample from cycle 0. GPIO bit 2 (the rev 4 audio bit) is stored but does nothing.
 
 ## Test

@@ -64,6 +64,10 @@ def gen_hw_h(d):
         A("\n/* ---- flash (see spec \"flash\"): word writes, chip byte address N = ROM_BASE + 2N ---- */")
         for k, v in flash_consts(d):
             A("#define %s %s" % (k, v))
+    if "lowpass_r_ohm" in d.get("audio", {}):
+        A("\n/* ---- audio output filter (spec \"audio\"): first-order RC after the PDM pin ---- */")
+        A("#define AUDIO_LP_R_OHM %d" % d["audio"]["lowpass_r_ohm"])
+        A("#define AUDIO_LP_C_NF %d" % d["audio"]["lowpass_c_nf"])
     A("\n/* ---- RAM layout ---- */")
     for r in d["ram_layout"]:
         nm = cident(r["name"])

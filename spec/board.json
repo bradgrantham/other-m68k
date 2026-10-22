@@ -825,6 +825,9 @@
   },
   "audio": {
     "enabled": true,
+    "lowpass_r_ohm": 1000,
+    "lowpass_c_nf": 33,
+    "lowpass_desc": "First-order RC after the PDM pin (R 1 k, C 33 nF since board rev C1: 4.8 kHz corner; rev B4 had 10 nF). The emulator models exactly this RC on the pin waveform before it samples the result at 48 kHz, so what it plays and writes to --audio-wav is what the jack carries before the divider; without the filter the 63 kHz idle tone and the sigma-delta noise above 24 kHz would alias into the audio band.",
     "desc": "AUDIO register -> 8-bit rotating PDM shifter in CPLD2 (8 bits per video line, ~126 kHz) -> 1 k / 33 nF RC low-pass (board rev C1; rev B4 has 10 nF) -> 10 k : 2.2 k divider -> 10 uF DC-blocking cap -> 3.5mm jack. Sampled audio: the program hands the BIOS buffers of PDM pattern bytes (audio_start / audio_next / audio_last, AUDIO_NBUF buffers of up to AUDIO_BUF_MAX bytes, producer/consumer, optionally blocking so the program is paced to the line rate); the BIOS HSYNC interrupt writes one byte per line (15.7 kHz NTSC, 15.6 kHz PAL) and does no other per-sample work. Encoding 8-bit unsigned samples (128 = silence) into patterns is the program's job, normally through the SDK's pdm_init/pdm_encode (first-order sigma-delta, 8-bit accumulator x 7-bit sample table built in RAM). The pattern of a line is repeated by the hardware if no new byte arrives. Beeps: write 0x00/0xFF patterns at the tone rate. Idle level: the mid pattern 0xAA (50 % density) so starting and stopping playback does not click."
   },
   "power": {
