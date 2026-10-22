@@ -1,8 +1,9 @@
 #!/bin/sh
 # mkflashvol.sh IMAGE file...  -- the C: volume image: a 768 KB FAT12 volume with the given
-# files in its root, laid out as the BIOS's `format C:` lays it out (spec flash.volume_desc:
-# 512-byte sectors, 4 KB clusters, two FATs, 224 root entries, data area at sector 32 so
-# clusters sit inside 8 KB erase sectors). Needs mkfs.vfat (dosfstools) and mcopy (mtools).
+# files in its root, with the geometry of the BIOS's `format C:` where it matters (spec
+# flash.volume_desc: 512-byte sectors, 4 KB clusters, two FATs, 224 root entries, data area
+# at sector 32 so clusters sit inside 8 KB erase sectors; the reserved-sector and FAT sizes
+# differ from FatFs's f_mkfs, which is harmless). Needs mkfs.vfat (dosfstools) and mcopy (mtools).
 # Files are stored under their upper-cased names (8.3 where possible, so no LFN entries are
 # spent on them); a directory argument is copied recursively.
 set -e

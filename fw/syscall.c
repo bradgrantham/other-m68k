@@ -200,7 +200,8 @@ int bios_chdir(const char *path)
 
 int bios_getcwd(unsigned len, char *buf)
 {
-    if (!len || !user_range_ok(buf, len)) return E_FAULT;
+    if (!len) return E_INVAL;
+    if (!user_range_ok(buf, len)) return E_FAULT;
     return fs_getcwd(buf, len);
 }
 

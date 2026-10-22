@@ -1,6 +1,6 @@
 # other-m68k Programmer's Guide
 
-This guide describes **board rev C1, spec revision 8** (`"revision": 8` in `spec/board.json`,
+This guide describes **board rev C1, spec revision 9** (`"revision": 9` in `spec/board.json`,
 `BOARD_REVISION` in `generated/hw.h`) and the BIOS/monitor in `fw/` as it stands in this
 repository. Revision 5 changed only the audio hardware (an 8-bit PDM shifter behind a new
 `AUDIO` register instead of a GPIO bit, a JED-only change for B4 boards). Revision 6 changed
@@ -16,7 +16,13 @@ run the CPLD images and firmware at git tag `rev-b` (spec revision 6), or can be
 hand to the C1 wiring as `kicad/ORDER.md` describes. Revision 8 changed only the BIOS and the
 SDK, not the board: serial port A carries the POST report and the banner and is then released,
 so the console is the screen and the keyboard alone, and programs claim the port as the device
-file `/dev/ttya` ([1.4](#serial-port-a-is-yours-devttya)). Every address, bit and syscall
+file `/dev/ttya` ([1.4](#serial-port-a-is-yours-devttya)). Revision 9 again changed only the
+BIOS and the SDK: the BIOS image grew to 256 KB and the other 768 KB of the flash became a
+FAT12 volume, drive C:, beside the SD card as drive D: ([1.7](#17-files-and-directories),
+[2.12](#212-the-flash-rom)); the BIOS's RAM grew to 31 KB, so programs now load at 0x008000;
+long file names, current directories, delete, rename and mkdir arrived with system calls
+33-37, and a wall clock (38, 39) stamps the files; the monitor gained DOS-style file commands,
+a search path for programs and `.CMD` scripts. Every address, bit and syscall
 name below comes from `spec/board.json` or from the headers generated from it
 (`generated/hw.h`, `generated/syscalls.h`, `generated/hw.inc`). Where the spec, the firmware and
 the other documents disagree, the text says so; the list is collected in
@@ -30,14 +36,14 @@ the other documents disagree, the text says so; the list is collected in
 |---|---|
 | CPU | MC68000 at 12 MHz (24 MHz oscillator divided by 2 in CPLD1) |
 | RAM | 1 MB SRAM at 0x000000 (2x AS6C4008, word wide), shared with the video fetch |
-| ROM | 1 MB flash window at 0xE00000 (2x SST39SF040); the BIOS image is the first 128 KB, the rest is erased and free |
+| ROM | 1 MB flash window at 0xE00000 (2x SST39SF040); the BIOS image is the first 256 KB, the other 768 KB hold a FAT12 volume, drive C: |
 | Video | 320x240, one byte per pixel (RGB332), two pages in RAM, composite out through an AD724 (NTSC only on rev B4 and C1) |
 | Glue | two ATF1508AS CPLDs: CPLD1 = decode, DTACK, SRAM address mux, video timing, soft switches; CPLD2 = I/O registers, pixel shifter, interrupt encoder, PS/2 receiver, PDM audio shifter, SD/GPIO pins |
-| I/O | 68681 DUART (channel A on the FTDI header, 38400 8N1: the POST report and the banner, then free for programs as `/dev/ttya`; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; the expansion header carries power and DUART channel B only |
+| I/O | 68681 DUART (channel A on the FTDI header, 38400 8N1: the POST report and the banner, then free for programs as `/dev/ttya`; channel B on the expansion header), PS/2 keyboard, bit-banged microSD (native 4-bit SD bus, about 100 KB/s read; drive D:, FAT via FatFs in the BIOS), 8-bit PDM audio (one pattern byte per video line, shifted out by CPLD2 at about 126 kHz; the BIOS streams pattern bytes from buffers the program fills at the line rate, 15.7 kHz, and the SDK encodes 8-bit samples into them), two LEDs, NMI button; the expansion header carries power and DUART channel B only |
 | Interrupts | autovectored, vector = 24 + level: VBLANK 1, PS/2 2, DUART 3, HSYNC 4, NMI button 7 |
 
-Programs are ELF files on the SD card. The monitor loads one into the user region of RAM
-(0x004000 upward) and starts it **in user mode**; the program reaches the BIOS through
+Programs are ELF files on drive C: (the flash) or D: (the SD card). The monitor loads one into
+the user region of RAM (0x008000 upward) and starts it **in user mode**; the program reaches the BIOS through
 `TRAP #15` system calls (`sys_*` functions in `generated/syscall_stubs.S`, prototypes in
 `generated/syscalls.h`). The SDK links programs against newlib, so ordinary C with
 `printf`, `malloc` and `fopen` works.
@@ -46,9 +52,12 @@ Programs are ELF files on the SD card. The monitor loads one into the user regio
 
 1. Build it with the SDK: drop `foo.c` into `sdk/examples/`, add `foo` to `EXAMPLES` in
    `sdk/Makefile`, run `make -C sdk`. The result is `sdk/build/foo.elf`.
-2. Copy it to a FAT32 (or FAT16) card as `FOO.ELF` (8.3 names only).
-3. At the monitor prompt type `foo` on the PS/2 keyboard (any word that is not a monitor command runs
-   `WORD.ELF` from the card, with the rest of the line as arguments), or `run foo.elf args`.
+2. Copy it to a FAT32 (or FAT16) card as `FOO.ELF`, or `foo.elf`: long names work, and case
+   does not matter.
+3. At the monitor prompt type `foo` on the PS/2 keyboard: a word that is not a monitor command
+   is looked up as `FOO`, `FOO.ELF` and `FOO.CMD` in the current directory, then in `C:/`, then
+   in `D:/`, and run with the rest of the line as arguments. `run D:/foo.elf args` names the
+   file exactly. `copy D:FOO.ELF C:` puts it in the flash, where it stays without the card.
 4. Or skip the card: build an image with `fw/test/mkimage.sh` and run the emulator with
    `--sd image`, then type `foo` in its window.
 
@@ -97,12 +106,14 @@ with
 `libsys.a` holds the syscall stubs, `newlib_shim.c` (the `read`/`write`/`sbrk`/`open`...
 layer newlib calls) and the PDM audio encoder `pdm.c` (header `sdk/pdm.h`, see
 [1.8](#18-sound-the-easy-way)). `user.ld` places everything in one load region at `USER_BASE`
-(0x004000), entry point `_start`.
+(0x008000; it was 0x004000 before spec revision 9, and the loader refuses ELF files linked
+there with `E_NOMEM`, so relink them), entry point `_start`.
 
 **Adding a program.** Put `foo.c` in `sdk/examples/`, add `foo` to the `EXAMPLES` line in
 `sdk/Makefile`, and run `make -C sdk`. You get `sdk/build/foo.elf` (what the monitor loads)
-and `sdk/build/foo.srec` (for upload over the serial port). Keep the base name at most 8
-characters: the card only stores 8.3 names.
+and `sdk/build/foo.srec` (for upload over the serial port). File names may be long (up to 63
+characters with the `.ELF`), but a program named like a monitor command (`ls`, `cat`, `dir`,
+`copy`...) has to be typed with its extension, `ls.elf`, because the command wins.
 
 **Building outside the tree.** The same thing by hand, with `R` the repository and the SDK
 already built:
@@ -129,28 +140,41 @@ The emulator is the quickest way to test. Make a FAT32 image holding the program
 the emulator with it:
 
 ```
-make -C emu                                               # emu/build/m68k-emu
+make                                                      # also fw/build/flash.img and emu/build/m68k-emu
 mkdir -p /tmp/card
 cp sdk/build/foo.elf /tmp/card/FOO.ELF
 sh fw/test/mkimage.sh /tmp/card/sd.img 64 /tmp/card/FOO.ELF   # 64 MB FAT32 (needs dosfstools, mtools)
-emu/build/m68k-emu --rom fw/build/rom.bin --sd /tmp/card/sd.img
+make run EMUFLAGS="--sd /tmp/card/sd.img"
 ```
+
+The ROM the emulator boots is `fw/build/flash.img`, the whole 1 MB flash window: the BIOS
+image followed by the C: volume, which `make flash` (part of `make`; it needs dosfstools and
+mtools too) builds from `flashfs/` and the SDK's example programs. `make run` is
+`emu/build/m68k-emu --rom fw/build/flash.img --rom-save fw/build/flash.img $(EMUFLAGS)`:
+`--rom-save` writes the window back at exit if the machine changed it, so what a session
+writes to C: is still there next time. Rebuilding the BIOS or one of the volume's programs
+makes `make` build a fresh `flash.img`, and C: starts over. (`fw/build/rom.bin`, the 256 KB
+BIOS image alone, still boots with `--rom`, with an unformatted C:.)
 
 The window shows the video output and takes the PS/2 keyboard, where monitor commands are
 typed. Serial port A is the emulator's stdin/stdout: it shows the POST report and the banner,
-and after that only what a program sends to `/dev/ttya`. Wait for the POST (about 4 s: the RAM
-test) and the `> ` prompt, then type `foo`. F12 (or Pause) is the NMI button, F11 the reset
-button.
+and after that only what a program sends to `/dev/ttya`. The POST takes about 4 s (the RAM
+test); then `C:/AUTOEXEC.CMD` prints a line and the `C:/> ` prompt appears. Type `foo`: the
+monitor finds `FOO.ELF` on D:, through the search path. Keys typed during the POST are not
+lost, they wait as type-ahead for the first prompt (an ESC among them skips `AUTOEXEC.CMD`
+and throws the rest away). F12 (or Pause) is the NMI button, F11 the reset button.
 
-Headless, for scripted tests and CI:
+Headless, for scripted tests and CI (without `--rom-save`, so a test leaves `flash.img` as it
+was):
 
 ```
-emu/build/m68k-emu --rom fw/build/rom.bin --sd /tmp/card/sd.img --headless --frames 1500 \
+emu/build/m68k-emu --rom fw/build/flash.img --sd /tmp/card/sd.img --headless --frames 1500 \
     --type "foo arg1 arg2\n" --type-delay 350 --no-audio --no-stdin --text-dump /tmp/run.txt
 ```
 
-`--type` types on the PS/2 keyboard after `--type-delay` frames (350 leaves the POST time to
-finish): monitor commands and a program's keyboard input both go this way. `--serial-type`
+`--type` types on the PS/2 keyboard after `--type-delay` frames: monitor commands and a
+program's keyboard input both go this way. Since keys typed during the POST are kept, the
+delay need not wait for it; the examples here keep 350, which falls after it. `--serial-type`
 (after `--serial-type-delay` frames; `\n` is sent as CR) feeds the serial port instead, which
 only a program reading `/dev/ttya` or the monitor's `srec` command listens to. The console is
 on the screen only, so `--text-dump FILE` (`-` for stdout) is how a headless run reads what
@@ -170,8 +194,14 @@ clusters); smaller ones come out as FAT16, which also works.
 
 ### On the board
 
-Copy `FOO.ELF` to the card, insert it, and type `foo` at the prompt (or `run foo.elf`). `dir`
-lists the card. Without a card, type `srec` at the prompt, then send `sdk/build/foo.srec` over
+With the board switched off, copy `FOO.ELF` to the card and insert it, then type `foo` at the
+prompt (or `run D:/foo.elf`); `dir D:` lists the card. The socket has no card-detect switch, so
+the BIOS treats the card as fixed: change it only with the power off (see
+[1.7](#17-files-and-directories)). `copy D:FOO.ELF C:` keeps the program in the flash, where
+it runs from any drive and without a card; the flash already holds the SDK's example
+programs (`hello`, `plasma`, `bmpview`, `tune`, ...) and `README.TXT`. At reset the monitor runs
+`C:/AUTOEXEC.CMD`, a script of monitor commands (hold ESC during the POST to skip it): a
+`date` line there, for instance, asks for the time at every power-on. Without a card, type `srec` at the prompt, then send `sdk/build/foo.srec` over
 the serial port (38400 8N1, `cat foo.srec > /dev/ttyUSB0`); the monitor reads the records
 straight from the port, prints a summary, and `go` starts the program (with `argc` = 0). ESC, on
 the keyboard or from the port, abandons the upload; other keys are ignored until it ends. In the
@@ -183,9 +213,31 @@ not work: it arrives during the POST, and `srec` throws away whatever was alread
 ### What the monitor does with the command line
 
 `run foo.elf a b c` and the shorthand `foo a b c` both call `main(argc, argv)` with
-`argv[0]` = the path as typed (`"foo.elf"`), then the remaining words split on blanks (at
-most 16 arguments, 255 bytes). Monitor commands win over programs: `ls` is the monitor's
-directory listing, so a program called `LS.ELF` needs `run ls.elf`.
+`argv[0]` = the path of the file, then the remaining words split on blanks (at most 16
+arguments, 255 bytes). For `run` the path is as typed (`"foo.elf"`, relative to the current
+directory, no search). For the shorthand it is where the search found the file, as an absolute
+path built from the word as typed: `"C:/foo.ELF"` if it is in the current directory `C:/`,
+`"D:/foo.ELF"` if it was found on the card. The search tries `WORD`, `WORD.ELF` and
+`WORD.CMD` in the current directory, then in `C:/`, then in `D:/`; a word that contains a
+drive or a directory (`D:foo`, `games/foo`) is tried only there. So after `D:` (switch to the
+card), `bmpview foo.bmp` runs `C:/BMPVIEW.ELF` on the card's `FOO.BMP`: the program is found
+on the search path, its argument is relative to the current directory. A `.CMD` file found this
+way is a script ([1.10](#110-exiting-and-chaining)). Monitor commands win over programs: `ls`
+is the monitor's directory listing, so the example program `LS.ELF` has to be typed as `ls.elf`.
+
+The monitor's file commands, for reference: `C:` and `D:` switch the current drive (each
+drive keeps its own current directory, and the prompt shows the current one: `C:/> `,
+`D:/GAMES> `, or `D:?> ` when the drive is not mounted, no card or no FAT volume); `cd [path]`;
+`dir [path or pattern]` (also `ls`; long names, sizes and `yy-mm-dd hh:mm` stamps; ESC stops
+it); `cat file` (also `type`); `copy src dst` (also `cp`; `src` may contain `*` and `?`, `dst`
+is a file, a directory or a drive, the copy keeps the source's stamp, ESC stops between files,
+and a copy that fails, on a full volume say, leaves no partial file); `del file` (also `rm`;
+wildcards allowed); `ren old new` (also `mv`; it moves within a volume); `mkdir dir`;
+`rmdir dir` (empty directories only); `format C:` (asks y/N); `date [YYYY-MM-DD [HH:MM[:SS]]]`
+(without an argument it shows the clock and asks for a new value, Enter keeps it); `echo
+text`; `info`, which also shows the current directory, the clock and how many C: sectors have
+been written since reset. The command line is split on blanks only, without quotes, so names
+with spaces in them can be made and used by programs but not typed at the prompt.
 
 ## 1.3 The runtime model
 
@@ -193,8 +245,8 @@ directory listing, so a program called `LS.ELF` needs `run ls.elf`.
 
 ```
 0x000000  vector table (1 KB)                 \  BIOS: do not touch
-0x000400  BIOS data, supervisor stack to 0x4000 /
-0x004000  your program: .text .rodata .data .bss  <- ELF loaded here, entry _start
+0x000400  BIOS data, supervisor stack to 0x8000 /
+0x008000  your program: .text .rodata .data .bss  <- ELF loaded here, entry _start
           heap (malloc/sbrk) grows up from the end of .bss
           ...
 0x0D6800  top of heap (user_end - 16 KB)
@@ -204,7 +256,7 @@ directory listing, so a program called `LS.ELF` needs `run ls.elf`.
 0x100000  end of RAM
 ```
 
-The program, its `.bss` and its heap share 858 KB (0x004000-0x0DA7FF). `sbrk` stops 16 KB
+The program, its `.bss` and its heap share 842 KB (0x008000-0x0DA7FF). `sbrk` stops 16 KB
 below the top of that region; the stack is not checked, so deep recursion past 16 KB runs
 into the heap silently. Page 1 (0x0DA800-0x0ED3FF) is ordinary RAM when you do not use it for
 graphics; the loader will not put ELF segments there, but you can point at it:
@@ -219,21 +271,26 @@ graphics; the loader will not put ELF segments there, but you can point at it:
   editor (echo on the screen, Backspace) in the shim; the line ends with Enter.
 * `malloc`/`free`/`realloc`/`calloc`: newlib's allocator on top of `sbrk`.
 * `fopen`/`fread`/`fwrite`/`fseek`/`fclose`, `open`/`read`/`write`/`lseek`/`close`,
-  `stat`/`fstat`: files on the SD card (see [Files](#17-files-and-directories)), and the serial
-  port as `/dev/ttya` ([1.4](#serial-port-a-is-yours-devttya)).
-* `time()`, `gettimeofday()`, `clock()`, `times()`: count from boot, derived from the VBLANK
-  tick counter and the real frame length of the current video standard (764 x 262 clocks,
-  59.95 Hz, on NTSC; 768 x 312, 50.08 Hz, on PAL). `clock()` and `times()` count milliseconds,
-  matching newlib's `CLOCKS_PER_SEC` of 1000, so `clock() / CLOCKS_PER_SEC` is seconds;
-  `gettimeofday()` gives seconds and microseconds. All of them advance in whole frames
-  (16.7 ms or 20 ms steps), so for game timing `sys_ticks()` is just as good and cheaper.
+  `stat`/`fstat`, `remove`/`unlink`, `mkdir`, `rmdir`, `chdir`, `getcwd`: files and directories
+  on C: and D: (see [Files](#17-files-and-directories)), and the serial port as `/dev/ttya`
+  ([1.4](#serial-port-a-is-yours-devttya)), and `rename`.
+* `clock()`, `times()`: count from boot, derived from the VBLANK tick counter and the real
+  frame length of the current video standard (764 x 262 clocks, 59.95 Hz, on NTSC; 768 x 312,
+  50.08 Hz, on PAL). They count milliseconds, matching newlib's `CLOCKS_PER_SEC` of 1000, so
+  `clock() / CLOCKS_PER_SEC` is seconds. They advance in whole frames (16.7 ms or 20 ms
+  steps), so for game timing `sys_ticks()` is just as good and cheaper.
+* `time()`, `gettimeofday()`: the BIOS clock ([1.6](#16-timing)), seconds since 1970, once
+  the monitor's `date` command or a program has set it; until then they count from boot as
+  `clock()` does. `tv_usec` comes from the frame counter, in whole frames, and is not in step
+  with the clock's seconds, so the pair can step back by up to a second: time intervals with
+  `clock()` or `sys_ticks()`. `settimeofday()` sets the clock. `localtime()`, `gmtime()`, `mktime()` and
+  `strftime()` work on top of them; there is no time zone (newlib's `TZ` is not set), so treat
+  the clock as local time and use `gmtime()`, which does no zone arithmetic.
 * Floating point works but is **software emulated** (libgcc soft-float): *measured* about
   3,400 clocks (0.28 ms) for a single-precision multiply-add and about 8,000 clocks (0.67 ms)
   for double precision. Use fixed point in anything that has to be fast. `printf("%f")` and
   `libm` work.
-* Not available: deleting, renaming and making directories (no system calls: `unlink` and
-  `remove` fail with `ENOSYS`, `rename` and `mkdir` do not link), `fork`/`exec*` (use
-  `sys_exec`), signals, environment variables, a current directory.
+* Not available: `fork`/`exec*` (use `sys_exec`), signals, environment variables.
 * Static constructors and destructors are not run (`-nostartfiles`, no crti/crtn); the SDK is
   for C.
 
@@ -429,7 +486,7 @@ conversation (`5 characters`); in a window, the shell that started the emulator 
 terminal. On the board, any terminal program on the FTDI port does
 (`picocom -b 38400 /dev/ttyUSB0`).
 
-`sdk/examples/term.c` (`term` at the prompt, `TERM.ELF` on the card) uses the raw calls: it
+`sdk/examples/term.c` (`term` at the prompt, `TERM.ELF` on C:) uses the raw calls: it
 opens `/dev/ttya` with `sys_open`, sends a greeting, then copies keys (`sys_pollchar`) to the
 port and bytes from the port (`sys_serial_getc`) to the screen until ESC is pressed, which makes
 the board a small terminal for whatever is at the other end. An operating-system personality
@@ -548,6 +605,8 @@ luminance edges look best.
 | `sys_ticks()` | frames since boot: incremented by the VBLANK interrupt, 59.95 per second on NTSC (50.08 on PAL) |
 | `sys_wait_vblank()` | wait until `sys_ticks()` changes |
 | `sys_sleep_ms(ms)` | busy-wait about `ms` milliseconds: whole frames by the tick counter, the rest with a calibrated loop |
+| `sys_time()` | the BIOS clock: seconds since 1970-01-01 00:00 local time, 0 until it has been set |
+| `sys_set_time(secs)` | set the clock |
 
 `sys_sleep_ms(ms)` waits `ms * 60 / 1000` whole frames (`ms * 50 / 1000` on PAL), rounded
 down, then the remaining fraction of a frame with the loop: `sys_sleep_ms(1000)` waits 60
@@ -556,51 +615,99 @@ For game timing, count frames with `sys_ticks()` or `sys_wait_vblank()`; for ela
 divide ticks by 60 (50 on PAL, `vi.standard` tells you which). Everything keeps running during these calls: interrupts are
 enabled, and your interrupt hooks are called.
 
+**The clock.** The BIOS keeps a wall clock as seconds since 1970-01-01 00:00, advanced by the
+VBLANK interrupt with the exact frame length (200,168 CPU clocks on NTSC, 239,616 on PAL, so
+it keeps the crystal's accuracy, where dividing ticks by 60 would lose 0.08 %). There is
+no battery: after power-on or reset it reads 0 until the monitor's `date` command (in
+`C:/AUTOEXEC.CMD`, say) or `sys_set_time` sets it, and while it is 0 it does not run. It has
+no time zone; treat it as local time. It stamps the files the BIOS writes; files written
+while it is not set get 2026-01-01 00:00. Through the C library it is `time()` and
+`gettimeofday()` ([1.3](#the-c-library)). While the BIOS writes a sector of the flash
+volume, interrupts are masked for about 0.15 s; the routine counts the frames that pass
+meanwhile, so `sys_ticks()` and the clock do not lose them ([2.12](#writing-the-c-volume)).
+
 ## 1.7 Files and directories
 
-Files live on the SD card's FAT32 (or FAT16/FAT12) volume. The BIOS mounts it the first time
-a file call needs it and keeps it mounted; after a card error it re-initialises the card on the
-next call. After swapping cards, type `sd` at the monitor prompt, which re-initialises the card
-and drops the old mount.
+There are two drives, named as in DOS:
+
+* **C:** is a 768 KB FAT12 volume in the flash ROM, after the BIOS image. It is always
+  present, keeps its contents without power, and survives a BIOS update with the monitor's
+  `flash` command. As `make flash` builds it, it holds `AUTOEXEC.CMD`, `README.TXT` and the
+  SDK's example programs (44-63 KB each, about 475 KB in all, 248 KB free). Reading it is
+  fast; writing it is slow and stops interrupts for a moment ([below](#writing-to-c)).
+* **D:** is the SD card's FAT32 (or FAT16/FAT12) volume.
+
+Each drive has its own current directory, and one of them is the current drive: C: after
+reset. The BIOS mounts a volume the first time a call needs it and keeps it mounted; after a
+card error it re-initialises the card on the next call that uses D:. The socket has no
+card-detect switch, so the card is treated as fixed media: change it with the power off.
+Removing it while the machine runs is not supported: a file open for writing loses its data and
+the card's FAT can be left inconsistent. (The monitor's `sd` command re-initialises the card
+and drops the old mount: a way back after a card error, not a way to change cards.)
 
 Rules:
 
-* **8.3 names only**: up to 8 characters, a dot, up to 3 characters. Case does not matter.
-  Files with long names on the card appear under their 8.3 alias (`LONGNA~1.TXT`). Anything
-  that is not a valid 8.3 name fails with `E_NAMETOOLONG`.
-* Paths are from the root; a leading `/` is optional; subdirectories work (`/GAMES/LEVEL1.DAT`).
-  There is no current directory.
+* **Paths** are `[X:][/]dir/.../name`. Without a drive letter a path is on the current drive;
+  without a leading `/` it is relative to that drive's current directory (`..` works). `X:`
+  alone is drive X's current directory, so `D:SCORES.DAT` is a file in it. `\` works as a
+  separator too. A path must be shorter than 128 bytes, otherwise the call fails with
+  `E_FAULT`.
+* **Names** are long (VFAT) names of up to 63 characters, ASCII, stored with their case and
+  matched without regard to it: `High scores.dat` is also `HIGH SCORES.DAT`, and its 8.3 alias
+  (`HIGHSC~1.DAT`) works as well. A longer or malformed name (one with `"*:<>?|` or a control
+  character in it) gives `E_NAMETOOLONG`.
+* **The current directory** belongs to the machine, not to the program. `chdir("D:/GAMES")`
+  sets D:'s directory without making D: current, as in DOS; `chdir("D:")` makes D: current,
+  and `getcwd` then gives `"D:/GAMES"`. The setting is still in force at the monitor prompt
+  after the program exits, so a program that moves about should save `getcwd` at the start
+  and put both the directory and the drive back at the end, or use absolute paths.
+* **Create, delete, rename and mkdir** work on both drives, in subdirectories too.
+  `remove`/`unlink` deletes a file or an empty directory (`E_EXIST` if it is not empty,
+  `E_ACCES` if it is read-only); `rmdir` is the same call. `sys_rename(old, new)` renames or
+  moves within one volume and fails with `E_EXIST` if `new` exists. `new` is an ordinary path,
+  resolved like any other: a bare name lands in the current directory of the volume, not in
+  `old`'s directory, and a drive letter in `new` is ignored, so the file never changes
+  volume. To move a file to the other drive, copy it and delete the original. (newlib's
+  `rename()` calls this.)
 * At most 8 files and 4 directories open at once (an open `/dev/ttya` counts as a file).
-  Files are closed for you when the program exits.
-* Paths that start with `/dev/` name devices, not files on the card. The only one is
-  `/dev/ttya`, serial port A ([1.4](#serial-port-a-is-yours-devttya)); any other `/dev/` name
-  gives `E_NOENT`.
-* Cannot delete, rename or create directories (no system calls for these).
+  Files are closed for you when the program exits. Nothing stops a file from being opened
+  twice; do not write a file that is open on another descriptor.
+* Paths that start with `/dev/` name devices, not files. The only one is `/dev/ttya`, serial
+  port A ([1.4](#serial-port-a-is-yours-devttya)); any other `/dev/` name gives `E_NOENT`.
+* There is no `stat` system call. The SDK's `stat()` opens the file (or the directory) to
+  find its size and type; the modification time is only reported by `sys_readdir`.
 
 With stdio, everything works as usual:
 
 ```c
-FILE *f = fopen("SCORES.DAT", "wb");      /* "w" creates or truncates, "a" appends */
+FILE *f = fopen("C:/Scores/High scores.dat", "wb");    /* "w" creates or truncates, "a" appends */
 fwrite(table, sizeof table, 1, f);
 fclose(f);
 ```
 
-The POSIX layer (`open`, `read`, `write`, `lseek`, `close`, `fstat`, `stat`) also works and
-translates newlib's `O_CREAT`/`O_TRUNC`/`O_APPEND` into the ABI's values. The raw calls
+The POSIX layer (`open`, `read`, `write`, `lseek`, `close`, `fstat`, `stat`, `unlink`,
+`mkdir`, `rmdir`, `chdir`, `getcwd`) also works and translates newlib's
+`O_CREAT`/`O_TRUNC`/`O_APPEND` into the ABI's values. The raw calls
 `sys_open(flags, path)` (note the argument order), `sys_read(fd, len, buf)`,
-`sys_write(fd, len, buf)`, `sys_lseek(fd, offset, whence)` and `sys_close(fd)` return the
-ABI's negative `E_*` codes instead of setting `errno`. Use the `O_*` constants from
-`syscalls.h` with the raw calls; they differ from newlib's `<fcntl.h>`, so do not include both
-headers in one source file. Descriptors 0, 1, 2 are the console; files and devices get 3..10.
+`sys_write(fd, len, buf)`, `sys_lseek(fd, offset, whence)`, `sys_close(fd)`, `sys_unlink`,
+`sys_rename`, `sys_mkdir`, `sys_chdir` and `sys_getcwd(len, buf)` return the ABI's negative
+`E_*` codes instead of setting `errno`. Use the `O_*` constants from `syscalls.h` with the raw
+calls; they differ from newlib's `<fcntl.h>`, so do not include both headers in one source
+file. Descriptors 0, 1, 2 are the console; files and devices get 3..10.
 
-Directories are read with the raw calls; `struct dirent` has `name[64]` (the 8.3 name),
-`size` and `attr` (`ATTR_DIR`, `ATTR_READONLY`, `ATTR_HIDDEN`).
+Directories are read with the raw calls; `struct dirent` has `name[64]` (the long name, or the
+8.3 name if the entry has no long one), `size`, `attr` (`ATTR_DIR`, `ATTR_READONLY`,
+`ATTR_HIDDEN`) and `mtime`, the modification time in seconds since 1970-01-01 00:00 local
+time (0 if the entry has none). The BIOS stamps what it writes from its clock
+([1.6](#16-timing)), or with 2026-01-01 00:00 while the clock is not set.
 
 ```c
-/* files.c: save and load a high-score table, then list the card's root directory. */
+/* files.c: a directory and a long file name on C:, saved, renamed, read back and listed. */
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
+#include <sys/stat.h>
 #include "syscalls.h"
 
 struct score { char name[4]; unsigned long points; };
@@ -609,42 +716,87 @@ int main(void)
 {
     struct score table[3] = { { "BRD", 9000 }, { "ABC", 4200 }, { "XYZ", 100 } };
 
-    FILE *f = fopen("SCORES.DAT", "wb");        /* 8.3 name, created in the root */
+    if (mkdir("C:/Scores", 0) < 0 && errno != EEXIST) { printf("mkdir: %s\n", strerror(errno)); return 1; }
+    FILE *f = fopen("C:/Scores/High scores.new", "wb");    /* long name, spaces allowed */
     if (!f) { printf("create: %s\n", strerror(errno)); return 1; }
     fwrite(table, sizeof table, 1, f);
-    fclose(f);
+    fclose(f);                                  /* C: is written now */
+    remove("C:/Scores/High scores.dat");        /* the previous table, if there is one */
+    int r = sys_rename("C:/Scores/High scores.new", "C:/Scores/High scores.dat");
+    if (r < 0) { printf("rename: error %d\n", r); return 1; }
 
     memset(table, 0, sizeof table);
-    f = fopen("SCORES.DAT", "rb");
+    f = fopen("c:/scores/HIGH SCORES.DAT", "rb");          /* names match in any case */
     if (!f || fread(table, sizeof table, 1, f) != 1) { printf("read back failed\n"); return 1; }
     fclose(f);
     for (int i = 0; i < 3; i++) printf("%d. %s %lu\n", i + 1, table[i].name, table[i].points);
 
     struct dirent e;
-    int h = sys_opendir("/");
+    char stamp[20];
+    int h = sys_opendir("C:/Scores");
     if (h < 0) { printf("opendir: %d\n", h); return 1; }
-    while (sys_readdir(h, &e) > 0)
-        printf("%-12s %s%lu\n", e.name, (e.attr & ATTR_DIR) ? "<DIR> " : "", (unsigned long)e.size);
+    while (sys_readdir(h, &e) > 0) {
+        time_t t = (time_t)e.mtime;             /* local time: gmtime, not localtime */
+        strftime(stamp, sizeof stamp, "%Y-%m-%d %H:%M", gmtime(&t));
+        printf("%-16s %5lu %s\n", e.name, (unsigned long)e.size, e.mtime ? stamp : "");
+    }
     sys_closedir(h);
     return 0;
 }
 ```
 
-Speed: the card is bit-banged, so expect about 100 KB/s for raw block reads and 80-90 KB/s
-through the filesystem (*measured*: 5.05 ms per block with `sys_sd_read_block`; a
-76,800-byte screen read with `fread` one 320-byte line at a time loads in 0.9 s). Writes are
-slower, about 13 ms per block plus the card's own programming time. Read into a buffer in big
-chunks rather than byte by byte through `fgetc`. Buffers passed to system calls must lie in
-user RAM (0x004000-0x0FFFFF, both framebuffer pages included, so you can read a picture
-straight into a page); otherwise the call fails with `E_FAULT`.
+It prints the table and `High scores.dat     24 2026-01-01 00:00` while the clock is not set;
+after `date 2026-10-21 14:30` at the prompt the stamp is the time of the run. Afterwards
+`dir C:/Scores` at the prompt shows the file too. `sdk/examples/ls.c` (`ls.elf` at the
+prompt, since `ls` is the monitor's own command) lists any directory the same way.
 
-`errno`: the SDK shim maps every ABI error to the newlib `errno` of the same name, so a name
-that is not 8.3 gives `ENAMETOOLONG`, a buffer outside user RAM `EFAULT`, no card or no FAT
-volume `ENODEV`, a card error `EIO`, and `strerror(errno)` says which.
+**Speed.** C: is read straight from the ROM window, which needs no card protocol at all:
+*measured*, a 200 KB file read in 8 KB pieces takes 8 frames (0.13 s, about 1.5 MB/s) from C:
+and 127 frames (2.1 s) from D:. The card is bit-banged, so expect about 100 KB/s for raw block
+reads and 80-100 KB/s through the filesystem (*measured*: 5.05 ms per block with
+`sys_sd_read_block`; a 76,800-byte screen read with `fread` one 320-byte line at a time loads
+in 0.9 s). Card writes are slower, about 13 ms per block plus the card's own programming time.
+Read into a buffer in big chunks rather than byte by byte through `fgetc`. Buffers passed to
+system calls must lie in user RAM (0x008000-0x0FFFFF, both framebuffer pages included, so you
+can read a picture straight into a page); otherwise the call fails with `E_FAULT`.
+
+### Writing to C:
+
+Flash is erased in 8 KB sectors, and a sector must be erased before it is programmed, so the
+BIOS writes C: through a cache of one erase sector in its RAM. A 512-byte write loads the
+enclosing 8 KB into the cache and patches it there (if the data differ: a sector written with
+what it already holds changes nothing). The cache, if it holds changes, goes back to the flash, erased and
+reprogrammed as a whole, when a write lands in another erase sector, when a file on C: is
+closed, after every delete, rename and mkdir, when a program exits, and before every monitor
+prompt. Each such cycle runs from RAM with **interrupts masked**, about 0.15 s for a full
+sector (*measured* 155 ms in the emulator; erased words are skipped, so a sector that is
+mostly empty is quicker). Meanwhile:
+
+* serial bytes beyond the 3 the DUART's receive FIFO holds are lost (at 38400 baud a cycle
+  is about 600 byte times);
+* the audio stream repeats its last pattern: an audible gap;
+* the PS/2 receiver holds one byte, so a keystroke can be lost;
+* interrupt hooks and the audio callback are not called. The tick counter and the clock
+  are corrected afterwards (the routine counts the frames that passed).
+
+What it costs, *measured* in the emulator: copying a 200 KB file from D: to a freshly
+formatted C: takes 29 cycles (31 with the format) and 7.5 s, C: to C: 5.5 s; a 303-byte copy
+into the root takes 4 cycles, a `mkdir` 3, the `files.c` example above 7. So write C: in big pieces, keep a file open rather
+than closing and reopening it, and do not write it while sound plays or serial data arrives.
+The chips are rated for 100,000 erase cycles per sector: plenty for saving a game's state or
+installing programs, but a program that rewrote a small log file every second would wear out
+the sectors holding the FAT and the root directory in about a day. Data that changes all the time
+belongs on D:. `format C:` at the monitor prompt recreates an empty C:.
+
+`errno`: the SDK shim maps every ABI error to the newlib `errno` of the same name, so a bad
+name gives `ENAMETOOLONG`, a buffer outside user RAM `EFAULT`, an existing name `EEXIST`, a
+read-only entry `EACCES`, no card or no FAT volume `ENODEV`, a card or flash error `EIO`, and
+`strerror(errno)` says which.
 
 Raw blocks: `sys_sd_read_block(lba, buf)` and `sys_sd_write_block(lba, buf)` transfer one
 512-byte block at an absolute card address. They bypass the filesystem; do not write blocks
-that belong to the FAT volume while files are in use.
+that belong to the FAT volume while files are in use. C: has no raw calls: read it in the ROM
+window, and leave writing it to the BIOS ([2.12](#212-the-flash-rom)).
 
 ## 1.8 Sound the easy way
 
@@ -684,7 +836,7 @@ The stream (system calls 30-32):
   its line interrupt off, so **silence costs no CPU**.
 * Buffers play in the order handed in. Fill a buffer completely before handing it in and do
   not touch it afterwards: only the pointer you got back last is yours. The buffers are in
-  the BIOS's data area below 0x004000, not in your program.
+  the BIOS's data area below 0x008000, not in your program.
 * While you fill one buffer the other two are playing or queued, so you have about two
   buffers' time for each one. If the program is later than that (an underrun), the last
   pattern repeats until the next buffer arrives: a gap, heard as a click, but nothing
@@ -750,7 +902,7 @@ encoder) and try it in the emulator without a sound card by writing the output t
 ```
 cp sdk/build/arp.elf /tmp/card/ARP.ELF                  # after adding arp to EXAMPLES
 sh fw/test/mkimage.sh /tmp/card/sd.img 64 /tmp/card/ARP.ELF
-emu/build/m68k-emu --rom fw/build/rom.bin --sd /tmp/card/sd.img --headless --frames 700 \
+emu/build/m68k-emu --rom fw/build/flash.img --sd /tmp/card/sd.img --headless --frames 700 \
     --type "arp\n" --type-delay 350 --no-stdin --audio-wav /tmp/card/arp.wav --text-dump -
 ```
 
@@ -856,6 +1008,8 @@ avoid the problem.
   `[exit n]` and returns to the monitor prompt.
 * `sys_exec(path, args)` loads another ELF in place of the running program and starts it with
   `argv[0]` = `path` and `args` split on blanks (at most 16 words, 255 bytes; `NULL` for none).
+  `path` is an ordinary path, with the full name (`"C:/HELLO.ELF"`): there is no search path
+  and no `.ELF` is added.
   It returns only on failure, and only if the failure is found before anything is overwritten:
   `E_NOENT` (no such file), `E_NOEXEC` (not a loadable 68000 ELF), `E_NOMEM` (does not fit the
   user region), `E_NAMETOOLONG`, `E_FAULT`, `E_NODEV`/`E_IO` (card problems). The caller's open
@@ -864,6 +1018,22 @@ avoid the problem.
   Flush stdio before calling it (`fflush(stdout)`), since the caller's buffers vanish.
 * A program loaded with `run` and restarted with `go` finds its `.data` as the first run left
   it (newlib's stdio state included), so use `run` again.
+* The current drive and directories stay as the program left them ([1.7](#17-files-and-directories)).
+
+**Scripts.** A `.CMD` file is a monitor script: its lines are executed as if typed (they are not
+echoed), up to 127 characters each. A line whose first word starts with `#` or `;`, or is
+`rem`, is a comment; `echo text` prints; `exit` ends the script early. A line that runs a
+program does not end the script: the BIOS keeps the script's path and the offset of the next
+line, and when the program ends, by exiting or by a crash, the monitor carries on with that
+line. So a script can chain programs, which a program cannot do with `sys_exec` (there is no
+way back to the caller). A script runs another by naming it, up to 4 deep. ESC aborts all
+scripts between lines (an ESC typed while a program runs, and not read by it, counts) and
+empties the keyboard queue; without an ESC, keys typed while a script runs stay in the queue
+for the next program or the prompt. `name` at the prompt
+runs `NAME.CMD` through the search path ([1.2](#what-the-monitor-does-with-the-command-line)),
+and `C:/AUTOEXEC.CMD` runs at reset unless ESC is pressed during the POST. The one in
+`flashfs/AUTOEXEC.CMD`, which `make flash` puts on C:, only prints a line; `date` (ask for the
+time), `D:` (start on the card) and program names are typical additions.
 
 ## 1.11 System call reference
 
@@ -872,8 +1042,10 @@ arguments in A0, A1 (in the order listed), the result in D0.L; all other registe
 preserved. The `sys_*` C functions in `libsys.a` do the register shuffling. A trivial call such
 as `sys_ticks()` costs about 450 clocks (*measured*), so do not make system calls in inner
 loops. Errors are negative `E_*` values from `syscalls.h`. Every pointer argument (buffers,
-structures, strings) must point into user RAM, 0x004000-0x0FFFFF, and a buffer must fit there
-entirely, otherwise `E_FAULT`. The exception is the audio stream (30-32): its buffers belong
+structures, strings) must point into user RAM, 0x008000-0x0FFFFF, and a buffer must fit there
+entirely, otherwise `E_FAULT`; a path must also end within 128 bytes. Paths follow
+[1.7](#17-files-and-directories): an optional drive `C:` or `D:`, otherwise the current drive,
+and relative to the drive's current directory without a leading `/`. The exception is the audio stream (30-32): its buffers belong
 to the BIOS, `sys_audio_next` and `sys_audio_last` accept only the buffer the BIOS last
 handed out, and `sys_read` accepts that buffer as its destination while the stream is open,
 so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw PDM files).
@@ -891,28 +1063,35 @@ so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw
 | 8 | `void sys_wait_vblank(void)` | Wait until the tick count changes (the next VBLANK interrupt, at the start of vertical sync). |
 | 9 | `int sys_video_info(struct video_info *info)` | Fill in width, height, bpp, bytes per line, both page addresses, the current page and the video standard. 0, or `E_FAULT` if the structure is not in user RAM (`NULL` included). |
 | 10 | `int sys_video_set_page(int page)` | Display page 0 or 1 from the next frame on. 0, or `E_INVAL`. |
-| 11 | `int sys_open(int flags, const char *path)` | Open a file. `flags`: `O_RDONLY`, `O_WRONLY` or `O_RDWR`, plus `O_CREAT` (create if missing), `O_TRUNC`, `O_APPEND` (every write goes to the end); the last three need write access, else `E_INVAL`. Returns a descriptor 3..10, or `E_NOENT`, `E_NAMETOOLONG` (not 8.3), `E_NFILE` (8 open), `E_NOSPC` (directory full, or the file is read-only), `E_NODEV` (no card / no FAT), `E_IO`, `E_FAULT`, `E_INVAL`. A path starting with `/dev/` opens a device instead: `/dev/ttya` (serial port A) needs no card, honours the access mode and ignores `O_CREAT`/`O_TRUNC`/`O_APPEND`; any other `/dev/` name is `E_NOENT`. |
-| 12 | `int sys_close(int fd)` | Close a file or device; 0 (also for 0..2), or `E_BADF`. |
+| 11 | `int sys_open(int flags, const char *path)` | Open a file on C: or D:. `flags`: `O_RDONLY`, `O_WRONLY` or `O_RDWR`, plus `O_CREAT` (create if missing), `O_TRUNC`, `O_APPEND` (every write goes to the end); the last three need write access, else `E_INVAL`. Returns a descriptor 3..10, or `E_NOENT` (no such file or directory on the way, or the path names a directory), `E_NAMETOOLONG` (a name longer than 63 characters or malformed), `E_NFILE` (8 open), `E_NOSPC` (directory full, or the file is read-only), `E_NODEV` (no card / no FAT volume), `E_INVAL` (bad flags, or a drive other than C: and D:), `E_IO`, `E_FAULT`. A path starting with `/dev/` opens a device instead: `/dev/ttya` (serial port A) needs no card, honours the access mode and ignores `O_CREAT`/`O_TRUNC`/`O_APPEND`; any other `/dev/` name is `E_NOENT`. |
+| 12 | `int sys_close(int fd)` | Close a file or device; 0 (also for 0..2), or `E_BADF`. Closing a file written on C: writes the flash (about 0.15 s with interrupts masked, [1.7](#writing-to-c)). |
 | 13 | `int sys_read(int fd, unsigned len, void *buf)` | Read up to `len` bytes; returns the count (0 at end of file) or `E_BADF`, `E_IO`, `E_FAULT`. On fd 0 (the keyboard), waits for one character and returns whatever else is already queued (no echo, no line editing); a `/dev/ttya` descriptor does the same on the serial receive ring. `E_BADF` on fd 1, 2. `buf` must be in user RAM, or inside the BIOS audio buffers while an audio stream is open (spec rev 8). |
-| 14 | `int sys_write(int fd, unsigned len, const void *buf)` | Write `len` bytes; returns `len`, or `E_NOSPC` (card full), `E_BADF`, `E_IO`, `E_FAULT`. On fd 1, 2: to the video console. On a `/dev/ttya` descriptor: raw bytes to serial port A, waiting for the transmitter. `E_BADF` on fd 0. |
+| 14 | `int sys_write(int fd, unsigned len, const void *buf)` | Write `len` bytes; returns `len`, or `E_NOSPC` (volume full), `E_BADF`, `E_IO`, `E_FAULT`. On fd 1, 2: to the video console. On a `/dev/ttya` descriptor: raw bytes to serial port A, waiting for the transmitter. `E_BADF` on fd 0. On C:, a write that crosses into another 8 KB erase sector writes the previous one to the flash first. |
 | 15 | `int sys_lseek(int fd, int offset, int whence)` | `SEEK_SET`/`SEEK_CUR`/`SEEK_END`; returns the new offset, or `E_INVAL` (negative result, bad `whence`, console fds, devices), `E_BADF`. Seeking past the end of a writable file extends it. |
-| 16 | `int sys_opendir(const char *path)` | Open a directory (`"/"` for the root); returns a handle 0..3, or `E_NOENT`, `E_NFILE` (4 open), `E_NODEV`, `E_IO`, `E_FAULT`. |
-| 17 | `int sys_readdir(int handle, struct dirent *ent)` | Next entry: 1 and `*ent` filled, 0 at the end, or `E_BADF`, `E_IO`, `E_FAULT`. |
+| 16 | `int sys_opendir(const char *path)` | Open a directory (`""` or `"."` for the current one, `"/"` for the root of the current drive, `"D:"` for D:'s current directory, `"D:/"` for its root); returns a handle 0..3, or `E_NOENT`, `E_NAMETOOLONG`, `E_NFILE` (4 open), `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
+| 17 | `int sys_readdir(int handle, struct dirent *ent)` | Next entry: 1 and `*ent` filled, 0 at the end, or `E_BADF`, `E_IO`, `E_FAULT`. `name` is the long name (the 8.3 name if the entry has no long one), `mtime` the modification time in seconds since 1970 (0 if none). FatFs leaves out the `.` and `..` entries of subdirectories. |
 | 18 | `int sys_closedir(int handle)` | Close a directory handle; 0 or `E_BADF`. |
 | 19 | `int sys_sd_read_block(uint32_t lba, void *buf)` | Read one 512-byte block at absolute card address `lba` (initialises the card if needed). 0, or `E_INVAL` (beyond the card), `E_IO`, `E_FAULT`. |
 | 20 | `int sys_sd_write_block(uint32_t lba, const void *buf)` | Write one 512-byte block. Same results. Bypasses the filesystem. |
 | 21 | `void *sys_set_irq_handler(int level, void *handler)` | Install `void handler(void)` for level 1..4, called from the BIOS interrupt routine in supervisor mode; returns the previous handler; `NULL` removes it. Level 4 also enables the HSYNC interrupt. `(void *)E_INVAL` for another level. |
-| 22 | `int sys_mem_info(struct mem_info *info)` | `user_start` 0x004000, `user_end` 0x0DA800, `user_end_without_fb1` 0x0ED400. 0, or `E_FAULT` (structure not in user RAM). |
+| 22 | `int sys_mem_info(struct mem_info *info)` | `user_start` 0x008000, `user_end` 0x0DA800, `user_end_without_fb1` 0x0ED400. 0, or `E_FAULT` (structure not in user RAM). |
 | 23 | `int sys_con_set_cursor(int x, int y)` | Move the console cursor; 0, or `E_INVAL` outside 40x30. |
 | 24 | `int sys_con_clear(void)` | Clear the console (page 0); 0. |
 | 25 | `int sys_con_info(struct con_info *info)` | Columns, rows, cursor position; 0, or `E_FAULT` (structure not in user RAM). |
-| 26 | `int sys_exec(const char *path, const char *args)` | Replace the program with another ELF (see 1.10). Returns only on failure: `E_NOENT`, `E_NOEXEC`, `E_NOMEM`, `E_NAMETOOLONG`, `E_NODEV`, `E_IO`, `E_FAULT`, `E_INVAL`. |
+| 26 | `int sys_exec(const char *path, const char *args)` | Replace the program with another ELF (see 1.10). `path` as for `sys_open`, with no search path. Returns only on failure: `E_NOENT`, `E_NOEXEC`, `E_NOMEM`, `E_NAMETOOLONG`, `E_NODEV`, `E_IO`, `E_FAULT`, `E_INVAL`. |
 | 27 | `int sys_key_event(void)` | Next raw key event (bits 7..0 set-2 scan code, `KEY_RELEASE` bit 8, `KEY_EXTENDED` bit 9), or -1. |
 | 28 | `void sys_sleep_ms(uint32_t ms)` | Busy-wait `ms` milliseconds: `ms * 60 / 1000` whole frames (50 on PAL), then a calibrated loop for the rest. |
 | 29 | `int sys_set_audio_cb(void *cb)` | Install `void cb(void)` to be called once per video line (15.7 kHz) from the HSYNC interrupt, in supervisor mode at level 4. The callback owns `IO_AUDIO` (it should write one pattern per call); the audio stream is not played while it is installed, and `sys_audio_start` fails. `NULL` removes it. Returns 0. |
 | 30 | `uint8_t *sys_audio_start(unsigned bufsize)` | Open the audio stream: pattern bytes played one per video line (15,707 Hz NTSC, 15,625 PAL) from the BIOS's `AUDIO_NBUF` = 3 buffers of `AUDIO_BUF_MAX` = 512 bytes, of which the program fills `bufsize` (1..512) each. Drops anything queued, sets the output to the idle pattern 0xAA and returns the first buffer to fill; nothing plays until it is handed in. Non-blocking. NULL if `bufsize` is out of range or an audio callback is installed. The buffer is BIOS RAM below `USER_BASE`; `sys_read` may still fill it while the stream is open. |
 | 31 | `uint8_t *sys_audio_next(const uint8_t *filled, int block)` | Queue the filled buffer (the one last returned) for playing and return the next free buffer. If none is free: `block` != 0 waits, with interrupts running, until the playing buffer finishes (this paces the program to the audio rate); `block` = 0 returns NULL, and the handed buffer is still queued. `filled` = NULL hands nothing in and only asks for a free buffer. NULL also if the stream is not open or `filled` is not the buffer the program holds. Turns the line interrupt on when a buffer is queued with nothing playing. |
 | 32 | `int sys_audio_last(const uint8_t *filled, int block)` | Queue the final buffer (`filled` may be NULL) and close the stream; `block` != 0 waits until everything queued has played. After the last byte the BIOS writes the idle pattern 0xAA and switches the line interrupt off. 0, or `E_INVAL` if the stream is not open. |
+| 33 | `int sys_unlink(const char *path)` | Delete a file or an empty directory. 0, or `E_NOENT`, `E_EXIST` (directory not empty), `E_ACCES` (read-only entry), `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
+| 34 | `int sys_rename(const char *old, const char *new)` | Rename or move a file or directory within `old`'s volume. `new` is resolved as a path on that volume, against its current directory (a bare name does not stay in `old`'s directory), and a drive letter in it is ignored. 0, or `E_NOENT`, `E_EXIST` (`new` exists), `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
+| 35 | `int sys_mkdir(const char *path)` | Create a directory. 0, or `E_EXIST` (the name is taken), `E_NOENT` (no parent), `E_NOSPC`, `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
+| 36 | `int sys_chdir(const char *path)` | Set the current directory of the path's volume; `"X:"` alone makes X the current drive instead. `chdir("D:/GAMES")` sets D:'s directory without switching to D:. The setting is global: it outlives the program. 0, or `E_NOENT`, `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
+| 37 | `int sys_getcwd(unsigned len, char *buf)` | The current drive and directory as `"X:/dir/sub"` into `buf` (`len` bytes, NUL included). Returns the length, or `E_INVAL` (does not fit), `E_NODEV` (the current volume is not mounted), `E_FAULT` (also for `len` 0). |
+| 38 | `uint32_t sys_time(void)` | The BIOS clock: seconds since 1970-01-01 00:00, local time; 0 if it has not been set since reset ([1.6](#16-timing)). |
+| 39 | `int sys_set_time(uint32_t secs)` | Set the clock (the monitor's `date` command uses it). 0 stops it again ("not set"). Returns 0. |
 
 Any other number returns `E_NOSYS`. The constants and structures (`O_*`, `SEEK_*`, `ATTR_*`,
 `VIDEO_STD_*`, `KEY_*`, `AUDIO_BUF_MAX`, `AUDIO_NBUF`, `E_*`, `struct video_info`, `struct mem_info`, `struct con_info`,
@@ -921,21 +1100,23 @@ Any other number returns `E_NOSYS`. The constants and structures (`O_*`, `SEEK_*
 | code | value | meaning here |
 |---|---|---|
 | `E_NOENT` | -2 | no such file or directory, or no such `/dev/` device |
-| `E_IO` | -5 | card error (after a failed file call, the next call re-initialises the card) |
+| `E_IO` | -5 | card error (after a failed file call, the next call re-initialises the card), or a flash erase/program failure on C: |
 | `E_NOEXEC` | -8 | not a loadable ELF |
 | `E_BADF` | -9 | bad descriptor or wrong direction |
 | `E_NOMEM` | -12 | ELF does not fit the user region |
-| `E_FAULT` | -14 | pointer outside user RAM |
-| `E_NODEV` | -19 | no card, or no FAT volume on it |
-| `E_INVAL` | -22 | bad argument |
+| `E_ACCES` | -13 | `sys_unlink` of a read-only entry |
+| `E_FAULT` | -14 | pointer outside user RAM, or a path not ended within 128 bytes |
+| `E_EXIST` | -17 | the name exists (`sys_rename`, `sys_mkdir`), or the directory is not empty (`sys_unlink`) |
+| `E_NODEV` | -19 | no card, or no FAT volume on it (or an unformatted C:) |
+| `E_INVAL` | -22 | bad argument, or a drive letter other than C: and D: |
 | `E_NFILE` | -23 | too many open files or directories |
-| `E_NOSPC` | -28 | card or directory full |
-| `E_NAMETOOLONG` | -36 | not an 8.3 name |
+| `E_NOSPC` | -28 | volume or directory full |
+| `E_NAMETOOLONG` | -36 | a name longer than 63 characters, or malformed |
 | `E_NOSYS` | -38 | no such system call |
 
-`E_ACCES`, `E_EXIST`, `E_NOTDIR`, `E_ISDIR` and `E_ROFS` are defined by the ABI but the
-current BIOS does not return them in practice (`E_NOSPC` also stands for FatFs's "access
-denied", which includes writing a read-only file).
+`E_NOTDIR`, `E_ISDIR` and `E_ROFS` are defined by the ABI but the current BIOS does not
+return them from system calls (`E_NOSPC` also stands for FatFs's "access denied", which
+includes opening a read-only file for writing).
 
 ---
 
@@ -985,7 +1166,7 @@ __asm__(
  *           old = *vec; *vec = trap0_handler;      ... and put `old` back before exiting */
 ```
 
-`fn` runs on the BIOS's supervisor stack (about 8 KB below 0x004000), so keep it small. GCC
+`fn` runs on the BIOS's supervisor stack (about 13 KB below 0x008000), so keep it small. GCC
 warns ("array subscript 0 is outside array bounds") about pointers to addresses this close to
 zero; `--param=min-pagesize=0` in `CFLAGS` silences it.
 
@@ -1001,7 +1182,7 @@ not part of the ABI) and rewrites the registers from them:
 | INTEN | `sys_set_irq_handler`, `sys_set_audio_cb`, `sys_audio_start`, `sys_audio_next`/`sys_audio_last` (when they queue a buffer while none is playing), `sys_exit`, `sys_exec`; and the level-4 handler itself when the stream runs out of buffers | `INTEN_VBLANK \| INTEN_PS2 \| INTEN_DUART` (0x000D), plus `INTEN_HSYNC` while an audio callback or level-4 hook is installed or an audio buffer is playing or queued; the level-4 handler writes `inten_shadow` without `INTEN_HSYNC` |
 | GPIO | `sys_exit`/`sys_exec` (and the monitor's `led`) | its shadow with LED0, LED1 cleared: normally `GPIO_PS2CLK \| GPIO_PS2DAT` (0x0003) |
 | AUDIO | the level-4 handler once per line while a stream buffer is playing; `sys_audio_start`, `sys_audio_last` (with nothing queued), `sys_exit`/`sys_exec` (and the monitor's `beep`) | the next byte of the playing buffer; the idle pattern 0xAA at `sys_audio_start`, at the end of the stream and at exit (after an underrun the last pattern stays). No shadow is kept |
-| SDIO | every card access (file, directory, raw block and exec calls) | 0x3F between transfers (every line released, CLK high); no shadow, the driver writes precomputed words |
+| SDIO | every card access (file, directory, raw block and exec calls on D:) | 0x3F between transfers (every line released, CLK high); no shadow, the driver writes precomputed words |
 
 So: keep your own copy of anything you write, always write the whole register, assume the
 BIOS's next write replaces yours, and restore INTEN through the BIOS when you are done (any
@@ -1045,7 +1226,7 @@ The 68000 has a 24-bit address bus; addresses wrap modulo 16 MB.
 |---|---|---|---|---|
 | 0x000000-0x0FFFFF | RAM (`RAM_BASE`, 1 MB) | r/w, byte/word/long | slot aligned: 4 or 6 clocks | 2x 512Kx8 SRAM, word wide, shared with the video fetch. At reset the ROM is overlaid here (see below). |
 | 0x100000-0xDFFFFF | unmapped | | | bus error |
-| 0xE00000-0xEFFFFF | ROM (`ROM_BASE`, 1 MB flash window) | read; writes go to the flash chips | 4 clocks, any alignment | 2x SST39SF040, even bytes in U4 (D15..D8), odd in U5 (D7..D0). BIOS image 0xE00000-0xE1FFFF (`ROM_IMAGE_SIZE` 128 KB, word sum zero); 0xE20000-0xEFFFFF erased (0xFF) and free. |
+| 0xE00000-0xEFFFFF | ROM (`ROM_BASE`, 1 MB flash window) | read; writes go to the flash chips | 4 clocks, any alignment | 2x SST39SF040, even bytes in U4 (D15..D8), odd in U5 (D7..D0). BIOS image 0xE00000-0xE3FFFF (`ROM_IMAGE_SIZE` 256 KB, word sum zero); 0xE40000-0xEFFFFF (`FLASH_VOL_OFFSET`, `FLASH_VOL_SIZE` 768 KB) the FAT12 volume C:. |
 | 0xF00000-0xF0FFFF | IO (`IO_BASE`): CPLD2 registers | **word** access | slot aligned: 4 or 6 clocks | eight 16-bit registers at offsets 0..0x0E, mirrored every 16 bytes |
 | 0xF10000-0xF1FFFF | SWITCHES (`SWITCHES_BASE`): CPLD1 soft switches | write (any value) | 4 clocks | offsets 0, 2, 4, 6; reads return garbage |
 | 0xF20000-0xF2FFFF | DUART (`DUART_BASE`): 68681 | **odd-address byte** access | DTACK from the 68681 (0.5-0.8 us) | registers at 0xF20001..0xF2001F (odd), mirrored every 32 bytes |
@@ -1067,8 +1248,8 @@ so software cannot bring the overlay back.
 | range | name | contents |
 |---|---|---|
 | 0x000000-0x0003FF | `VECTORS` | exception vectors, copied from ROM at boot |
-| 0x000400-0x003FFF | `SYSDATA` | BIOS `.data`/`.bss` (0x1C70 bytes, to 0x002070, including the three 512-byte audio buffers), supervisor stack (about 8 KB) down from `SYS_STACK_TOP` 0x004000 |
-| 0x004000-0x0DA7FF | `USER` | program load region (858 KB); user stack down from `USER_STACK_TOP` 0x0DA800 |
+| 0x000400-0x007FFF | `SYSDATA` | BIOS `.data`/`.bss` (0x4780 bytes, to 0x004B80: the file tables of both volumes, the 8 KB erase-sector cache of C:, the RAM-resident flash routine, the script stack and the three 512-byte audio buffers), supervisor stack (about 13 KB) down from `SYS_STACK_TOP` 0x008000 |
+| 0x008000-0x0DA7FF | `USER` | program load region (842 KB); user stack down from `USER_STACK_TOP` 0x0DA800 |
 | 0x0DA800-0x0ED3FF | `FB1` | framebuffer page 1 (75 KB), free RAM if unused |
 | 0x0ED400-0x0FFFFF | `FB0` | framebuffer page 0, the console |
 
@@ -2260,12 +2441,15 @@ gets no answer.
 
 ### The filesystem
 
-FatFs R0.15 (`fw/fatfs/`) with `FF_USE_LFN 0` (8.3 names; long names show their aliases),
-`FF_FS_RPATH 0` (no current directory), one volume, `FF_FS_TINY` (one shared 512-byte
-sector window), code page 437, no RTC (files are stamped 2026-10-20), no `mkfs`. The volume is
-mounted on first use; a disk error drops the mount, so the next call re-initialises the card.
-8 files (descriptors 3..10) and 4 directory handles. FAT32 needs a volume of at least 65,525
-clusters (64 MB with `mkimage.sh`); FAT12/16 cards work too.
+FatFs R0.15 (`fw/fatfs/`) with `FF_USE_LFN 1` and `FF_MAX_LFN 63` (long names in a static
+buffer), `FF_FS_RPATH 2` (current directories, `f_getcwd`), two volumes with the names
+`"C"` and `"D"` (`FF_STR_VOLUME_ID 1`; physical drive 0 is the flash, `fw/flashdisk.c`, drive
+1 the card), `FF_FS_TINY` (one 512-byte sector window per volume), code page 437, timestamps
+from the BIOS clock (`get_fattime` in `fw/clock.c`), `f_mkfs` for `format C:`, no file
+locking. Both volumes are mounted on first use; a card error drops D:'s mount and closes the
+files open on it, so the next call re-initialises the card. 8 files (descriptors 3..10) and 4
+directory handles, shared by both drives. FAT32 needs a volume of at least 65,525 clusters
+(64 MB with `mkimage.sh`); FAT12/16 cards work too. C:'s side is in [2.12](#212-the-flash-rom).
 
 ### Coexisting with the BIOS
 
@@ -2456,9 +2640,30 @@ place to poll in a tight loop.
 The 1 MB window at 0xE00000 is two SST39SF040 chips side by side: U4 holds the even bytes
 (D15..D8), U5 the odd bytes (D7..D0); chip byte address N is CPU word address `ROM_BASE + 2N`.
 Reads take 4 clocks at any alignment and never wait for a slot, so the flash is the fastest
-memory on the board for code and read-only data. The BIOS occupies 0xE00000-0xE1FFFF (about
-39,700 of its 131,072 bytes are used; FatFs is roughly 12 KB of that); the other 896 KB are
-erased (0xFF) and available.
+memory on the board for code and read-only data. The window is two parts:
+
+| range | sectors | contents |
+|---|---|---|
+| 0xE00000-0xE3FFFF | 0-31 | the BIOS image, `ROM_IMAGE_SIZE` = 256 KB: vectors, code, data, padded with 0xFF, its last word set so that the 16-bit sum of all words is 0 (`fw/mkrom.py`; the POST checks it). About 60,000 bytes are used, FatFs some 16 KB of that. |
+| 0xE40000-0xEFFFFF | 32-127 | drive C: (`FLASH_VOL_OFFSET`, `FLASH_VOL_SIZE` = 768 KB): a FAT12 volume without a partition table, 1536 sectors of 512 bytes, 4 KB clusters, two FATs, 224 root entries |
+
+The volume's layout is chosen for the flash: the boot sector, the two FATs and the root
+directory (14 sectors) take volume sectors 0-31, the volume's first two erase sectors (window
+sectors 32 and 33), and the data area starts at volume sector 32, so each 4 KB cluster lies
+inside one 8 KB erase sector. `format C:` at the monitor prompt (FatFs
+`f_mkfs`, with the erase sector as its alignment) uses 2 reserved sectors and pads the FATs to
+8 sectors each to get there;
+`tools/mkflashvol.sh` on the host uses 16 reserved sectors and one-sector FATs instead
+(`mkfs.vfat -F 12 -s 8 -f 2 -r 224 -R 16`, on an image filled with 0xFF beforehand, so that
+the unused clusters are erased flash rather than zeros that would have to be erased before
+use). Either way the data area starts at the same place. `make flash` builds
+`fw/build/c.img` with it from `flashfs/` (`AUTOEXEC.CMD`, `README.TXT`) and the SDK's
+example programs, stripped (the loader needs only the program headers and the segments, and
+symbols would double the size), and `fw/mkrom.py --split` puts the BIOS image and the volume together as
+`fw/build/flash.img`, the whole window, and splits that into `rom_even.bin` (U4) and
+`rom_odd.bin` (U5) for the TL866 programmer. Programming the chips from those installs both;
+the monitor's `flash` command ([below](#the-monitor-commands)) rewrites only the BIOS image
+and leaves C: alone.
 
 ### Programming
 
@@ -2472,7 +2677,7 @@ so that both chips see them at once (`flash` section of the spec; constants in `
 | read IDs | 0xAAAA -> CMD1, 0x5555 -> CMD2, 0x9090 -> CMD1; `ROM_BASE` reads 0xBFBF (`FLASH_MFR_ID` in both bytes), `ROM_BASE + 2` reads 0xB7B7 (`FLASH_DEV_ID`); 0xF0F0 anywhere returns to read mode |
 
 A sector is 4 KB per chip, `FLASH_SECTOR_BYTES` = 8 KB in the CPU's view, so the window has 128
-sectors; the BIOS image is sectors 0-15. Programming can only clear bits: erase first. While a
+sectors; the BIOS image is sectors 0-31, C: sectors 32-127. Programming can only clear bits: erase first. While a
 chip programs or erases, every read from it returns status (DQ7 inverted, DQ6 toggling)
 instead of data. There is no write protection besides the unlock sequence: any write to the ROM
 region reaches the chips (CPLD1 pulses ROMWE and gives DTACK), so stray writes are harmless
@@ -2502,22 +2707,62 @@ static uint32_t flash_program_word(uint32_t addr)   /* run with super_call: IPL 
     return 1;
 }
 
-/* prog_data = 0x1234; super_call(flash_program_word, ROM_BASE + 0x20000); */
+/* prog_data = 0x1234; super_call(flash_program_word, ROM_BASE + 0xFFFFE); */
 ```
 
-In the emulator this reads IDs `bfbf/b7b7`, and the word at 0xE20000 changes from 0xFFFF to
-0x1234. The NMI button must not be pressed while a command is in progress (its handler is in the
-flash). Never erase or program sectors 0-15 from a program: a damaged BIOS image means
-reprogramming the chips in an external programmer.
+In the emulator the word at 0xEFFFFE, the last word of the window, changes from 0xFFFF to
+0x1234. It lies in C:'s last cluster, which is free on the volume `make flash` builds (and the
+BIOS rewrites a free cluster's whole erase sector before it uses it); on a fuller C: the same
+write would damage a file. There is no unused flash any more: everything outside the BIOS
+image belongs to C:, so a program that wants its own data in the flash should keep it in a
+file and let the BIOS write it. The NMI button must not be pressed while a command is in
+progress (its handler is in the flash). Never erase or program sectors 0-31 from a program: a
+damaged BIOS image means reprogramming the chips in an external programmer; erasing a sector
+of 32-127 destroys part of C: (`format C:` is the way back).
+
+### Writing the C: volume
+
+The BIOS's block driver for C: is `fw/flashdisk.c`. Reads copy 512-byte sectors straight out
+of the window (from the cache instead, if it holds a newer copy). Writes go through one 8 KB
+cache in BIOS RAM ([1.7](#writing-to-c) has the consequences):
+
+1. A sector write whose erase sector is not in the cache first writes the cache back if it is
+   dirty, then copies the new erase sector (16 volume sectors) from the flash into it.
+2. The 512 bytes are compared with the cached copy; only if they differ are they copied in
+   and the cache marked dirty. FatFs rewrites FAT and directory sectors often with the same
+   contents, and those writes cost nothing.
+3. Writing back (`flashdisk_flush`) happens when the cache has to move, on FatFs's
+   `CTRL_SYNC` (every `f_close`/`f_sync`, and at the end of every delete, rename, mkdir and
+   `f_utime`), when a program exits, and before every monitor prompt. It calls
+   `flash_write_sector`, which runs operation 2 of `flash_ram_op` (`fw/flashram.S`, assembled
+   into `.data`, so it runs from BIOS RAM) with interrupts masked: erase the sector, program
+   the 4096 words, skipping those that are 0xFFFF, and verify. The data sheet's figures give
+   about 100 ms (erase up to 25 ms, a word program up to 20 us); the routine's own loop,
+   which polls the chip and between polls watches `INTSTAT.VBLANK`, makes it about 155 ms for a
+   full sector (*measured* in the emulator, whose chips finish after a few status reads). Each
+   VBLANK flag the routine sees it clears and counts; afterwards the C side adds the count to
+   the tick counter and the clock, as if the interrupts had been taken.
+4. A timeout or a verify mismatch drops the cache and fails the FatFs call with a disk error,
+   `E_IO`.
+
+`info` at the monitor prompt shows how many erase/program cycles C: has had since reset, and
+whether the cache is dirty.
+
+**In the emulator** the window is the `--rom` file, read whole at start (padded with 0xFF to
+1 MB), and the chips are modelled down to the command sequences and status reads.
+`--rom-save FILE` writes the window to `FILE` at exit if a program or erase changed it, which
+is how `make run` keeps C: from one run to the next (it saves to the image it boots,
+`fw/build/flash.img`). Without `--rom-save`, whatever the machine wrote is gone at exit.
 
 ### The monitor commands
 
 * `flashid` prints the two ID words (`bfbf/b7b7` = two SST39SF040s).
-* `flash FILE` reads a 128 KB BIOS image (`fw/build/rom.bin`, any 8.3 name) from the card into
-  RAM at `USER_BASE` (clobbering user RAM), checks its size and zero word sum, asks `y/N`, then
-  hands over to a routine copied into RAM (`fw/flashram.S`) which, with interrupts masked,
-  erases, programs and verifies the sixteen 8 KB sectors (a `.` per sector on the serial port)
-  and jumps through the new image's reset vectors. On a timeout or verify mismatch it prints the
+* `flash FILE` reads a 256 KB BIOS image (`fw/build/rom.bin`, from either drive) into RAM at
+  `USER_BASE` (0x008000-0x047FFF, clobbering user RAM), checks its size and zero word sum, asks
+  `y/N`, then hands over to a routine in RAM (`fw/flashram.S`, operation 1) which, with
+  interrupts masked, erases, programs and verifies the 32 sectors of the BIOS image (a `.` per
+  sector on the serial port) and jumps through the new image's reset vectors. C:, in sectors
+  32-127, is not touched, so the files on it survive a BIOS update. On a timeout or verify mismatch it prints the
   sector and stops the CPU. All of that output goes to serial port A only (the routine cannot
   call the BIOS's screen code, which is in the flash it is rewriting), so attach a terminal to
   follow it; the screen only says that programming has started. Do not press NMI or reset while
@@ -2542,11 +2787,14 @@ reprogramming the chips in an external programmer.
 ### What the BIOS leaves when your program starts
 
 * Vectors at 0x000000-0x0003FF as described in 2.7 (vector 28 on the BIOS's fast level-4
-  handler); BIOS data at 0x000400-0x00206F; supervisor stack below 0x004000.
+  handler); BIOS data at 0x000400-0x004B7F; supervisor stack below 0x008000.
+* C:'s write cache clean (the monitor writes it back before starting a program); the current
+  drive and directories as the last command or program left them.
 * INTEN = 0x000D (VBLANK, PS/2, DUART); GPIO = 0x0003; AUDIO = 0xAA (the idle pattern; no
   audio stream open); SDIO = 0x3F (every line released, CLK high); the SD card initialised
-  and in transfer state on the 4-bit bus (unless the program came over the serial port and
-  nothing has used the card since reset).
+  and in transfer state on the 4-bit bus if anything has used D: since reset (a program loaded
+  from C: may find the card untouched; one loaded from D:, or found by a search that reached
+  `D:/`, does not).
 * DUART channel A at 38400 8N1 with IMR = RXRDYA, released: the BIOS writes it only when the
   program asks, and its receive ring may already hold bytes. Channel B and the counter/timer
   idle.
@@ -2572,8 +2820,8 @@ What depends on what, if you still want parts of the BIOS:
 
 | BIOS service | needs |
 |---|---|
-| any system call | vector 47 intact, BIOS data 0x000400-0x003FFF intact, room on the supervisor stack |
-| files, raw blocks, `sys_exec` | the above; works with interrupts masked (the SD driver polls) |
+| any system call | vector 47 intact, BIOS data 0x000400-0x007FFF intact, room on the supervisor stack |
+| files, raw blocks, `sys_exec` | the above; works with interrupts masked (the SD driver polls, and C:'s flash routine masks them anyway) |
 | console output | the above; page 0 is drawn on (the DUART is not touched) |
 | `sys_getchar`, `sys_pollchar`, `sys_key_event`, stdin | the level-2 BIOS handler (vector 26, `INTEN_PS2`, mask below 2) |
 | `sys_serial_getc`, reads of `/dev/ttya` | the level-3 BIOS handler (vector 27, `INTEN_DUART`, `IMR_RXRDYA`, mask below 3); a `/dev/ttya` read waits for ever otherwise |
@@ -2585,7 +2833,7 @@ What depends on what, if you still want parts of the BIOS:
 What you lose by taking it all: the console, keyboard decoding, the serial receive ring, the
 tick counter, FAT file access (unless you keep the BIOS data area and call it), and the crash
 reports. What you gain: the whole 1 MB of RAM except what you choose to keep (even
-0x000400-0x003FFF if you will never call the BIOS again), all interrupt levels, and no
+0x000400-0x007FFF if you will never call the BIOS again), all interrupt levels, and no
 per-interrupt overhead you did not write.
 
 There is no clean way back from a full takeover other than the reset button (the POST takes
@@ -2596,13 +2844,15 @@ the BIOS data area intact, and then call `sys_exit`.
 ### Other ways in
 
 * **S-records**: type `srec` at the monitor prompt and send an S-record file over the serial
-  port ([1.2](#on-the-board)); data is accepted only for 0x004000-0x0FFFFF; `go [addr]` starts
+  port ([1.2](#on-the-board)); data is accepted only for 0x008000-0x0FFFFF; `go [addr]` starts
   it in user mode with `argc` 0. This needs no SD card.
 * **A different ROM**: the reset vectors always come from `ROM_BASE`, so code that must run
   before the BIOS has to replace the BIOS image (`flash`, or an external programmer with the
   even/odd split images). A broken image can only be recovered with the external programmer.
-  The free part of the flash can hold code and data for a program to call or read, but it is
-  never started by the reset sequence.
+  The rest of the flash is drive C:, so code and data for a program to call or read in place
+  belong in a file there.
+* **A script**: `C:/AUTOEXEC.CMD` can start a program at every reset (a line with its name),
+  which is the nearest thing to a ROM-resident application without replacing the BIOS.
 
 ---
 
@@ -2653,6 +2903,8 @@ NTSC figures unless stated; PAL in parentheses. One CPU clock = 83.3 ns.
 | SD 4-bit read loop (BIOS, `sd4_read512`), per byte | 86.5 |
 | SD block read, data phase / `sys_sd_read_block`, *measured* | 44,300 / about 60,600 (3.7 ms / 5.05 ms, 101 KB/s) |
 | SD block write, `sys_sd_write_block`, *measured* (emulated card busy 16 clocks) | about 160,000 (13.3 ms, of which 6.9 ms CRC16s), plus the card's programming time |
+| C: read, 200 KB in 8 KB `sys_read`s, *measured* | 8 frames (0.13 s, about 1.5 MB/s) |
+| C: erase/program cycle of a full 8 KB sector, interrupts masked, *measured* (emulated chips) | about 1,860,000 (155 ms); data sheet worst case about 100 ms of chip time |
 | single-precision soft-float multiply-add, *measured* | about 3,400 |
 
 At 12,000,000 clocks per second: 15,707 lines and 59.95 frames per second (15,625 and 50.08
@@ -2670,4 +2922,24 @@ other BIOS user of the port after the banner; `fw/README.md` and `sdk/README.md`
 suggest piping an S-record file into the emulator's stdin from start-up (bytes sent before
 `srec` runs are discarded); a stale serial-era comment in `sdk/examples/tune.c` and the
 `input.c` row of `fw/STATUS.md`; and the "4 GPIO" left in `README.md`'s machine table from
-revision 7. Nothing is open.
+revision 7.
+
+The revision 9 pass found these; all five were fixed the same day:
+
+* **`rename()` did not link.** `sdk/newlib_shim.c` defined `rename`, but newlib's `libc.a`
+  has its own `rename` (stdio `rename.c`, which calls `_rename_r` and then `_rename`), so the
+  link failed with a multiple definition. Fixed: the shim provides `_rename`; `rename()`,
+  `remove()`, `mkdir`, `rmdir`, `chdir` and `getcwd` all link and work (*verified in the emulator*).
+* **`rename`'s new name.** Spec syscall 34 said "a bare name keeps the directory"; FatFs's
+  `f_rename` resolves `new` against the volume's current directory and drops a drive letter from
+  it (with the current directory `C:/`, `ren T/R.TXT X.TXT` moves the file to `C:/X.TXT`,
+  *measured*). Fixed in the spec; the guide describes what the code does.
+* **`getcwd` with `len` 0** returned `E_FAULT` where the spec promised `E_INVAL`. Fixed in
+  `fw/syscall.c`.
+* **The C: layout.** `tools/mkflashvol.sh` claimed the same layout as `format C:`; the data
+  area starts at sector 32 in both, but the reserved-sector and FAT sizes differ (harmless).
+  The script's comment now says so.
+* **The cost of a sector write.** Spec `flash.volume_desc` and `fw/flash.h` give about 100 ms
+  with interrupts masked, the data sheet's sum; the routine takes about 155 ms in the emulator
+  (*measured*), which is its own polling loop since the emulator's chips finish after a few
+  status reads. The spec now quotes both; the board's figure has not been measured.

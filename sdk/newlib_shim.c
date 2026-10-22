@@ -204,7 +204,8 @@ int getpid(void)
 
 int link(const char *a, const char *b) { (void)a; (void)b; errno = ENOSYS; return -1; }
 int unlink(const char *path) { return map_err(sys_unlink(path)) < 0 ? -1 : 0; }
-int rename(const char *o, const char *n) { return map_err(sys_rename(o, n)) < 0 ? -1 : 0; }
+/* newlib's libc has rename() itself (stdio/rename.c) and calls _rename() for the work */
+int _rename(const char *o, const char *n) { return map_err(sys_rename(o, n)) < 0 ? -1 : 0; }
 int mkdir(const char *path, mode_t mode) { (void)mode; return map_err(sys_mkdir(path)) < 0 ? -1 : 0; }
 int rmdir(const char *path) { return map_err(sys_unlink(path)) < 0 ? -1 : 0; }
 int chdir(const char *path) { return map_err(sys_chdir(path)) < 0 ? -1 : 0; }
