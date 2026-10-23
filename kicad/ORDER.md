@@ -18,9 +18,11 @@ rev 11:
   expansion header J8.
 * **Joystick/paddle port** (rev C3, spec rev 11): J12 DE-9 male (Atari pinout) on the front edge
   between the SD socket and the buttons, with U14 74HC14, Q1 MMDT3904, D6/D7 BAT54W, two 15 nF,
-  F2 200 mA polyfuse and nine resistors. The six new part numbers are marked `verify` in
-  `parts.json` (they are listed in `other-m68k-bom-check.txt`): check them against a distributor
-  before ordering; same package and ratings are acceptable substitutes.
+  F2 200 mA polyfuse and nine resistors. The six new part numbers were checked against distributor
+  listings on 2026-10-22 (DigiKey/Mouser/Element14/Future): the DE-9 is Amphenol's .318 in backset
+  family, which is the footprint used (DigiKey lists it as L717SDE09PA4CH4FA610); the 15 nF Samsung
+  capacitor is at Avnet/Future and any 0603 X7R 15 nF 50 V may stand in; same package and ratings
+  are acceptable substitutes for the rest.
 * The silkscreen carries a dedication under the SRAMs, right of the bus buffers ("Griffin Jr.",
   "October 2026", "I love you, Kris!") and the board revision.
 

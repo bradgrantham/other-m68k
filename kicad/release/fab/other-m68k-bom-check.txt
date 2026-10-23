@@ -1,14 +1,6 @@
 assembled: 160 placements, 52 BOM lines; assembler-supplied chips inserted into sockets: 4; fitted by us: 4
 
 Part numbers written from memory, not yet checked against a distributor listing:
-  C46: CL10B153KB8NNNC
-  C47: CL10B153KB8NNNC
-  D6: BAT54W,115
-  D7: BAT54W,115
-  F2: 1206L020YR
-  J12: L717SDE09PA4CH4F
-  Q1: MMDT3904-7-F
-  U14: 74HC14D,653
 
 Assembled parts without an MPN: none
 Assembled parts without an LCSC number (JLCPCB matches basic passives itself): 50
