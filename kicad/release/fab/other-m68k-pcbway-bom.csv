@@ -39,7 +39,7 @@ Item,Designator,Qty,Manufacturer,Mfg Part #,Description,Package,Type,Supplied By
 38,"R58,R59",2,Yageo,RC0603FR-075K1L,5.1 k 1% 0603 (USB-C CC pull-downs),R_0603_1608Metric,SMD,PCBWay
 39,"RN1,RN2,RN3,RN4,RN5,RN6",6,Yageo,YC164-JR-07100RL,"4 x 100 ohm resistor array, 4x0603 convex (1206 size); alt Panasonic EXB-38V101JV",R_Array_Convex_4x0603,SMD,PCBWay
 40,"SW1,SW2",2,Omron,B3F-1000,tactile switch 6 mm THT,SW_PUSH_6mm,THT,PCBWay
-41,U1,1,Mill-Max,110-43-964-41-001000,"DIP-64 socket, 22.86 mm (0.9 in) rows; any dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred, this machined part is the fallback",DIP-64_W22.86mm_Socket,THT,PCBWay
+41,U1,1,any,"DIP-64 socket, 0.9 in rows, dual-wipe","DIP-64 socket, 22.86 mm (0.9 in) row spacing, stamped dual-wipe tin contacts; fallback if none is available: Mill-Max 110-43-964-41-001000 (machined)",DIP-64_W22.86mm_Socket,THT,PCBWay
 42,"U2,U3,U4,U5",4,Assmann WSW,A 32-LC-TT,"DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts",DIP-32_W15.24mm_Socket,THT,PCBWay
 43,"U6,U7",2,Assmann WSW,A-CCS-084-Z-T,"PLCC-84 through-hole socket, 1.27 mm pitch; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable",PLCC-84_THT-Socket,THT,PCBWay
 44,"U8,U9",2,Texas Instruments,SN74AHCT245DW,octal bus transceiver SOIC-20 wide,SOIC-20W_7.5x12.8mm_P1.27mm,SMD,PCBWay
@@ -47,6 +47,6 @@ Item,Designator,Qty,Manufacturer,Mfg Part #,Description,Package,Type,Supplied By
 46,U12,1,Diodes Inc,AP2112K-3.3TRG1,3.3 V 600 mA LDO SOT-23-5,SOT-23-5,SMD,PCBWay
 47,U13,1,Microchip,MCP130T-450I/TT,"4.50 V reset supervisor, open drain, SOT-23",SOT-23,SMD,PCBWay
 48,U14,1,Nexperia,"74HC14D,653","hex Schmitt inverter, SOIC-14",SOIC-14_3.9x8.7mm_P1.27mm,SMD,PCBWay
-49,X1,1,ECS,ECS-2200B-240,"24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 5 V half-size DIP-8 oscillator whose pin 1 is NC or an active-high output enable fits (pin 1 is tied to VCC)",Oscillator_DIP-8,THT,PCBWay
+49,X1,1,ECS,ECS-2200B-240,"24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 24 MHz 5 V half-size DIP-8 oscillator is acceptable",Oscillator_DIP-8,THT,PCBWay
 50,Y1,1,ECS,ECS-36-20-4XDN,"3.6864 MHz crystal HC-49/US, 20 pF",Crystal_HC49-U_Vertical,THT,PCBWay
 51,Y2,1,ECS,ECS-35-17-4X,3.579545 MHz crystal HC-49/US (NTSC subcarrier),Crystal_HC49-U_Vertical,THT,PCBWay

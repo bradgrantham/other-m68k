@@ -63,24 +63,19 @@ assembly.
 | not fitted | mounting holes, test pads, the crystal trim capacitor (DNP) |
 | loose parts | none (the PAL jumper is gone; no shunts) |
 
-### Order-form options and the note to PCBWay
+### What to upload, and the order-form remark
 
-* Sockets: ask for stamped dual-wipe sockets throughout. The DIP-32 and DIP-40 (Assmann A 32-LC-TT,
-  A 40-LC-TT) and PLCC-84 (Assmann A-CCS-084-Z-T) are such parts; for the DIP-64 (U1, 0.9 in
-  rows) any dual-wipe socket is acceptable, the Mill-Max 110-43-964-41-001000 only as a fallback.
-* Tick "accept substitutes" / "parts from China acceptable" on the order form, with this note in the
-  remarks: "Any part with identical function, footprint and pinout and the same or better ratings
-  (voltage, tolerance, speed, temperature) is acceptable for every line except U1, U6, U7 and U10
-  sockets' row spacing and pitch, which must match the footprint. Sockets: stamped dual-wipe
-  (tin) contacts are preferred over machined." The lines this mostly affects are passives,
-  LEDs, polyfuses, the electrolytics (any 220 uF 16 V and 100 uF 35 V in a 6.3 x 11 mm can with
-  2.5 mm pitch), the pin headers, tactile switches, HC-49/US crystals and the 74HC14/74AHCT245.
-  Keep the connectors whose footprints are vendor-specific on the named part or a verified
-  twin: J1 USB4125 (GCT), J3 MD-60SM and J10 MD-40SM (CUI), J4 DM3AT (Hirose), J5 RCJ-041 and
-  J6 SJ1-3523N (CUI), J12 L717SDE09PA4CH4F (Amphenol .318 in backset).
-* The BOM lists the socket under the chip's designator (U1, U2..U7, U10); the chips themselves
-  are not on it. If PCBWay flags "U2 missing" or similar, the answer is that the sockets are the
-  only parts to fit there.
+Upload only `other-m68k-gerbers.zip`, `other-m68k-pcbway-bom.csv` and `other-m68k-pcbway-centroid.csv`.
+This file is our own checklist and does not go to PCBWay. Tick the option that allows
+substitutes (parts from China), and put this in the order remarks:
+
+> Substitutes with the same function, footprint and pinout and equal or better ratings are
+> acceptable for all passives, LEDs, fuses, logic, headers, switches and crystals. Sockets must
+> match the row spacing in the BOM; stamped (dual-wipe) sockets preferred. Please keep the
+> connectors (J1, J3, J4, J5, J6, J10, J12) on the listed part numbers.
+
+The BOM lists each socket under its chip's designator (U1, U2..U7, U10) and the chips are not on
+it; if PCBWay asks about those designators, the sockets are the only parts to fit there.
 
 All part numbers were checked against distributor listings on 2026-10-20 (`parts.json` has no
 `verify` flags left; `other-m68k-bom-check.txt` lists none). Substitutions made then: Lite-On

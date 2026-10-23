@@ -7319,7 +7319,7 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 5 V half-size DIP-8 oscillator whose pin 1 is NC or an active-high output enable fits (pin 1 is tied to VCC)"
+		(property "Desc" "24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 24 MHz 5 V half-size DIP-8 oscillator is acceptable"
 			(at 154.94 33.02 0)
 			(effects
 				(font
@@ -7328,7 +7328,7 @@
 				(hide yes)
 			)
 		)
-		(property "Note" "ECS-2200B-240 has a tri-state pin 1 with internal pull-up; DigiKey in stock 2026-10. The ECS-2100A-240 of the B4 BOM was 18 weeks"
+		(property "Note" "Pin 1 is tied to VCC, so any part with pin 1 NC or an active-high enable fits; the ECS-2200B-240 has a tri-state pin 1 with internal pull-up. DigiKey in stock 2026-10; the ECS-2100A-240 of the B4 BOM was 18 weeks"
 			(at 154.94 33.02 0)
 			(effects
 				(font

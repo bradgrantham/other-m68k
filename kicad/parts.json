@@ -260,9 +260,9 @@
   "24MHz|*": {
    "mfr": "ECS",
    "mpn": "ECS-2200B-240",
-   "desc": "24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 5 V half-size DIP-8 oscillator whose pin 1 is NC or an active-high output enable fits (pin 1 is tied to VCC)",
+   "desc": "24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 24 MHz 5 V half-size DIP-8 oscillator is acceptable",
    "assembly": "pcba",
-   "note": "ECS-2200B-240 has a tri-state pin 1 with internal pull-up; DigiKey in stock 2026-10. The ECS-2100A-240 of the B4 BOM was 18 weeks"
+   "note": "Pin 1 is tied to VCC, so any part with pin 1 NC or an active-high enable fits; the ECS-2200B-240 has a tri-state pin 1 with internal pull-up. DigiKey in stock 2026-10; the ECS-2100A-240 of the B4 BOM was 18 weeks"
   },
   "3.6864MHz|*": {
    "mfr": "ECS",
@@ -365,10 +365,10 @@
    "assembly": "socket",
    "chip_supply": "customer",
    "socket": {
-    "mfr": "Mill-Max",
-    "mpn": "110-43-964-41-001000",
-    "desc": "DIP-64 socket, 22.86 mm (0.9 in) rows; any dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred, this machined part is the fallback",
-    "note": "PCBWay quoted the Mill-Max at $38 (2026-10); DigiKey sells it for about $15. No stamped 0.9 in DIP-64 found at DigiKey/Mouser"
+    "mfr": "any",
+    "mpn": "DIP-64 socket, 0.9 in rows, dual-wipe",
+    "desc": "DIP-64 socket, 22.86 mm (0.9 in) row spacing, stamped dual-wipe tin contacts; fallback if none is available: Mill-Max 110-43-964-41-001000 (machined)",
+    "note": "Named generically so the assembler looks for a stamped socket first. PCBWay quoted the Mill-Max at $38 (2026-10); DigiKey sells it for about $15. No stamped 0.9 in DIP-64 found at DigiKey/Mouser"
    }
   },
   "U2": {

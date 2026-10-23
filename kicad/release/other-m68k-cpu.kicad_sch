@@ -10697,7 +10697,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Manufacturer" "Mill-Max"
+		(property "Socket_Manufacturer" "any"
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -10706,7 +10706,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_MPN" "110-43-964-41-001000"
+		(property "Socket_MPN" "DIP-64 socket, 0.9 in rows, dual-wipe"
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -10715,7 +10715,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) rows; any dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred, this machined part is the fallback"
+		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) row spacing, stamped dual-wipe tin contacts; fallback if none is available: Mill-Max 110-43-964-41-001000 (machined)"
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -10724,7 +10724,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Note" "PCBWay quoted the Mill-Max at $38 (2026-10); DigiKey sells it for about $15. No stamped 0.9 in DIP-64 found at DigiKey/Mouser"
+		(property "Socket_Note" "Named generically so the assembler looks for a stamped socket first. PCBWay quoted the Mill-Max at $38 (2026-10); DigiKey sells it for about $15. No stamped 0.9 in DIP-64 found at DigiKey/Mouser"
 			(at 59.69 100.33 0)
 			(effects
 				(font
