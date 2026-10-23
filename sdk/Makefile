@@ -47,6 +47,7 @@ $(B)/%.o: examples/%.c | $(B)
 
 $(B)/bmpview.o: CFLAGS += -O2        # pixel loops: speed over size
 $(B)/pdm.o: CFLAGS += -O2            # table build and encoder: speed over size
+$(B)/plasma.o: CFLAGS += -O2         # inner loop: 5 VBLANKs a frame against 6 at -Os
 
 $(B)/%.elf: $(B)/%.o $(B)/crt0.o $(B)/libsys.a user.ld $(GEN)/user.ld
 	$(CC) $(LDFLAGS) -o $@ $(B)/crt0.o $< $(LDLIBS)

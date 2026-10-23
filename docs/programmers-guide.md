@@ -718,7 +718,14 @@ int main(void)
 How much can you draw per frame? A frame is 200,168 CPU clocks (NTSC). `memcpy` of a whole
 page takes about 2 frames (*measured* 43 frames for 20 copies), so full-screen redraws run at
 15-30 frames per second at best; redraw only what changes, as above. `sdk/examples/plasma.c`
-is another complete example (4x4 blocks, written as longs).
+is another complete example (4x4 blocks, written as longs). It also shows where the time goes
+in such a loop: the first version computed four sine terms per block and ran at 12 VBLANKs a
+frame (5 fps) at `-Os`, 10 at `-O2`. Tabulating the terms per frame (each depends on x, x+y or
+x-y alone), keeping the palette as ready-made 4-byte words, scaling the tables by 4 so the
+masked sum is the byte offset into that word table, and making the line stride a constant so
+the four stores are displacement-addressed brings it to 6 VBLANKs at `-Os` and 5 at `-O2`
+(12 fps): the inner loop is then 12 instructions, about 170 clocks a block, and 4800 blocks
+fill 4 frames. Optimisation flags were worth 17 %; the data layout was worth 140 %.
 
 Composite colour is soft: fine horizontal colour detail smears, and the colour subcarrier is not
 locked to the pixels, so expect some dot crawl. Large areas of colour and high-contrast

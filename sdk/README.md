@@ -28,7 +28,7 @@ serial upload path.
 | `../generated/syscall_stubs.S` | `sys_*` functions (`#include "syscalls.h"`); compiled into `build/libsys.a` |
 | `pdm.c`, `pdm.h` | PDM encoder for the audio stream (`#include "pdm.h"`, in `build/libsys.a`): `pdm_init` builds a 64 KB first-order sigma-delta table in `.bss` (0.4 s), `pdm_encode(dst, samples, n)` turns unsigned 8-bit samples into pattern bytes (83 clocks each) with the accumulator carried across calls, `pdm_reset`, `pdm_silence` |
 | `examples/hello.c` | printf, `sys_video_info`, `sys_mem_info`, `sys_con_info`, wait for a key |
-| `examples/plasma.c` | double-buffered RGB332 effect in 4x4 blocks, page flip + `sys_wait_vblank`, any key exits |
+| `examples/plasma.c` | double-buffered RGB332 effect in 4x4 blocks, page flip + `sys_wait_vblank`, any key exits; the sine terms are tabulated per frame and the palette kept as 4-byte words (5 VBLANKs a frame at `-O2`, see the programmer's guide) |
 | `examples/ls.c` | `sys_opendir`/`sys_readdir`/`sys_closedir`, prints `argv` and `sys_getcwd`; lists the current directory by default (`ls.elf [path]`; plain `ls` is the monitor's built-in) with long names, sizes and stamps (`strftime`/`gmtime` of `dirent.mtime`) |
 | `examples/cat.c` | stdio `fopen`/`fread` on files (-> `sys_open`/`sys_read`); `cat.elf FILE...` (plain `cat` is the monitor's) |
 | `examples/fstest.c` | writes `TEST.TXT` with stdio (`O_CREAT`, `O_APPEND`), reads it back with the raw calls, reports OK/FAIL; `run fstest.elf exec ls.elf` then chains with `sys_exec` |
