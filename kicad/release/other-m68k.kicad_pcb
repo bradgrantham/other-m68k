@@ -39869,6 +39869,28 @@
 			)
 		)
 	)
+	(gr_text "ODD"
+		(at 152.5 105.3 0)
+		(layer "F.SilkS")
+		(uuid "41fe9fb8-0b11-4d7e-9946-087351d5298f")
+		(effects
+			(font
+				(size 1.2 1.2)
+				(thickness 0.18)
+			)
+		)
+	)
+	(gr_text "EVEN"
+		(at 169 105.3 0)
+		(layer "F.SilkS")
+		(uuid "86a8583d-c779-43e6-8bbb-5605e8fade14")
+		(effects
+			(font
+				(size 1.2 1.2)
+				(thickness 0.18)
+			)
+		)
+	)
 	(gr_text "rev C3"
 		(at 162 43.4 0)
 		(layer "F.SilkS")
