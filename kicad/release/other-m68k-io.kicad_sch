@@ -13254,7 +13254,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Manufacturer" "Mill-Max"
+		(property "Socket_Manufacturer" "Assmann WSW"
 			(at 69.85 63.5 0)
 			(effects
 				(font
@@ -13263,7 +13263,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_MPN" "110-43-640-41-001000"
+		(property "Socket_MPN" "A 40-LC-TT"
 			(at 69.85 63.5 0)
 			(effects
 				(font
@@ -13272,7 +13272,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "DIP-40 socket, 15.24 mm rows, gold contacts, RoHS"
+		(property "Socket_Desc" "DIP-40 socket, 15.24 mm rows, stamped dual-wipe tin contacts (same family as the DIP-32 sockets; A 40-LC-TR at DigiKey)"
 			(at 69.85 63.5 0)
 			(effects
 				(font

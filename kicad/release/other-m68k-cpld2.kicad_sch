@@ -11956,7 +11956,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Manufacturer" "Preci-dip"
+		(property "Socket_Manufacturer" "Assmann WSW"
 			(at 62.23 76.2 0)
 			(effects
 				(font
@@ -11965,7 +11965,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_MPN" "540-88-084-24-008"
+		(property "Socket_MPN" "A-CCS-084-Z-T"
 			(at 62.23 76.2 0)
 			(effects
 				(font
@@ -11974,7 +11974,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "PLCC-84 through-hole socket, 1.27 mm pitch (RS 7019411)"
+		(property "Socket_Desc" "PLCC-84 through-hole socket, 1.27 mm pitch (DigiKey 5023770 / AE11110-ND, RS 674-2555; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable)"
 			(at 62.23 76.2 0)
 			(effects
 				(font

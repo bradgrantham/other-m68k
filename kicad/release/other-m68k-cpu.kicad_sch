@@ -10715,7 +10715,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) rows, gold contacts, RoHS"
+		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) rows. ANY dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred on cost; the Mill-Max machined part is the fallback (PCBWay quoted it at $38, DigiKey sells it for about $15, so consigning it is an option)"
 			(at 59.69 100.33 0)
 			(effects
 				(font
