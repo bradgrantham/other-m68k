@@ -7918,7 +7918,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "RGB to NTSC/PAL encoder, SOIC-16W. NOT in the assembly BOM: we buy and hand-solder it (LAST TIME BUY, DigiKey LTB 2027-07-29, about $25 there against $77 quoted by PCBWay)"
+		(property "Desc" "RGB to NTSC/PAL encoder, SOIC-16W"
+			(at 67.31 41.91 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "Not in the assembly BOM: we buy and hand-solder it. LAST TIME BUY, DigiKey LTB 2027-07-29, about $25 there against $77 quoted by PCBWay (2026-10); buy spares for the bare boards"
 			(at 67.31 41.91 0)
 			(effects
 				(font

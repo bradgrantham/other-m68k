@@ -69,7 +69,7 @@ fab:
 	$(KICAD_CLI) pcb export gerbers --no-protel-ext --subtract-soldermask --layers F.Cu,In1.Cu,In2.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,F.Paste,B.Paste,Edge.Cuts -o $(FAB)/ $(FAB_PCB)
 	$(KICAD_CLI) pcb export drill --format excellon --excellon-separate-th --generate-map --map-format pdf -o $(FAB)/ $(FAB_PCB)
 	$(KICAD_CLI) pcb export pos --format csv --units mm --side both --exclude-dnp -o $(FAB)/$(BN)-pos.csv $(FAB_PCB)
-	$(KICAD_CLI) sch export bom --fields "Reference,Value,Footprint,\$${QUANTITY},\$${DNP},Manufacturer,MPN,LCSC,Assembly,Socket_MPN,Desc" --labels "Refs,Value,Footprint,Qty,DNP,Manufacturer,MPN,LCSC,Assembly,Socket MPN,Description" --group-by "Value,Footprint" -o $(FAB)/$(BN)-bom.csv $(B)/$(BN).kicad_sch
+	$(KICAD_CLI) sch export bom --fields "Reference,Value,Footprint,\$${QUANTITY},\$${DNP},Manufacturer,MPN,LCSC,Assembly,Socket_MPN,Desc,Note,Socket_Note" --labels "Refs,Value,Footprint,Qty,DNP,Manufacturer,MPN,LCSC,Assembly,Socket MPN,Description,Note,Socket Note" --group-by "Value,Footprint" -o $(FAB)/$(BN)-bom.csv $(B)/$(BN).kicad_sch
 	$(PYTHON) fab_export.py $(B)/$(BN).xml $(FAB_PCB) $(FAB) --name $(BN)
 	@echo "fab outputs in $(FAB)/ (from $(FAB_PCB))"; ls $(FAB)
 

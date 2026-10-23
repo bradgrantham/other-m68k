@@ -11974,7 +11974,16 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "PLCC-84 through-hole socket, 1.27 mm pitch (DigiKey 5023770 / AE11110-ND, RS 674-2555; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable)"
+		(property "Socket_Desc" "PLCC-84 through-hole socket, 1.27 mm pitch; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable"
+			(at 62.23 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Socket_Note" "DigiKey 5023770 / AE11110-ND, RS 674-2555. Replaces the Preci-dip PCBWay could not source (2026-10)"
 			(at 62.23 76.2 0)
 			(effects
 				(font

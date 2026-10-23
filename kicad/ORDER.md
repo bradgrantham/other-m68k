@@ -52,7 +52,8 @@ assembly.
 
 | item | value |
 |---|---|
-| BOM | `other-m68k-pcbway-bom.csv` (Item, Designator, Qty, Manufacturer, Mfg Part #, Description, Package, Type SMD/THT, Supplied By) |
+| BOM for PCBWay | `other-m68k-pcbway-bom.csv` (Item, Designator, Qty, Manufacturer, Mfg Part #, Description, Package, Type SMD/THT, Supplied By). Only the assembled parts, and the Description column carries nothing but the part description and any substitution rule PCBWay may use |
+| BOM for us | `other-m68k-bom.csv`: every part including the chips we fit, with Assembly, Socket MPN and our sourcing notes (distributor numbers, stock, prices from the 2026-10 quote); `other-m68k-customer-parts.csv` is the subset we fit ourselves |
 | placement | `other-m68k-pcbway-centroid.csv` (KiCad convention: mm, Y up, KiCad rotation, top side only) |
 | scope | SMD **and** through-hole: passives, LDO, supervisor, 74AHCT245 and 74HC14 (SOIC), transistor and Schottky diodes, polyfuses, connectors, headers, jacks, switches, crystals, oscillator, electrolytics, and every IC socket (plain DIP/PLCC sockets, no ZIF). PCBWay buys and inserts no chips: every socket ships empty |
 | consigned | none. Nothing is mailed to PCBWay: the parts we supply are fitted here after the boards arrive (see the next row), so there is no consignment shipping or handling fee |

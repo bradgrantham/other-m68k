@@ -6,6 +6,9 @@
   "may be '*'); by_ref overrides per reference.",
   "assembly: pcba      = the assembler buys and mounts it",
   "          customer  = we supply and mount it ourselves (not in the assembly BOM/CPL)",
+  "desc: the part description PCBWay sees (what it is, plus any substitution rule they may use);",
+  "note: our own sourcing remarks (distributor numbers, stock, prices, history); goes to the",
+  "      full BOM and customer-parts list only, never to the assembler",
   "          socket    = the assembler mounts the SOCKET (socket.* fields); the chip is a",
   "                      separate BOM line, supplied by chip_supply (customer | pcba, inserted",
   "                      after assembly)",
@@ -79,8 +82,9 @@
   "100uF|Capacitor_THT:CP_Radial_D6.3mm_P2.50mm": {
    "mfr": "Rubycon",
    "mpn": "35ZLH100MEFC6.3X11",
-   "desc": "100 uF 35 V electrolytic, 6.3 mm dia, 2.5 mm pitch (the 16 V ZLH 100 uF is a 5 mm can)",
-   "assembly": "pcba"
+   "desc": "100 uF 35 V electrolytic, 6.3 mm dia, 2.5 mm pitch",
+   "assembly": "pcba",
+   "note": "35 V part chosen for the can size: the 16 V ZLH 100 uF is a 5 mm can"
   },
   "10k|Resistor_SMD:R_0603_1608Metric": {
    "mfr": "Yageo",
@@ -181,8 +185,9 @@
   "USB-C power|*": {
    "mfr": "GCT",
    "mpn": "USB4125-GF-A-0190",
-   "desc": "USB-C receptacle, 6 pin, power only, right angle (DigiKey/Farnell/Future list it; stock varies)",
-   "assembly": "pcba"
+   "desc": "USB-C receptacle, 6 pin, power only, right angle",
+   "assembly": "pcba",
+   "note": "DigiKey/Farnell/Future list it; stock varies"
   },
   "FTDI (GND CTS VCC TXD RXD RTS)|*": {
    "mfr": "Sullins",
@@ -241,8 +246,9 @@
   "AD724JR|*": {
    "mfr": "Analog Devices",
    "mpn": "AD724JRZ",
-   "desc": "RGB to NTSC/PAL encoder, SOIC-16W. NOT in the assembly BOM: we buy and hand-solder it (LAST TIME BUY, DigiKey LTB 2027-07-29, about $25 there against $77 quoted by PCBWay)",
-   "assembly": "customer"
+   "desc": "RGB to NTSC/PAL encoder, SOIC-16W",
+   "assembly": "customer",
+   "note": "Not in the assembly BOM: we buy and hand-solder it. LAST TIME BUY, DigiKey LTB 2027-07-29, about $25 there against $77 quoted by PCBWay (2026-10); buy spares for the bare boards"
   },
   "AP2112K-3.3|*": {
    "mfr": "Diodes Inc",
@@ -254,14 +260,16 @@
   "24MHz|*": {
    "mfr": "ECS",
    "mpn": "ECS-2200B-240",
-   "desc": "24 MHz 5 V HCMOS oscillator, half-size DIP-8 with tri-state pin 1 (internal pull-up, tied to VCC here; DigiKey in stock 2026-10; the ECS-2100A-240 is 18 weeks). Any 5 V half-size DIP-8 oscillator fits",
-   "assembly": "pcba"
+   "desc": "24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 5 V half-size DIP-8 oscillator whose pin 1 is NC or an active-high output enable fits (pin 1 is tied to VCC)",
+   "assembly": "pcba",
+   "note": "ECS-2200B-240 has a tri-state pin 1 with internal pull-up; DigiKey in stock 2026-10. The ECS-2100A-240 of the B4 BOM was 18 weeks"
   },
   "3.6864MHz|*": {
    "mfr": "ECS",
    "mpn": "ECS-36-20-4XDN",
-   "desc": "3.6864 MHz crystal HC-49/US, 20 pF (-40..85 C grade; ECS-36-20-4DN is NRND)",
-   "assembly": "pcba"
+   "desc": "3.6864 MHz crystal HC-49/US, 20 pF",
+   "assembly": "pcba",
+   "note": "-40..85 C grade; the commercial ECS-36-20-4DN is NRND"
   },
   "2A|Fuse:Fuse_1206_3216Metric": {
    "mfr": "Littelfuse",
@@ -308,8 +316,9 @@
   "Joystick (Atari DE-9)|*": {
    "mfr": "Amphenol ICC",
    "mpn": "L717SDE09PA4CH4F",
-   "desc": "DE-9 male (plug), right angle, housed, 4-40 boardlocks, .318 in (8.08 mm) backset = KiCad's EdgePinOffset7.70/MountingHolesOffset9.12 footprint; DigiKey stocks it as L717SDE09PA4CH4FA610, Farnell as L717SDE09PA4CH4F (any L717SDE09PA4CH4x is the same connector)",
-   "assembly": "pcba"
+   "desc": "DE-9 male (plug), right angle, housed, 4-40 boardlocks, .318 in (8.08 mm) backset; any L717SDE09PA4CH4x is the same connector",
+   "assembly": "pcba",
+   "note": "The .318 in backset is KiCad's EdgePinOffset7.70/MountingHolesOffset9.12 footprint. DigiKey stocks it as L717SDE09PA4CH4FA610, Farnell as L717SDE09PA4CH4F"
   },
   "74HC14|*": {
    "mfr": "Nexperia",
@@ -329,20 +338,23 @@
    "mfr": "Nexperia",
    "mpn": "BAT54W,115",
    "lcsc": "C8657",
-   "desc": "Schottky diode 30 V 200 mA, SOT-323 (DigiKey/Mouser/LCSC stocked)",
-   "assembly": "pcba"
+   "desc": "Schottky diode 30 V 200 mA, SOT-323",
+   "assembly": "pcba",
+   "note": "DigiKey/Mouser/LCSC stocked"
   },
   "15nF|Capacitor_SMD:C_0603_1608Metric": {
    "mfr": "Samsung",
    "mpn": "CL10B153KB8NNNC",
-   "desc": "15 nF 50 V X7R 0603 (Avnet/Future stock; any 0603 X7R 15 nF 50 V is fine)",
-   "assembly": "pcba"
+   "desc": "15 nF 50 V X7R 0603; any 0603 X7R 15 nF 50 V is acceptable",
+   "assembly": "pcba",
+   "note": "Avnet/Future stock the Samsung part"
   },
   "200mA|Fuse:Fuse_1206_3216Metric": {
    "mfr": "Littelfuse",
    "mpn": "1206L020YR",
-   "desc": "PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206 (DigiKey/Element14)",
-   "assembly": "pcba"
+   "desc": "PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206",
+   "assembly": "pcba",
+   "note": "DigiKey/Element14"
   }
  },
  "by_ref": {
@@ -355,7 +367,8 @@
    "socket": {
     "mfr": "Mill-Max",
     "mpn": "110-43-964-41-001000",
-    "desc": "DIP-64 socket, 22.86 mm (0.9 in) rows. ANY dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred on cost; the Mill-Max machined part is the fallback (PCBWay quoted it at $38, DigiKey sells it for about $15, so consigning it is an option)"
+    "desc": "DIP-64 socket, 22.86 mm (0.9 in) rows; any dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred, this machined part is the fallback",
+    "note": "PCBWay quoted the Mill-Max at $38 (2026-10); DigiKey sells it for about $15. No stamped 0.9 in DIP-64 found at DigiKey/Mouser"
    }
   },
   "U2": {
@@ -367,7 +380,8 @@
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",
-    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts",
+    "note": "RS 674-2463; A 32-LC-TR is the same socket at DigiKey"
    }
   },
   "U3": {
@@ -379,7 +393,8 @@
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",
-    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts",
+    "note": "RS 674-2463; A 32-LC-TR is the same socket at DigiKey"
    }
   },
   "U4": {
@@ -391,7 +406,8 @@
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",
-    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts",
+    "note": "RS 674-2463; A 32-LC-TR is the same socket at DigiKey"
    }
   },
   "U5": {
@@ -403,7 +419,8 @@
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",
-    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts (RS 674-2463; A 32-LC-TR is the same socket at DigiKey)"
+    "desc": "DIP-32 socket, 15.24 mm rows, stamped dual-wipe tin contacts",
+    "note": "RS 674-2463; A 32-LC-TR is the same socket at DigiKey"
    }
   },
   "U6": {
@@ -415,7 +432,8 @@
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A-CCS-084-Z-T",
-    "desc": "PLCC-84 through-hole socket, 1.27 mm pitch (DigiKey 5023770 / AE11110-ND, RS 674-2555; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable)"
+    "desc": "PLCC-84 through-hole socket, 1.27 mm pitch; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable",
+    "note": "DigiKey 5023770 / AE11110-ND, RS 674-2555. Replaces the Preci-dip PCBWay could not source (2026-10)"
    }
   },
   "U7": {
@@ -427,7 +445,8 @@
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A-CCS-084-Z-T",
-    "desc": "PLCC-84 through-hole socket, 1.27 mm pitch (DigiKey 5023770 / AE11110-ND, RS 674-2555; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable)"
+    "desc": "PLCC-84 through-hole socket, 1.27 mm pitch; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable",
+    "note": "DigiKey 5023770 / AE11110-ND, RS 674-2555. Replaces the Preci-dip PCBWay could not source (2026-10)"
    }
   },
   "U8": {
@@ -451,7 +470,8 @@
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 40-LC-TT",
-    "desc": "DIP-40 socket, 15.24 mm rows, stamped dual-wipe tin contacts (same family as the DIP-32 sockets; A 40-LC-TR at DigiKey)"
+    "desc": "DIP-40 socket, 15.24 mm rows, stamped dual-wipe tin contacts",
+    "note": "Same family as the DIP-32 sockets; A 40-LC-TR at DigiKey. Replaces the Mill-Max PCBWay quoted at $22"
    }
   },
   "TP1": {

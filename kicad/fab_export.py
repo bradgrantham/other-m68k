@@ -12,7 +12,10 @@ positions from the board, and writes into <outdir>:
     NAME-pcbway-bom.csv       Item, Designator, Qty, Manufacturer, Mfg Part #, Description,
                               Package, Type (SMD/THT), Supplied By             (assembled parts)
     NAME-pcbway-centroid.csv  Designator, Mid X, Mid Y, Layer, Rotation, Footprint
-    NAME-customer-parts.csv   what we fit ourselves after assembly (socketed chips, consigned)
+    NAME-customer-parts.csv   what we fit ourselves after assembly (socketed chips, consigned),
+                              with our sourcing notes (parts.json "note")
+The PCBWay BOM carries only Desc (the description and any substitution rule); our own
+sourcing remarks (Note) go to the KiCad BOM and the customer-parts list.
     NAME-bom-check.txt        part numbers still marked verify, assembled parts without an MPN,
                               parts without an LCSC number (JLCPCB only)
     NAME-gerbers.zip          every Gerber/drill file already in <outdir>
@@ -104,7 +107,7 @@ def main():
             continue
         if asm == "customer":
             customer.append({"ref": ref, "mfr": f.get("Manufacturer", ""), "mpn": f.get("MPN", ""), "desc": f.get("Desc", c["value"]),
-                             "note": "customer supplies and fits"})
+                             "note": "customer supplies and fits", "remark": f.get("Note", "")})
             continue
         if asm == "socket":
             assembled.append({"ref": ref, "mfr": f.get("Socket_Manufacturer", ""), "mpn": f.get("Socket_MPN", ""), "lcsc": f.get("Socket_LCSC", ""),
@@ -113,7 +116,7 @@ def main():
             supply = f.get("Chip_Supply", "customer")
             customer.append({"ref": ref, "mfr": f.get("Manufacturer", ""), "mpn": f.get("MPN", ""), "desc": f.get("Desc", c["value"]),
                              "note": "customer supplies and inserts into socket" if supply == "customer"
-                             else "ASSEMBLER supplies loose, inserted into socket after assembly"})
+                             else "ASSEMBLER supplies loose, inserted into socket after assembly", "remark": f.get("Note", "")})
             if supply != "customer":
                 loose.append({"ref": ref, "mfr": f.get("Manufacturer", ""), "mpn": f.get("MPN", ""), "lcsc": f.get("LCSC", ""),
                               "desc": f.get("Desc", c["value"]) + " (insert into the socket after assembly)",
@@ -169,9 +172,9 @@ def main():
             p = pos[r["ref"]]
             w.writerow([r["ref"], f"{p['x']:.4f}", f"{p['y']:.4f}", p["side"], f"{p['rot']:.1f}", short_fp(r["footprint"])])
     with open(out("customer-parts.csv"), "w", newline="") as f:
-        w = csv.writer(f); w.writerow(["Designator", "Manufacturer", "MPN", "Description", "Note"])
+        w = csv.writer(f); w.writerow(["Designator", "Manufacturer", "MPN", "Description", "Who fits it", "Sourcing note"])
         for r in customer:
-            w.writerow([r["ref"], r["mfr"], r["mpn"], r["desc"], r["note"]])
+            w.writerow([r["ref"], r["mfr"], r["mpn"], r["desc"], r["note"], r["remark"]])
     with open(out("bom-check.txt"), "w") as f:
         f.write(f"assembled: {len(assembled)} placements, {len(grouped(assembled))} BOM lines; assembler-supplied chips inserted into sockets: {len(loose)}; fitted by us: {len(customer) - len(loose)}\n")
         f.write("\nPart numbers written from memory, not yet checked against a distributor listing:\n")

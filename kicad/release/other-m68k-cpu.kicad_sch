@@ -10715,7 +10715,16 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) rows. ANY dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred on cost; the Mill-Max machined part is the fallback (PCBWay quoted it at $38, DigiKey sells it for about $15, so consigning it is an option)"
+		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) rows; any dual-wipe (stamped tin) DIP-64 socket with 0.9 in row spacing is acceptable and preferred, this machined part is the fallback"
+			(at 59.69 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Socket_Note" "PCBWay quoted the Mill-Max at $38 (2026-10); DigiKey sells it for about $15. No stamped 0.9 in DIP-64 found at DigiKey/Mouser"
 			(at 59.69 100.33 0)
 			(effects
 				(font

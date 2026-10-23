@@ -7319,7 +7319,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "24 MHz 5 V HCMOS oscillator, half-size DIP-8 with tri-state pin 1 (internal pull-up, tied to VCC here; DigiKey in stock 2026-10; the ECS-2100A-240 is 18 weeks). Any 5 V half-size DIP-8 oscillator fits"
+		(property "Desc" "24 MHz 5 V HCMOS oscillator, half-size DIP-8; any 5 V half-size DIP-8 oscillator whose pin 1 is NC or an active-high output enable fits (pin 1 is tied to VCC)"
+			(at 154.94 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "ECS-2200B-240 has a tri-state pin 1 with internal pull-up; DigiKey in stock 2026-10. The ECS-2100A-240 of the B4 BOM was 18 weeks"
 			(at 154.94 33.02 0)
 			(effects
 				(font
@@ -7466,7 +7475,16 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "PLCC-84 through-hole socket, 1.27 mm pitch (DigiKey 5023770 / AE11110-ND, RS 674-2555; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable)"
+		(property "Socket_Desc" "PLCC-84 through-hole socket, 1.27 mm pitch; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable"
+			(at 62.23 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Socket_Note" "DigiKey 5023770 / AE11110-ND, RS 674-2555. Replaces the Preci-dip PCBWay could not source (2026-10)"
 			(at 62.23 76.2 0)
 			(effects
 				(font

@@ -3891,7 +3891,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "100 uF 35 V electrolytic, 6.3 mm dia, 2.5 mm pitch (the 16 V ZLH 100 uF is a 5 mm can)"
+		(property "Desc" "100 uF 35 V electrolytic, 6.3 mm dia, 2.5 mm pitch"
+			(at 46.99 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "35 V part chosen for the can size: the 16 V ZLH 100 uF is a 5 mm can"
 			(at 46.99 111.76 0)
 			(effects
 				(font
@@ -4670,7 +4679,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "USB-C receptacle, 6 pin, power only, right angle (DigiKey/Farnell/Future list it; stock varies)"
+		(property "Desc" "USB-C receptacle, 6 pin, power only, right angle"
+			(at 54.61 41.91 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "DigiKey/Farnell/Future list it; stock varies"
 			(at 54.61 41.91 0)
 			(effects
 				(font

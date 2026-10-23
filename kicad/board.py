@@ -504,8 +504,8 @@ def build():
 
 def apply_parts(b, path=os.path.join(HERE, "parts.json")):
     """Attach sourcing fields from parts.json to every part: Manufacturer, MPN, LCSC, Desc,
-    Assembly (pcba | customer | socket | dnp), and for socketed chips Socket_Manufacturer,
-    Socket_MPN, Chip_Supply.  A part without an entry is an error: the assembly BOM must
+    Note (our sourcing remarks, kept out of the assembler's BOM), Assembly (pcba | customer |
+    socket | dnp), and for socketed chips Socket_Manufacturer, Socket_MPN, Socket_Note, Chip_Supply.  A part without an entry is an error: the assembly BOM must
     be complete."""
     with open(path, encoding="utf-8") as f:
         db = json.load(f)
@@ -517,11 +517,11 @@ def apply_parts(b, path=os.path.join(HERE, "parts.json")):
             missing.append(f"{ref} ({part.value}, {part.footprint})")
             continue
         fields = {"Manufacturer": entry.get("mfr", ""), "MPN": entry.get("mpn", ""), "LCSC": entry.get("lcsc", ""),
-                  "Desc": entry.get("desc", ""), "Assembly": entry.get("assembly", "pcba")}
+                  "Desc": entry.get("desc", ""), "Note": entry.get("note", ""), "Assembly": entry.get("assembly", "pcba")}
         if entry.get("assembly") == "socket":
             s = entry["socket"]
             fields.update({"Socket_Manufacturer": s.get("mfr", ""), "Socket_MPN": s.get("mpn", ""),
-                           "Socket_LCSC": s.get("lcsc", ""), "Socket_Desc": s.get("desc", ""),
+                           "Socket_LCSC": s.get("lcsc", ""), "Socket_Desc": s.get("desc", ""), "Socket_Note": s.get("note", ""),
                            "Chip_Supply": entry.get("chip_supply", "customer")})
         if entry.get("assembly") == "dnp":
             part.dnp = True

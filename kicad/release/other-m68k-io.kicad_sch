@@ -8539,7 +8539,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "Schottky diode 30 V 200 mA, SOT-323 (DigiKey/Mouser/LCSC stocked)"
+		(property "Desc" "Schottky diode 30 V 200 mA, SOT-323"
+			(at 242.57 314.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "DigiKey/Mouser/LCSC stocked"
 			(at 242.57 314.96 0)
 			(effects
 				(font
@@ -8656,7 +8665,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "15 nF 50 V X7R 0603 (Avnet/Future stock; any 0603 X7R 15 nF 50 V is fine)"
+		(property "Desc" "15 nF 50 V X7R 0603; any 0603 X7R 15 nF 50 V is acceptable"
+			(at 304.8 205.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "Avnet/Future stock the Samsung part"
 			(at 304.8 205.74 0)
 			(effects
 				(font
@@ -8898,7 +8916,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "Schottky diode 30 V 200 mA, SOT-323 (DigiKey/Mouser/LCSC stocked)"
+		(property "Desc" "Schottky diode 30 V 200 mA, SOT-323"
+			(at 175.26 314.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "DigiKey/Mouser/LCSC stocked"
 			(at 175.26 314.96 0)
 			(effects
 				(font
@@ -9015,7 +9042,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "15 nF 50 V X7R 0603 (Avnet/Future stock; any 0603 X7R 15 nF 50 V is fine)"
+		(property "Desc" "15 nF 50 V X7R 0603; any 0603 X7R 15 nF 50 V is acceptable"
+			(at 240.03 205.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "Avnet/Future stock the Samsung part"
 			(at 240.03 205.74 0)
 			(effects
 				(font
@@ -10467,7 +10503,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "Schottky diode 30 V 200 mA, SOT-323 (DigiKey/Mouser/LCSC stocked)"
+		(property "Desc" "Schottky diode 30 V 200 mA, SOT-323"
+			(at 309.88 314.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "DigiKey/Mouser/LCSC stocked"
 			(at 309.88 314.96 0)
 			(effects
 				(font
@@ -10583,7 +10628,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206 (DigiKey/Element14)"
+		(property "Desc" "PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206"
+			(at 46.99 205.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "DigiKey/Element14"
 			(at 46.99 205.74 0)
 			(effects
 				(font
@@ -11261,7 +11315,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206 (DigiKey/Element14)"
+		(property "Desc" "PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206"
+			(at 388.62 167.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "DigiKey/Element14"
 			(at 388.62 167.64 0)
 			(effects
 				(font
@@ -12670,7 +12733,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "DE-9 male (plug), right angle, housed, 4-40 boardlocks, .318 in (8.08 mm) backset = KiCad's EdgePinOffset7.70/MountingHolesOffset9.12 footprint; DigiKey stocks it as L717SDE09PA4CH4FA610, Farnell as L717SDE09PA4CH4F (any L717SDE09PA4CH4x is the same connector)"
+		(property "Desc" "DE-9 male (plug), right angle, housed, 4-40 boardlocks, .318 in (8.08 mm) backset; any L717SDE09PA4CH4x is the same connector"
+			(at 163.83 41.91 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "The .318 in backset is KiCad's EdgePinOffset7.70/MountingHolesOffset9.12 footprint. DigiKey stocks it as L717SDE09PA4CH4FA610, Farnell as L717SDE09PA4CH4F"
 			(at 163.83 41.91 0)
 			(effects
 				(font
@@ -13027,7 +13099,16 @@
 				(hide yes)
 			)
 		)
-		(property "Desc" "3.6864 MHz crystal HC-49/US, 20 pF (-40..85 C grade; ECS-36-20-4DN is NRND)"
+		(property "Desc" "3.6864 MHz crystal HC-49/US, 20 pF"
+			(at 321.31 167.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "-40..85 C grade; the commercial ECS-36-20-4DN is NRND"
 			(at 321.31 167.64 0)
 			(effects
 				(font
@@ -13272,7 +13353,16 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "DIP-40 socket, 15.24 mm rows, stamped dual-wipe tin contacts (same family as the DIP-32 sockets; A 40-LC-TR at DigiKey)"
+		(property "Socket_Desc" "DIP-40 socket, 15.24 mm rows, stamped dual-wipe tin contacts"
+			(at 69.85 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Socket_Note" "Same family as the DIP-32 sockets; A 40-LC-TR at DigiKey. Replaces the Mill-Max PCBWay quoted at $22"
 			(at 69.85 63.5 0)
 			(effects
 				(font
