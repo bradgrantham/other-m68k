@@ -1,9 +1,10 @@
 Designator,Manufacturer,MPN,Description,Note
 U1,Motorola,MC68000P12,68000 CPU 12 MHz DIP-64,customer supplies and inserts into socket
-U2,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8)","ASSEMBLER supplies loose, inserted into socket after assembly"
-U3,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (lower byte, D7..D0)","ASSEMBLER supplies loose, inserted into socket after assembly"
-U4,Microchip,SST39SF040-70-4C-PHE,"512K x 8 flash DIP-32 (even byte, D15..D8)","ASSEMBLER supplies loose, inserted into socket after assembly"
-U5,Microchip,SST39SF040-70-4C-PHE,"512K x 8 flash DIP-32 (odd byte, D7..D0)","ASSEMBLER supplies loose, inserted into socket after assembly"
+U2,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8)",customer supplies and inserts into socket
+U3,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (lower byte, D7..D0)",customer supplies and inserts into socket
+U4,Microchip,SST39SF040-70-4C-PHE,"512K x 8 flash DIP-32 (even byte, D15..D8)",customer supplies and inserts into socket
+U5,Microchip,SST39SF040-70-4C-PHE,"512K x 8 flash DIP-32 (odd byte, D7..D0)",customer supplies and inserts into socket
 U6,Microchip,ATF1508AS-7JX84,CPLD PLCC-84 (MMU),customer supplies and inserts into socket
 U7,Microchip,ATF1508AS-7JX84,CPLD PLCC-84 (I/O),customer supplies and inserts into socket
 U10,Motorola,MC68681P,DUART DIP-40,customer supplies and inserts into socket
+U11,Analog Devices,AD724JRZ,"RGB to NTSC/PAL encoder, SOIC-16W. NOT in the assembly BOM: we buy and hand-solder it (LAST TIME BUY, DigiKey LTB 2027-07-29, about $25 there against $77 quoted by PCBWay)",customer supplies and fits

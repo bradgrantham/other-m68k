@@ -44,12 +44,9 @@ Item,Designator,Qty,Manufacturer,Mfg Part #,Description,Package,Type,Supplied By
 43,"U6,U7",2,Assmann WSW,A-CCS-084-Z-T,"PLCC-84 through-hole socket, 1.27 mm pitch (DigiKey 5023770 / AE11110-ND, RS 674-2555; any THT PLCC-84 socket with the JEDEC pin pattern is acceptable)",PLCC-84_THT-Socket,THT,PCBWay
 44,"U8,U9",2,Texas Instruments,SN74AHCT245DW,octal bus transceiver SOIC-20 wide,SOIC-20W_7.5x12.8mm_P1.27mm,SMD,PCBWay
 45,U10,1,Assmann WSW,A 40-LC-TT,"DIP-40 socket, 15.24 mm rows, stamped dual-wipe tin contacts (same family as the DIP-32 sockets; A 40-LC-TR at DigiKey)",DIP-40_W15.24mm_Socket,THT,PCBWay
-46,U11,1,Analog Devices,AD724JRZ,"RGB to NTSC/PAL encoder, SOIC-16W. LAST TIME BUY (DigiKey LTB 2027-07-29): buy now, consign if the assembler cannot source",SOIC-16W_7.5x10.3mm_P1.27mm,SMD,PCBWay
-47,U12,1,Diodes Inc,AP2112K-3.3TRG1,3.3 V 600 mA LDO SOT-23-5,SOT-23-5,SMD,PCBWay
-48,U13,1,Microchip,MCP130T-450I/TT,"4.50 V reset supervisor, open drain, SOT-23",SOT-23,SMD,PCBWay
-49,U14,1,Nexperia,"74HC14D,653","hex Schmitt inverter, SOIC-14",SOIC-14_3.9x8.7mm_P1.27mm,SMD,PCBWay
-50,X1,1,ECS,ECS-2200B-240,"24 MHz 5 V HCMOS oscillator, half-size DIP-8 with tri-state pin 1 (internal pull-up, tied to VCC here; DigiKey in stock 2026-10; the ECS-2100A-240 is 18 weeks). Any 5 V half-size DIP-8 oscillator fits",Oscillator_DIP-8,THT,PCBWay
-51,Y1,1,ECS,ECS-36-20-4XDN,"3.6864 MHz crystal HC-49/US, 20 pF (-40..85 C grade; ECS-36-20-4DN is NRND)",Crystal_HC49-U_Vertical,THT,PCBWay
-52,Y2,1,ECS,ECS-35-17-4X,3.579545 MHz crystal HC-49/US (NTSC subcarrier),Crystal_HC49-U_Vertical,THT,PCBWay
-53,"U2,U3",2,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8) (insert into the socket after assembly)",DIP-32_W15.24mm_Socket,THT,PCBWay
-54,"U4,U5",2,Microchip,SST39SF040-70-4C-PHE,"512K x 8 flash DIP-32 (even byte, D15..D8) (insert into the socket after assembly)",DIP-32_W15.24mm_Socket,THT,PCBWay
+46,U12,1,Diodes Inc,AP2112K-3.3TRG1,3.3 V 600 mA LDO SOT-23-5,SOT-23-5,SMD,PCBWay
+47,U13,1,Microchip,MCP130T-450I/TT,"4.50 V reset supervisor, open drain, SOT-23",SOT-23,SMD,PCBWay
+48,U14,1,Nexperia,"74HC14D,653","hex Schmitt inverter, SOIC-14",SOIC-14_3.9x8.7mm_P1.27mm,SMD,PCBWay
+49,X1,1,ECS,ECS-2200B-240,"24 MHz 5 V HCMOS oscillator, half-size DIP-8 with tri-state pin 1 (internal pull-up, tied to VCC here; DigiKey in stock 2026-10; the ECS-2100A-240 is 18 weeks). Any 5 V half-size DIP-8 oscillator fits",Oscillator_DIP-8,THT,PCBWay
+50,Y1,1,ECS,ECS-36-20-4XDN,"3.6864 MHz crystal HC-49/US, 20 pF (-40..85 C grade; ECS-36-20-4DN is NRND)",Crystal_HC49-U_Vertical,THT,PCBWay
+51,Y2,1,ECS,ECS-35-17-4X,3.579545 MHz crystal HC-49/US (NTSC subcarrier),Crystal_HC49-U_Vertical,THT,PCBWay

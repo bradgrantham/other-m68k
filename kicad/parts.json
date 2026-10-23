@@ -241,8 +241,8 @@
   "AD724JR|*": {
    "mfr": "Analog Devices",
    "mpn": "AD724JRZ",
-   "desc": "RGB to NTSC/PAL encoder, SOIC-16W. LAST TIME BUY (DigiKey LTB 2027-07-29): buy now, consign if the assembler cannot source",
-   "assembly": "pcba"
+   "desc": "RGB to NTSC/PAL encoder, SOIC-16W. NOT in the assembly BOM: we buy and hand-solder it (LAST TIME BUY, DigiKey LTB 2027-07-29, about $25 there against $77 quoted by PCBWay)",
+   "assembly": "customer"
   },
   "AP2112K-3.3|*": {
    "mfr": "Diodes Inc",
@@ -363,7 +363,7 @@
    "mpn": "AS6C4008-55PCN",
    "desc": "512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8)",
    "assembly": "socket",
-   "chip_supply": "pcba",
+   "chip_supply": "customer",
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",
@@ -375,7 +375,7 @@
    "mpn": "AS6C4008-55PCN",
    "desc": "512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (lower byte, D7..D0)",
    "assembly": "socket",
-   "chip_supply": "pcba",
+   "chip_supply": "customer",
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",
@@ -387,7 +387,7 @@
    "mpn": "SST39SF040-70-4C-PHE",
    "desc": "512K x 8 flash DIP-32 (even byte, D15..D8)",
    "assembly": "socket",
-   "chip_supply": "pcba",
+   "chip_supply": "customer",
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",
@@ -399,7 +399,7 @@
    "mpn": "SST39SF040-70-4C-PHE",
    "desc": "512K x 8 flash DIP-32 (odd byte, D7..D0)",
    "assembly": "socket",
-   "chip_supply": "pcba",
+   "chip_supply": "customer",
    "socket": {
     "mfr": "Assmann WSW",
     "mpn": "A 32-LC-TT",

@@ -57,7 +57,7 @@
 "U8","74AHCT245 (hi)","Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm","1","","Texas Instruments","SN74AHCT245DW","","pcba","","octal bus transceiver SOIC-20 wide"
 "U9","74AHCT245 (lo)","Package_SO:SOIC-20W_7.5x12.8mm_P1.27mm","1","","Texas Instruments","SN74AHCT245DW","","pcba","","octal bus transceiver SOIC-20 wide"
 "U10","MC68681P","Package_DIP:DIP-40_W15.24mm_Socket","1","","Motorola","MC68681P","","socket","A 40-LC-TT","DUART DIP-40"
-"U11","AD724JR","Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm","1","","Analog Devices","AD724JRZ","","pcba","","RGB to NTSC/PAL encoder, SOIC-16W. LAST TIME BUY (DigiKey LTB 2027-07-29): buy now, consign if the assembler cannot source"
+"U11","AD724JR","Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm","1","","Analog Devices","AD724JRZ","","customer","","RGB to NTSC/PAL encoder, SOIC-16W. NOT in the assembly BOM: we buy and hand-solder it (LAST TIME BUY, DigiKey LTB 2027-07-29, about $25 there against $77 quoted by PCBWay)"
 "U12","AP2112K-3.3","Package_TO_SOT_SMD:SOT-23-5","1","","Diodes Inc","AP2112K-3.3TRG1","C51118","pcba","","3.3 V 600 mA LDO SOT-23-5"
 "U13","MCP130T-450I/TT","Package_TO_SOT_SMD:SOT-23","1","","Microchip","MCP130T-450I/TT","","pcba","","4.50 V reset supervisor, open drain, SOT-23"
 "U14","74HC14","Package_SO:SOIC-14_3.9x8.7mm_P1.27mm","1","","Nexperia","74HC14D,653","C5612","pcba","","hex Schmitt inverter, SOIC-14"

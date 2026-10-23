@@ -29,7 +29,7 @@ rev 12:
   "October 2026", "I love you, Kris!") and the board revision.
 
 The rev B4 notes below (quantities, stackup, assembly scope, part substitutions, power) still
-apply; the fab package in `release/fab/` is regenerated from the rev C2 board.
+apply; the fab package in `release/fab/` is regenerated from the rev C3 board.
 
 Decisions taken 2026-10-20. Everything below is produced by `make -C kicad fab` into
 `kicad/build/fab/`; upload the Gerber zip for the boards and the PCBWay BOM + centroid for
@@ -54,12 +54,32 @@ assembly.
 |---|---|
 | BOM | `other-m68k-pcbway-bom.csv` (Item, Designator, Qty, Manufacturer, Mfg Part #, Description, Package, Type SMD/THT, Supplied By) |
 | placement | `other-m68k-pcbway-centroid.csv` (KiCad convention: mm, Y up, KiCad rotation, top side only) |
-| scope | SMD **and** through-hole: passives, LDO, AD724, supervisor, 74AHCT245 (SOIC), connectors, headers, jacks, switches, crystals, oscillator, electrolytics, every IC socket (plain DIP/PLCC sockets, no ZIF), and four memory chips that PCBWay buys and inserts into their sockets: the two AS6C4008-55PCN SRAMs (U2/U3) and the two SST39SF040 flash chips (U4/U5, inserted blank) |
-| consigned | none. U11 (AD724JRZ) is in the BOM as PCBWay-supplied; it is a last-time-buy part (DigiKey LTB date 2027-07-29, about 50 in stock at $25, Mouser/Farnell/Newark also stock it). If PCBWay's BOM review cannot source it, have them leave U11 unfitted and hand-solder it (SOIC-16W, 1.27 mm pitch). Buy spares for the bare boards while stock lasts. |
-| customer fits afterwards | `other-m68k-customer-parts.csv`: U1 MC68000P12, U6/U7 ATF1508AS-7JX84, U10 MC68681P, all into their sockets |
+| scope | SMD **and** through-hole: passives, LDO, supervisor, 74AHCT245 and 74HC14 (SOIC), transistor and Schottky diodes, polyfuses, connectors, headers, jacks, switches, crystals, oscillator, electrolytics, and every IC socket (plain DIP/PLCC sockets, no ZIF). PCBWay buys and inserts no chips: every socket ships empty |
+| consigned | none. Nothing is mailed to PCBWay: the parts we supply are fitted here after the boards arrive (see the next row), so there is no consignment shipping or handling fee |
+| not in the assembly BOM (we buy and fit) | U11 AD724JRZ, SOIC-16W, hand-soldered (last-time-buy part: DigiKey LTB 2027-07-29, about $25 there against the $77 PCBWay quoted; buy spares for the bare boards while stock lasts); U2/U3 AS6C4008-55PCN SRAM and U4/U5 SST39SF040 flash, inserted into their sockets (about $11 and $3 each at DigiKey against $31 and $9.76 quoted). These five chips are the whole difference between the quoted $281 of parts and about $120 |
+| customer fits afterwards | `other-m68k-customer-parts.csv`: U1 MC68000P12, U6/U7 ATF1508AS-7JX84, U10 MC68681P, U2/U3 SRAM and U4/U5 flash into their sockets; U11 AD724JRZ soldered |
 | first firmware | the flash chips arrive blank: program `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0) with the TL866 (SST39SF040, 512 KB images, built by the top-level `make flash`; they carry the 256 KB BIOS image and the C: volume with AUTOEXEC.CMD and the example programs), then later BIOS updates with the monitor's `flash D:ROM.BIN` from the SD card (C: is left intact) |
 | not fitted | mounting holes, test pads, the crystal trim capacitor (DNP) |
 | loose parts | none (the PAL jumper is gone; no shunts) |
+
+### Order-form options and the note to PCBWay
+
+* Sockets: ask for stamped dual-wipe sockets throughout. The DIP-32 and DIP-40 (Assmann A 32-LC-TT,
+  A 40-LC-TT) and PLCC-84 (Assmann A-CCS-084-Z-T) are such parts; for the DIP-64 (U1, 0.9 in
+  rows) any dual-wipe socket is acceptable, the Mill-Max 110-43-964-41-001000 only as a fallback.
+* Tick "accept substitutes" / "parts from China acceptable" on the order form, with this note in the
+  remarks: "Any part with identical function, footprint and pinout and the same or better ratings
+  (voltage, tolerance, speed, temperature) is acceptable for every line except U1, U6, U7 and U10
+  sockets' row spacing and pitch, which must match the footprint. Sockets: stamped dual-wipe
+  (tin) contacts are preferred over machined." The lines this mostly affects are passives,
+  LEDs, polyfuses, the electrolytics (any 220 uF 16 V and 100 uF 35 V in a 6.3 x 11 mm can with
+  2.5 mm pitch), the pin headers, tactile switches, HC-49/US crystals and the 74HC14/74AHCT245.
+  Keep the connectors whose footprints are vendor-specific on the named part or a verified
+  twin: J1 USB4125 (GCT), J3 MD-60SM and J10 MD-40SM (CUI), J4 DM3AT (Hirose), J5 RCJ-041 and
+  J6 SJ1-3523N (CUI), J12 L717SDE09PA4CH4F (Amphenol .318 in backset).
+* The BOM lists the socket under the chip's designator (U1, U2..U7, U10); the chips themselves
+  are not on it. If PCBWay flags "U2 missing" or similar, the answer is that the sockets are the
+  only parts to fit there.
 
 All part numbers were checked against distributor listings on 2026-10-20 (`parts.json` has no
 `verify` flags left; `other-m68k-bom-check.txt` lists none). Substitutions made then: Lite-On
