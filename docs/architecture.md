@@ -228,7 +228,9 @@ fitter budget (section 7) does not allow them. SDIO reads back the six card line
   header J2, 38400 8N1, the top of the chip's fixed baud table) and channel B (a second FTDI
   header, J11, since board rev C2). Its input port carries the Atari joystick switches (IP0..IP4)
   and, on IP0/IP1, the paddle end-of-charge signals; OP0 shorts the paddle capacitors and the
-  counter/timer times them while a program reads paddles (board rev C3, spec rev 11). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
+  counter/timer times them while a program reads paddles (board rev C3, spec rev 11); OP1 is the RTS pin
+  of serial header J11, which also carries fused, diode-isolated 5 V on pin 3 to power a serial-mouse
+  adapter (spec rev 12). Its open-drain IRQ is an input of CPLD2 and maps to level 3 when INTEN.DUART is
   set; INTSTAT.DUARTIRQ shows the pin. The DUART's IACK is tied high: all interrupts are
   autovectored and the ISR reads the DUART's own ISR register.
 * **SD card** (spec rev 7, board rev C1): native 4-bit SD bus, bit-banged. The six lines

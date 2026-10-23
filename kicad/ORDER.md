@@ -2,7 +2,7 @@
 
 This file describes the **rev C3** order (2026-10-21; the rev B4 order of 2026-10-20, git tag
 `rev-b`, was stopped before fabrication). Rev C3 is the current design in this directory, spec
-rev 11:
+rev 12:
 
 * **SD card** (rev C1, spec rev 7): native 4-bit bus. CLK, CMD, DAT0..3 run straight to CPLD2
   pins 15, 24, 8, 16, 58, 4 with 10 k pull-ups to 3.3 V; the three 1.8k/3.3k level dividers of
@@ -23,6 +23,8 @@ rev 11:
   family, which is the footprint used (DigiKey lists it as L717SDE09PA4CH4FA610); the 15 nF Samsung
   capacitor is at Avnet/Future and any 0603 X7R 15 nF 50 V may stand in; same package and ratings
   are acceptable substitutes for the rest.
+* **Serial B power** (rev C3, spec rev 12): J11 pin 3 carries 5 V through F3 (200 mA polyfuse) and
+  D8 (BAT54W) for the serial-mouse adapter; pin 6 (RTS) is DUART OP1 for the mouse's power control.
 * The silkscreen carries a dedication under the SRAMs, right of the bus buffers ("Griffin Jr.",
   "October 2026", "I love you, Kris!") and the board revision.
 

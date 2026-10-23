@@ -2684,6 +2684,12 @@ not restore it).
 
 Channel B's TXDB and RXDB are on the serial B header J11 (board rev C2; the FTDI pinout GND 1,
 TXD 4, RXD 5, 5 V TTL levels; rev C1 had them on the expansion header J8, pins 13 and 15).
+Since board rev C3 (spec rev 12) J11 also powers its device: pin 3 carries 5 V through a 200 mA
+polyfuse and a Schottky diode (so a 5 V FTDI cable cannot back-feed the board), and pin 6 (RTS) is
+the DUART's OP1 pin, meant for a serial-mouse adapter whose MAX232 feeds the mouse's RTS/DTR from
+it: set OPR bit 1 (`DUART_OPR_SET = 0x02`) to drive the pin low, which the adapter's inverting
+driver turns into the positive RTS that powers the mouse, clear it to power the mouse down, and a
+Microsoft mouse then sends its identification byte when it comes back up.
 Nothing uses it. Setting it up and sending (tested in the emulator with
 `--duart-b-log`):
 

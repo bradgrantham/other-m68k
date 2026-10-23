@@ -11,9 +11,9 @@ Comment,Designator,Footprint,LCSC Part #
 1N4148W,"D1,D2",D_SOD-123,C81598
 LED green,"D3,D4",LED_0805_2012Metric,
 LED red (power),D5,LED_0805_2012Metric,
-BAT54W,"D6,D7",SOT-323_SC-70,C8657
+BAT54W,"D6,D7,D8",SOT-323_SC-70,C8657
 2A,F1,Fuse_1206_3216Metric,
-200mA,F2,Fuse_1206_3216Metric,
+200mA,"F2,F3",Fuse_1206_3216Metric,
 600R@100MHz,FB1,L_0603_1608Metric,
 USB-C power,J1,USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal,
 FTDI (GND CTS VCC TXD RXD RTS),"J2,J11",PinHeader_1x06_P2.54mm_Vertical,

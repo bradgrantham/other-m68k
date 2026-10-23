@@ -94,7 +94,10 @@ behind FB1).
   TDO -> header. 10 k pull-ups on TMS and on both TDIs.
 * **Serial headers** J2 (channel A) and J11 (channel B, rev C2; it replaces the 2x8 expansion
   header J8 of rev B/C1, which by then carried only channel B and the rails): both the 6-pin
-  FTDI pinout GND, CTS, VCC, TXD, RXD, RTS with only GND, TXD and RXD connected, 5 V TTL.
+  FTDI pinout GND, CTS, VCC, TXD, RXD, RTS, 5 V TTL. J2 has only GND, TXD and RXD connected; J11
+  (rev C3) also carries 5 V on pin 3 through F3 (200 mA polyfuse) and D8 (BAT54W, so a 5 V FTDI
+  cable cannot back-feed the board) to power the serial-mouse adapter, and DUART OP1 on pin 6 (RTS)
+  so firmware can switch the mouse's RTS/DTR power.
 * **Joystick port** J12 (rev C3, spec "joystick"): DE-9 male, Atari pinout (1 up, 2 down,
   3 left, 4 right, 5 pot B, 6 fire, 7 +5 V through F2 200 mA polyfuse, 8 GND, 9 pot A, shell
   GND). The switches go through 1 k into the DUART's IP0..IP4, which already have 10 k pull-ups.

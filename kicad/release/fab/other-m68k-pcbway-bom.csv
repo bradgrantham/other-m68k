@@ -11,9 +11,9 @@ Item,Designator,Qty,Manufacturer,Mfg Part #,Description,Package,Type,Supplied By
 10,"D1,D2",2,Diodes Inc,1N4148W-7-F,1N4148W SOD-123,D_SOD-123,SMD,PCBWay
 11,"D3,D4",2,Lite-On,LTST-C171GKT,"green LED 0805, 2.1 V",LED_0805_2012Metric,SMD,PCBWay
 12,D5,1,Lite-On,LTST-C171KRKT,"red LED 0805, 2.0 V",LED_0805_2012Metric,SMD,PCBWay
-13,"D6,D7",2,Nexperia,"BAT54W,115","Schottky diode 30 V 200 mA, SOT-323 (DigiKey/Mouser/LCSC stocked)",SOT-323_SC-70,SMD,PCBWay
+13,"D6,D7,D8",3,Nexperia,"BAT54W,115","Schottky diode 30 V 200 mA, SOT-323 (DigiKey/Mouser/LCSC stocked)",SOT-323_SC-70,SMD,PCBWay
 14,F1,1,Littelfuse,1206L200PR,"PTC resettable fuse 2 A hold / 3.5 A trip, 6 V, 1206",Fuse_1206_3216Metric,SMD,PCBWay
-15,F2,1,Littelfuse,1206L020YR,"PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206 (DigiKey/Element14)",Fuse_1206_3216Metric,SMD,PCBWay
+15,"F2,F3",2,Littelfuse,1206L020YR,"PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206 (DigiKey/Element14)",Fuse_1206_3216Metric,SMD,PCBWay
 16,FB1,1,Murata,BLM18PG601SN1D,ferrite bead 600 ohm @ 100 MHz 0603,L_0603_1608Metric,SMD,PCBWay
 17,J1,1,GCT,USB4125-GF-A-0190,"USB-C receptacle, 6 pin, power only, right angle (DigiKey/Farnell/Future list it; stock varies)",USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal,SMD,PCBWay
 18,"J2,J11",2,Sullins,PRPC006SAAN-RC,pin header 1x6 2.54 mm,PinHeader_1x06_P2.54mm_Vertical,THT,PCBWay

@@ -395,12 +395,21 @@ def build():
     b.net("FTDIB_TXD", j11.pin(4), u10.pin("RXDB"))
     b.net("FTDIB_RXD", j11.pin(5), u10.pin("TXDB"))
     b.power("GND", j11.pin(1))
-    j11.nc(2, 3, 6)
+    # rev C3: serial B powers its device (the serial-mouse MAX232 adapter): 5 V on pin 3 through a
+    # 200 mA polyfuse and a Schottky diode (a 5 V FTDI cable plugged in here cannot back-feed the
+    # board); DUART OP1 on pin 6 (RTS) lets firmware switch the mouse's RTS/DTR power to detect it
+    f3 = b.part("F3", "Device", "Polyfuse", "Fuse:Fuse_1206_3216Metric", "200mA", sheet="io", PcbNear="J11")
+    d8 = b.part("D8", "Diode", "BAT54W", "Package_TO_SOT_SMD:SOT-323_SC-70", "BAT54W", sheet="io", PcbNear="J11")
+    b.power("VCC", f3.pin(1))
+    b.net("SERB_5V_FUSED", f3.pin(2), d8.pin("1"))                 # BAT54W: 1 = A, 3 = K
+    b.net("SERB_VCC", d8.pin("3"), j11.pin(3))
+    b.net("DUART_OP1", u10.pin("OP1"), j11.pin(6))
+    j11.nc(2)
     for i in range(6):                                             # inputs pulled high (the joystick switches pull them low)
         r = R("10k", "io", near="U10")
         b.net(f"DUART_IP{i}", u10.pin(f"IP{i}"), r.pin(2))
         b.power("VCC", r.pin(1))
-    u10.nc(*[f"OP{i}" for i in range(1, 8)])
+    u10.nc(*[f"OP{i}" for i in range(2, 8)])
     # ------------------------------------------------------------------ joystick / paddle port (rev C3, spec "joystick")
     # Switches: 1 k series into IP0..IP4 (up, down, left, right, fire). Paddles: each pot (pins 9, 5)
     # charges a 15 nF capacitor; a 74HC14 gate watches it and pulls the up/down line low through a
