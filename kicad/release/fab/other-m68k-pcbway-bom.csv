@@ -5,15 +5,15 @@ Item,Designator,Qty,Manufacturer,Mfg Part #,Description,Package,Type,Supplied By
 4,C36,1,Samsung,CL10C100JB8NNNC,10 pF 50 V C0G 0603,C_0603_1608Metric,SMD,PCBWay
 5,"C37,C38,C39",3,Rubycon,16ZLH220MEFC6.3X11,"220 uF 16 V electrolytic, 6.3 mm dia, 2.5 mm pitch",CP_Radial_D6.3mm_P2.50mm,THT,PCBWay
 6,C44,1,Samsung,CL10C150JB8NNNC,15 pF 50 V C0G 0603,C_0603_1608Metric,SMD,PCBWay
-7,"C46,C47",2,Samsung,CL10B153KB8NNNC,15 nF 50 V X7R 0603,C_0603_1608Metric,SMD,PCBWay
+7,"C46,C47",2,Samsung,CL10B153KB8NNNC,15 nF 50 V X7R 0603 (Avnet/Future stock; any 0603 X7R 15 nF 50 V is fine),C_0603_1608Metric,SMD,PCBWay
 8,C51,1,Rubycon,35ZLH100MEFC6.3X11,"100 uF 35 V electrolytic, 6.3 mm dia, 2.5 mm pitch (the 16 V ZLH 100 uF is a 5 mm can)",CP_Radial_D6.3mm_P2.50mm,THT,PCBWay
 9,"C53,C54",2,Samsung,CL10A105KB8NNNC,1 uF 50 V X5R 0603,C_0603_1608Metric,SMD,PCBWay
 10,"D1,D2",2,Diodes Inc,1N4148W-7-F,1N4148W SOD-123,D_SOD-123,SMD,PCBWay
 11,"D3,D4",2,Lite-On,LTST-C171GKT,"green LED 0805, 2.1 V",LED_0805_2012Metric,SMD,PCBWay
 12,D5,1,Lite-On,LTST-C171KRKT,"red LED 0805, 2.0 V",LED_0805_2012Metric,SMD,PCBWay
-13,"D6,D7",2,Nexperia,"BAT54W,115","Schottky diode 30 V 200 mA, SOT-323",SOT-323_SC-70,SMD,PCBWay
+13,"D6,D7",2,Nexperia,"BAT54W,115","Schottky diode 30 V 200 mA, SOT-323 (DigiKey/Mouser/LCSC stocked)",SOT-323_SC-70,SMD,PCBWay
 14,F1,1,Littelfuse,1206L200PR,"PTC resettable fuse 2 A hold / 3.5 A trip, 6 V, 1206",Fuse_1206_3216Metric,SMD,PCBWay
-15,F2,1,Littelfuse,1206L020YR,"PTC resettable fuse 0.2 A hold / 0.4 A trip, 1206",Fuse_1206_3216Metric,SMD,PCBWay
+15,F2,1,Littelfuse,1206L020YR,"PTC resettable fuse 0.2 A hold / 0.42 A trip, 24 V, 1206 (DigiKey/Element14)",Fuse_1206_3216Metric,SMD,PCBWay
 16,FB1,1,Murata,BLM18PG601SN1D,ferrite bead 600 ohm @ 100 MHz 0603,L_0603_1608Metric,SMD,PCBWay
 17,J1,1,GCT,USB4125-GF-A-0190,"USB-C receptacle, 6 pin, power only, right angle (DigiKey/Farnell/Future list it; stock varies)",USB_C_Receptacle_GCT_USB4125-xx-x_6P_TopMnt_Horizontal,SMD,PCBWay
 18,"J2,J11",2,Sullins,PRPC006SAAN-RC,pin header 1x6 2.54 mm,PinHeader_1x06_P2.54mm_Vertical,THT,PCBWay
@@ -24,7 +24,7 @@ Item,Designator,Qty,Manufacturer,Mfg Part #,Description,Package,Type,Supplied By
 23,J7,1,Sullins,PRPC005DAAN-RC,pin header 2x5 2.54 mm,PinHeader_2x05_P2.54mm_Vertical,THT,PCBWay
 24,J9,1,Sullins,PRPC015DAAN-RC,pin header 2x15 2.54 mm (logic analyzer channels),PinHeader_2x15_P2.54mm_Vertical,THT,PCBWay
 25,J10,1,CUI Devices,MD-40SM,"mini-DIN 4 jack (S-video), right angle",MiniDIN-4_CUI_MD-40SM_Horizontal,THT,PCBWay
-26,J12,1,Amphenol ICC,L717SDE09PA4CH4F,"DE-9 male, right angle, housed, 4-40 boardlocks (Atari joystick port)",DSUB-9_Pins_Horizontal_P2.77x2.84mm_EdgePinOffset7.70mm_Housed_MountingHolesOffset9.12mm,THT,PCBWay
+26,J12,1,Amphenol ICC,L717SDE09PA4CH4F,"DE-9 male (plug), right angle, housed, 4-40 boardlocks, .318 in (8.08 mm) backset = KiCad's EdgePinOffset7.70/MountingHolesOffset9.12 footprint; DigiKey stocks it as L717SDE09PA4CH4FA610, Farnell as L717SDE09PA4CH4F (any L717SDE09PA4CH4x is the same connector)",DSUB-9_Pins_Horizontal_P2.77x2.84mm_EdgePinOffset7.70mm_Housed_MountingHolesOffset9.12mm,THT,PCBWay
 27,Q1,1,Diodes Incorporated,MMDT3904-7-F,"dual NPN, SOT-363",SOT-363_SC-70-6,SMD,PCBWay
 28,"R1,R2,R3,R4,R5,R9,R10,R14,R41,R55,R56",11,Yageo,RC0603FR-074K7L,4.7 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
 29,"R6,R7,R8,R11,R15,R16,R17,R18,R19,R20,R22,R35,R36,R37,R42,R43,R44,R45,R46,R47,R57",21,Yageo,RC0603FR-0710KL,10 k 1% 0603,R_0603_1608Metric,SMD,PCBWay
