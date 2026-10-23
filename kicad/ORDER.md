@@ -26,7 +26,7 @@ rev 12:
 * **Serial B power** (rev C3, spec rev 12): J11 pin 3 carries 5 V through F3 (200 mA polyfuse) and
   D8 (BAT54W) for the serial-mouse adapter; pin 6 (RTS) is DUART OP1 for the mouse's power control.
 * The silkscreen carries a dedication under the SRAMs, right of the bus buffers ("Griffin Jr.",
-  "October 2026", "I love you, Kris!") and the board revision.
+  "October 2026") and the board revision.
 
 The rev B4 notes below (quantities, stackup, assembly scope, part substitutions, power) still
 apply; the fab package in `release/fab/` is regenerated from the rev C3 board.

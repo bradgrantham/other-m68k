@@ -39869,7 +39869,7 @@
 			)
 		)
 	)
-	(gr_text "other-m68k rev C3"
+	(gr_text "rev C3"
 		(at 162 43.4 0)
 		(layer "F.SilkS")
 		(uuid "5d8f4db4-6eb4-4f32-bb4c-4d75e358f7ce")
@@ -39884,17 +39884,6 @@
 		(at 162 51.6 0)
 		(layer "F.SilkS")
 		(uuid "5d79c515-8911-40bb-b5c6-4b1690843d14")
-		(effects
-			(font
-				(size 1.7 1.7)
-				(thickness 0.255)
-			)
-		)
-	)
-	(gr_text "I love you, Kris!"
-		(at 162 55.6 0)
-		(layer "F.SilkS")
-		(uuid "4dfb74b9-ab58-4c6c-82b8-b0466be2784d")
 		(effects
 			(font
 				(size 1.7 1.7)
