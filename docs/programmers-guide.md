@@ -351,8 +351,8 @@ in a game, draw your own glyphs into the framebuffer.
 |---|---|
 | `sys_putchar(c)` / `sys_puts(s)` | print a character / NUL-terminated string (no newline added) |
 | `sys_con_clear()` | clear page 0, cursor to 0,0 |
-| `sys_con_set_cursor(x, y)` | move the cursor; `x` 0..39, `y` 0..29, otherwise `E_INVAL` |
-| `sys_con_info(&ci)` | `ci.cols` = 40, `ci.rows` = 30, `ci.cursor_x`, `ci.cursor_y` |
+| `sys_con_set_cursor(x, y)` | move the cursor; `x` 0..52, `y` 0..23, otherwise `E_INVAL` |
+| `sys_con_info(&ci)` | `ci.cols` = 53, `ci.rows` = 24, `ci.cursor_x`, `ci.cursor_y` |
 
 The text colours cannot be changed through the ABI, and the block cursor is hidden while a
 program runs.
