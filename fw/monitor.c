@@ -869,7 +869,7 @@ void monitor_main(void)
         int n;
         if (script_depth) {
             if (input_has_esc()) { input_flush(); script_depth = 0; kprintf("script aborted\n"); continue; }
-            n = script_line(line, LINE_MAX);         /* not echoed: the screen is 40 columns */
+            n = script_line(line, LINE_MAX);         /* not echoed: the screen is 53 columns */
         } else {
             make_prompt(prompt);
             n = lineedit_read(prompt, line, LINE_MAX, monitor_complete, 1);

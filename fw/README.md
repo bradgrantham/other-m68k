@@ -1,7 +1,7 @@
 # fw/ -- other-m68k BIOS / monitor ROM (stage 2)
 
 256 KB ROM image (the first 256 KB of the 1 MB window of the two SST39SF040 flash chips; the
-other 768 KB are drive C:): power-on self test, 68681 DUART serial (38400 8N1), 40x30 video
+other 768 KB are drive C:): power-on self test, 68681 DUART serial (38400 8N1), 53x24 video
 console, PS/2 keyboard, exception reporting, a wall clock, machine monitor with S-record
 upload, scripts and file commands, two FAT volumes through FatFs R0.15 with long names and
 directories (C:, the FAT12 volume in the flash, and D:, the SD card on the native 4-bit bus,
@@ -88,7 +88,7 @@ emu/build/m68k-emu --rom fw/build/flash.img --headless --frames 500 --type "help
 The serial port is the emulator's stdin/stdout (`--serial-log FILE` keeps a copy;
 `--serial-type "text\n"` injects serial input, `--type` types on the PS/2 keyboard). Only
 the POST and the banner reach serial: after that the console is video only, so headless
-runs read the screen with `--text-dump FILE` (the 40x30 text decoded from page 0 at exit).
+runs read the screen with `--text-dump FILE` (the 53x24 text decoded from page 0 at exit).
 
 With an SD card image as D: (see "SD card" below for making one):
 
@@ -460,7 +460,8 @@ again rather than `go` to restart a loaded program.
 
 ## Console
 
-40 columns x 30 rows, 8x8 font (public-domain `font8x8_basic.h` from dhepper/font8x8),
+53 columns x 24 rows, 6x10 font (the public-domain X11 misc-fixed `6x10`, vendored as
+`font6x10.h` by `mkfont.py`; the two pixel columns right of column 52 stay background),
 white on dark blue, page 0. Handles `\n` (CR+LF), `\r`, `\b` (non-destructive), `\t`
 (8 columns); scrolls at the bottom (a scroll is a 74 KB move, ~40 ms). Everything printed
 on the console during the POST and the banner is also sent to the serial port with `\n`
@@ -542,7 +543,7 @@ the keyboard queue without draining it; `input_flush` drains it after an ESC).
 ### Scripts
 
 A `.CMD` file found on the search path is a script: its lines are executed as if typed but
-not echoed (the screen is 40 columns); lines starting with `#` or `;`, or the word `rem`,
+not echoed (the screen is 53 columns); lines starting with `#` or `;`, or the word `rem`,
 are comments; `echo` prints. A line that runs a program resumes the script after the
 program exits: `user_launch` never returns (the exit lands in `monitor_restart`), so a
 script's state is its path and byte offset in static data and the file is reopened for each
@@ -592,7 +593,7 @@ direction and `lseek` on them `E_INVAL`.
 | `duart.S`, `duart.h` | `duart_reset_init` (stack-less DUART bring-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values with data-sheet references |
 | `memops.S`, `string.c` | memcpy/memmove/memset, str* |
 | `main.c` | `bios_main`, banner, `putchar_both` |
-| `console.c`, `font8x8_basic.h` | video console |
+| `console.c`, `font6x10.h`, `mkfont.py` | video console |
 | `serial.c`, `input.c`, `queue.c`, `ps2.c`, `irq.c` | GPIO shadow, polled DUART TX, input rings, PS/2 decoder, ISRs (DUART RX drain) |
 | `exception.c`, `syscall.c`, `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | as named; `syscall.c` holds the user pointer checks and the fs/SD/exec call wrappers |
 | `sd.c`, `sd.h`, `sd4.S` | SD driver on the native 4-bit bus (init, CMD17/CMD24, CSD/CID); asm command, idle-clock, read, write and CRC16 paths |

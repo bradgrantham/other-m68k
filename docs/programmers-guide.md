@@ -183,8 +183,8 @@ delay need not wait for it; the examples here keep 350, which falls after it. `-
 (after `--serial-type-delay` frames; `\n` is sent as CR) feeds the serial port instead, which
 only a program reading `/dev/ttya` or the monitor's `srec` command listens to. The console is
 on the screen only, so `--text-dump FILE` (`-` for stdout) is how a headless run reads what
-was printed: at exit it writes the 40x30 console text, decoded from framebuffer page 0 by
-matching each 8x8 cell against the BIOS font (a cell that matches no character, graphics for
+was printed: at exit it writes the 53x24 console text, decoded from framebuffer page 0 by
+matching each 6x10 cell against the BIOS font (a cell that matches no character, graphics for
 instance, shows as `?`). Only what is still on the screen at exit is there. stdout and
 `--serial-log FILE` carry the POST report, the banner and whatever the program sends to
 `/dev/ttya`. `--frames N` stops after N frames (60 per second). Useful debugging options:
@@ -330,7 +330,8 @@ The NMI button does the same at any time (that is how you break out of a hung pr
 
 ## 1.4 The console
 
-The console is a 40x30 character text screen (8x8 font) drawn on framebuffer page 0, white on
+The console is a 53x24 character text screen (6x10 font, the public-domain X11 misc-fixed
+`6x10`) drawn on framebuffer page 0, white on
 dark blue, and the PS/2 keyboard. The serial port is not part of it: since spec revision 8 the
 BIOS sends its POST report and banner to serial port A as well as to the screen and then lets
 go of the port, so the monitor, crash reports, `[exit n]` and everything a program prints
@@ -535,7 +536,7 @@ After the banner nothing in the BIOS reads or writes serial port A (the 6-pin FT
 38400 8N1) except the monitor's `srec` command while it runs, and nothing gives the port back
 to the console. A program can use it as it likes: to talk to a host, as a second terminal, or
 as the console of an operating-system personality (a CP/M-68K-style system, say, whose
-programs expect a bigger terminal than 40x30), while the BIOS's own console stays on the
+programs expect a bigger terminal than 53x24), while the BIOS's own console stays on the
 screen. The receive interrupt runs all the time, so input is not lost while the program is
 busy: bytes wait in a 512-byte ring, and the newest are dropped once 511 are waiting. The ring
 is not emptied between programs; `while (sys_serial_getc() >= 0) ;` discards old input.
@@ -1208,7 +1209,7 @@ so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw
 | 20 | `int sys_sd_write_block(uint32_t lba, const void *buf)` | Write one 512-byte block. Same results. Bypasses the filesystem. |
 | 21 | `void *sys_set_irq_handler(int level, void *handler)` | Install `void handler(void)` for level 1..4, called from the BIOS interrupt routine in supervisor mode; returns the previous handler; `NULL` removes it. Level 4 also enables the HSYNC interrupt. `(void *)E_INVAL` for another level. |
 | 22 | `int sys_mem_info(struct mem_info *info)` | `user_start` 0x008000, `user_end` 0x0DA800, `user_end_without_fb1` 0x0ED400. 0, or `E_FAULT` (structure not in user RAM). |
-| 23 | `int sys_con_set_cursor(int x, int y)` | Move the console cursor; 0, or `E_INVAL` outside 40x30. |
+| 23 | `int sys_con_set_cursor(int x, int y)` | Move the console cursor; 0, or `E_INVAL` outside 53x24. |
 | 24 | `int sys_con_clear(void)` | Clear the console (page 0); 0. |
 | 25 | `int sys_con_info(struct con_info *info)` | Columns, rows, cursor position; 0, or `E_FAULT` (structure not in user RAM). |
 | 26 | `int sys_exec(const char *path, const char *args)` | Replace the program with another ELF (see 1.10). `path` as for `sys_open`, with no search path. Returns only on failure: `E_NOENT`, `E_NOEXEC`, `E_NOMEM`, `E_NAMETOOLONG`, `E_NODEV`, `E_IO`, `E_FAULT`, `E_INVAL`. |

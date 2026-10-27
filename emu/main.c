@@ -245,7 +245,7 @@ static void usage(FILE *f)
         "  --exit-on-berr      exit with status 2 on the first bus error\n"
         "  --dump-regs-on-exit print the CPU registers at exit\n"
         "  --dump-mem ADDR LEN hex dump memory at exit (repeatable)\n"
-        "  --text-dump FILE    at exit, write the 40x30 console text decoded from page 0 to FILE\n"
+        "  --text-dump FILE    at exit, write the 53x24 console text decoded from page 0 to FILE\n"
         "                      (- for stdout); the console is not on serial after the POST\n"
         "  --no-audio          disable audio output\n"
         "  --audio-wav FILE    write the rendered audio (48 kHz, 16-bit mono WAV) to FILE;\n"

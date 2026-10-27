@@ -35,7 +35,7 @@ m68k-emu --rom fw/build/flash.img [options]      # or --rom fw/build/rom.bin: BI
   --sd-sdsc           emulate a byte-addressed SDSC card (CSD v1)
   --io-trace          log CPLD2 and DUART register accesses, soft switches and serial RX arrivals with cycle stamps
   --dump-regs-on-exit                                                --dump-mem ADDR LEN   hex dump at exit (repeatable)
-  --text-dump FILE    the 40x30 console text decoded from page 0 at exit (- = stdout); the BIOS console is video only after the POST
+  --text-dump FILE    the 53x24 console text decoded from page 0 at exit (- = stdout); the BIOS console is video only after the POST
   --no-audio          disable audio                                  --no-stdin       do not read serial RX from stdin
   --audio-wav FILE    write the rendered audio to a 48 kHz 16-bit mono WAV (also with --headless / --fast)
   --audio-edge-log FILE  log every audio pin edge as 'cycle level' (timing checks)
@@ -169,8 +169,8 @@ function code comes from the zero-cost `M68K_SET_FC_CALLBACK` macro in `m68kconf
   registers (they read 0xFF with a one-time warning).
 * **Serial** (`serial.c`): the host side of channel A (stdout, `--serial-log`, stdin raw
   mode, `--serial-type` injection) and channel B's log file; no timing of its own. The BIOS
-  mirrors only the POST and banner there, so `--text-dump` (video.c) decodes the 40x30
-  console text from page 0 by matching 8x8 cells against the BIOS font.
+  mirrors only the POST and banner there, so `--text-dump` (video.c) decodes the 53x24
+  console text from page 0 by matching 6x10 cells against the BIOS font.
 * **PS/2** (`ps2.c`): make/break sequences queued and delivered one byte per 1 ms of emulated
   time, only while PS2RDY is clear (the register is a single holding latch). Host-to-device
   traffic on GPIO.PS2CLK/PS2DAT is not emulated; the lines read back as the GPIO drives them

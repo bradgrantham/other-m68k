@@ -172,33 +172,35 @@ const uint32_t *video_pixels(void)
     return pixels;
 }
 
-/* Decode the BIOS's 40x30 text console from framebuffer page 0 by matching 8x8 cells
- * against the BIOS font (fw/font8x8_basic.h, bit 0 of a row = leftmost pixel). The
+/* Decode the BIOS's 53x24 text console from framebuffer page 0 by matching 6x10 cells
+ * against the BIOS font (fw/font6x10.h, bit 5 of a row = leftmost pixel). The
  * cell's majority colour is taken as its background; an exact match of the set pixels
  * (or of their inverse, the cursor cell) names the character, a uniform cell is a
  * space and anything else is '?'. The console is no longer mirrored to serial after
  * the POST, so this is how headless runs read what a program printed. */
-#include "../fw/font8x8_basic.h"
+#include "../fw/font6x10.h"
+#define CELL_W FONT6X10_W
+#define CELL_H FONT6X10_H
 
 void video_text_dump(FILE *out)
 {
     const uint8_t *fb = &bus_ram[FB_PAGE0_ADDR - RAM_BASE];
-    for (int cy = 0; cy < VIDEO_HEIGHT / 8; cy++) {
-        char line[VIDEO_WIDTH / 8 + 1];
+    for (int cy = 0; cy < VIDEO_HEIGHT / CELL_H; cy++) {
+        char line[VIDEO_WIDTH / CELL_W + 1];
         int len = 0;
-        for (int cx = 0; cx < VIDEO_WIDTH / 8; cx++) {
-            const uint8_t *cell = fb + cy * 8 * VIDEO_BYTES_PER_LINE + cx * 8;
+        for (int cx = 0; cx < VIDEO_WIDTH / CELL_W; cx++) {
+            const uint8_t *cell = fb + cy * CELL_H * VIDEO_BYTES_PER_LINE + cx * CELL_W;
             int count[256] = { 0 };
-            for (int r = 0; r < 8; r++)
-                for (int x = 0; x < 8; x++) count[cell[r * VIDEO_BYTES_PER_LINE + x]]++;
+            for (int r = 0; r < CELL_H; r++)
+                for (int x = 0; x < CELL_W; x++) count[cell[r * VIDEO_BYTES_PER_LINE + x]]++;
             int bg = 0;
             for (int c = 1; c < 256; c++) if (count[c] > count[bg]) bg = c;
-            uint8_t rows[8];
+            uint8_t rows[CELL_H];
             int uniform = 1;
-            for (int r = 0; r < 8; r++) {
+            for (int r = 0; r < CELL_H; r++) {
                 unsigned v = 0;
-                for (int x = 0; x < 8; x++)
-                    if (cell[r * VIDEO_BYTES_PER_LINE + x] != bg) v |= 1u << x;
+                for (int x = 0; x < CELL_W; x++)
+                    if (cell[r * VIDEO_BYTES_PER_LINE + x] != bg) v |= 1u << (CELL_W - 1 - x);
                 rows[r] = (uint8_t)v;
                 if (v) uniform = 0;
             }
@@ -207,9 +209,9 @@ void video_text_dump(FILE *out)
             else {
                 for (int c = 0x20; c < 0x7F && ch == '?'; c++) {
                     int same = 1, inv = 1;
-                    for (int r = 0; r < 8; r++) {
-                        if (rows[r] != font8x8_basic[c][r]) same = 0;
-                        if (rows[r] != (uint8_t)~font8x8_basic[c][r]) inv = 0;
+                    for (int r = 0; r < CELL_H; r++) {
+                        if (rows[r] != font6x10[c][r]) same = 0;
+                        if (rows[r] != (font6x10[c][r] ^ ((1u << CELL_W) - 1))) inv = 0;
                     }
                     if (same || inv) ch = (char)c;
                 }

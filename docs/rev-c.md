@@ -100,7 +100,7 @@ MHz), so the modes that fit without touching the CPU/video time split are:
 |---|---|---|---|---|
 | 320x240 | 7.159 MHz | 8 (RGB332) | 320 | as rev B; 2 px per Fsc cycle |
 | 640x240 | 14.318 MHz | 4 | 320 | fixed 16-colour RGBI mapping (a programmable palette is 128 flip-flops and does not fit CPLD2) |
-| 640x240 | 14.318 MHz | 1 | 80 | fg/bg colour registers; 80x30 text with the existing 8x8 font; CPLD1 fetches every 4th slot |
+| 640x240 | 14.318 MHz | 1 | 80 | fg/bg colour registers; 106x24 text with the existing 6x10 font; CPLD1 fetches every 4th slot |
 
 640x240x8 is impossible on this bus (it would need every slot for video). CPLD2 has 21
 spare macrocells and 4 spare pins in rev B4; the nibble/bit shifter and mode bits should
@@ -158,7 +158,7 @@ Modes with the present one-word-per-slot bus (16 bits per 8 pixels):
 
 | mode | bits/pixel | colours | bytes | notes |
 |---|---|---|---|---|
-| 640x480 | 1 | fg/bg registers | 38400 | 80x60 text with the 8x8 font, or 80x30 line-doubled |
+| 640x480 | 1 | fg/bg registers | 38400 | 106x48 text with the 6x10 font, or 106x24 line-doubled |
 | 640x480 | 2 | 4 fixed | 76800 | |
 | 320x240 doubled | 4 | 16 fixed (RGBI) | 38400 | |
 | 160x120 quadrupled | 8 | RGB332 | 19200 | |

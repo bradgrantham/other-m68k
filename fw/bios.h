@@ -81,9 +81,11 @@ void ps2_feed(uint8_t b);
 void input_kbd_push(uint8_t ascii);
 void input_key_event_push(uint16_t ev);
 
-/* ---- console.c: 40x30 text on a 320x240 RGB332 page ---- */
-#define CON_COLS (VIDEO_WIDTH / 8)
-#define CON_ROWS (VIDEO_HEIGHT / 8)
+/* ---- console.c: 53x24 text on a 320x240 RGB332 page, 6x10 font ---- */
+#define CON_FONT_W 6
+#define CON_FONT_H 10
+#define CON_COLS (VIDEO_WIDTH / CON_FONT_W)
+#define CON_ROWS (VIDEO_HEIGHT / CON_FONT_H)
 void con_init(uint8_t *fb);
 void con_clear(void);
 void con_putc(int c);

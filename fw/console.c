@@ -1,13 +1,19 @@
-/* 40x30 text console on a 320x240 RGB332 page, 8x8 font. Renders through con_fb so the
- * host tests can point it at a malloc'd buffer. Each glyph row is two aligned long writes
- * taken from a 16-entry nibble -> 4-pixel table rebuilt when the colours change. */
+/* 53x24 text console on a 320x240 RGB332 page, 6x10 font (X11 misc-fixed, font6x10.h).
+ * Renders through con_fb so the host tests can point it at a malloc'd buffer. A cell starts
+ * at byte x*6 of its line, which is long aligned for even x and word aligned for odd x, so
+ * each glyph row is one aligned long write and one aligned word write taken from a 4-pixel
+ * and a 2-pixel table rebuilt when the colours change. The two pixels to the right of
+ * column 52 stay background. */
 #include "bios.h"
-#include "font8x8_basic.h"
+#include "font6x10.h"
+
+_Static_assert(CON_FONT_W == FONT6X10_W && CON_FONT_H == FONT6X10_H, "console cell size");
 
 uint8_t *con_fb;
 static int cx, cy;
 static uint8_t fg = 0xFF, bg = RGB332(0, 0, 96);
-static uint32_t nib[16];                    /* 4 pixels per nibble, memory order */
+static uint32_t pix4[16];                   /* 4 pixels, bit 3 of the index leftmost, memory order */
+static uint16_t pix2[4];                    /* 2 pixels, bit 1 leftmost */
 static uint32_t bg4;
 static char text[CON_ROWS][CON_COLS];       /* shadow for cursor redraw */
 static int cursor_on;
@@ -20,31 +26,50 @@ static uint32_t pack4(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
     return v;
 }
 
+static uint16_t pack2(uint8_t a, uint8_t b)
+{
+    uint16_t v;
+    uint8_t t[2] = { a, b };
+    __builtin_memcpy(&v, t, 2);
+    return v;
+}
+
 static void build_tables(void)
 {
     for (int n = 0; n < 16; n++)
-        nib[n] = pack4((n & 1) ? fg : bg, (n & 2) ? fg : bg, (n & 4) ? fg : bg, (n & 8) ? fg : bg);
+        pix4[n] = pack4((n & 8) ? fg : bg, (n & 4) ? fg : bg, (n & 2) ? fg : bg, (n & 1) ? fg : bg);
+    for (int n = 0; n < 4; n++)
+        pix2[n] = pack2((n & 2) ? fg : bg, (n & 1) ? fg : bg);
     bg4 = pack4(bg, bg, bg, bg);
 }
 
 static void draw_glyph(int x, int y, int c, int invert)
 {
-    const unsigned char *g = font8x8_basic[(c >= 0 && c < 128) ? c : '?'];
-    uint32_t *p = (uint32_t *)(con_fb + y * 8 * VIDEO_BYTES_PER_LINE + x * 8);
-    for (int r = 0; r < 8; r++) {
-        unsigned row = g[r];
-        if (invert) row = ~row & 0xFF;
-        p[0] = nib[row & 15];
-        p[1] = nib[row >> 4];
-        p += VIDEO_BYTES_PER_LINE / 4;
+    const unsigned char *g = font6x10[(c >= 0 && c < 128) ? c : '?'];
+    uint8_t *p = con_fb + y * CON_FONT_H * VIDEO_BYTES_PER_LINE + x * CON_FONT_W;
+    unsigned mask = invert ? 0x3F : 0;
+    if (x & 1) {                            /* word at +0, long at +2 */
+        for (int r = 0; r < CON_FONT_H; r++) {
+            unsigned row = g[r] ^ mask;
+            *(uint16_t *)p = pix2[row >> 4];
+            *(uint32_t *)(p + 2) = pix4[row & 15];
+            p += VIDEO_BYTES_PER_LINE;
+        }
+    } else {                                /* long at +0, word at +4 */
+        for (int r = 0; r < CON_FONT_H; r++) {
+            unsigned row = g[r] ^ mask;
+            *(uint32_t *)p = pix4[row >> 2];
+            *(uint16_t *)(p + 4) = pix2[row & 3];
+            p += VIDEO_BYTES_PER_LINE;
+        }
     }
 }
 
 static void fill_rows(int row0, int nrows)
 {
-    uint32_t *p = (uint32_t *)(con_fb + row0 * 8 * VIDEO_BYTES_PER_LINE);
+    uint32_t *p = (uint32_t *)(con_fb + row0 * CON_FONT_H * VIDEO_BYTES_PER_LINE);
     uint32_t v = bg4;
-    for (int i = nrows * 8 * VIDEO_BYTES_PER_LINE / 4; i > 0; i--)
+    for (int i = nrows * CON_FONT_H * VIDEO_BYTES_PER_LINE / 4; i > 0; i--)
         *p++ = v;
 }
 
@@ -72,7 +97,7 @@ void con_clear(void)
 
 static void scroll(void)
 {
-    memmove(con_fb, con_fb + 8 * VIDEO_BYTES_PER_LINE, (size_t)(CON_ROWS - 1) * 8 * VIDEO_BYTES_PER_LINE);
+    memmove(con_fb, con_fb + CON_FONT_H * VIDEO_BYTES_PER_LINE, (size_t)(CON_ROWS - 1) * CON_FONT_H * VIDEO_BYTES_PER_LINE);
     fill_rows(CON_ROWS - 1, 1);
     memmove(text[0], text[1], sizeof text - CON_COLS);
     memset(text[CON_ROWS - 1], ' ', CON_COLS);
@@ -140,5 +165,5 @@ void con_cursor_show(int on)
 }
 
 #ifdef HOST_TEST
-const unsigned char *test_font_row(int c, int r) { return &font8x8_basic[c][r]; }
+const unsigned char *test_font_row(int c, int r) { return &font6x10[c][r]; }
 #endif

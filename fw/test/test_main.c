@@ -140,11 +140,11 @@ static uint8_t *fb;
 static int glyph_matches(int x, int y, int c, uint8_t fgc, uint8_t bgc)
 {
     extern const unsigned char *test_font_row(int c, int r);
-    for (int r = 0; r < 8; r++) {
+    for (int r = 0; r < CON_FONT_H; r++) {
         unsigned row = *test_font_row(c, r);
-        for (int px = 0; px < 8; px++) {
-            uint8_t want = (row >> px) & 1 ? fgc : bgc;
-            if (fb[(y * 8 + r) * VIDEO_BYTES_PER_LINE + x * 8 + px] != want) return 0;
+        for (int px = 0; px < CON_FONT_W; px++) {
+            uint8_t want = (row >> (CON_FONT_W - 1 - px)) & 1 ? fgc : bgc;
+            if (fb[(y * CON_FONT_H + r) * VIDEO_BYTES_PER_LINE + x * CON_FONT_W + px] != want) return 0;
         }
     }
     return 1;
@@ -169,19 +169,19 @@ static void test_console(void)
     CHECK(glyph_matches(8, 0, 'B', 0xFF, 0x01));
     con_puts("\r\n");
     con_get_cursor(&x, &y); CHECK(x == 0 && y == 1);
-    for (int i = 0; i < 40; i++) con_putc('x');   /* fill line 1 exactly: cursor parks at col 40 */
-    con_get_cursor(&x, &y); CHECK(x == 40 && y == 1);
+    for (int i = 0; i < CON_COLS; i++) con_putc('x');   /* fill line 1 exactly: cursor parks at col CON_COLS */
+    con_get_cursor(&x, &y); CHECK(x == CON_COLS && y == 1);
     con_putc('\n');                                /* no double newline */
     con_get_cursor(&x, &y); CHECK(x == 0 && y == 2);
-    for (int i = 0; i < 41; i++) con_putc('y');   /* wraps on the 41st */
+    for (int i = 0; i < CON_COLS + 1; i++) con_putc('y');   /* wraps on the last one */
     con_get_cursor(&x, &y); CHECK(x == 1 && y == 3);
     con_set_cursor(0, CON_ROWS - 1);
-    con_puts("Z\n");                               /* scroll: 'A' moves off, 'Z' row 28 */
+    con_puts("Z\n");                               /* scroll: 'A' moves off, 'Z' one row up */
     con_get_cursor(&x, &y); CHECK(x == 0 && y == CON_ROWS - 1);
     CHECK(glyph_matches(0, CON_ROWS - 2, 'Z', 0xFF, 0x01));
     CHECK(glyph_matches(7, 0, 'x', 0xFF, 0x01));   /* old line 1 now at line 0 */
-    for (int px = 0; px < VIDEO_BYTES_PER_LINE * 8; px++)
-        if (fb[(CON_ROWS - 1) * 8 * VIDEO_BYTES_PER_LINE + px] != 0x01) { CHECK(!"last row cleared"); break; }
+    for (int px = 0; px < VIDEO_BYTES_PER_LINE * CON_FONT_H; px++)
+        if (fb[(CON_ROWS - 1) * CON_FONT_H * VIDEO_BYTES_PER_LINE + px] != 0x01) { CHECK(!"last row cleared"); break; }
     con_set_cursor(5, 5); con_putc('Q');
     con_set_cursor(5, 5); con_cursor_show(1);
     CHECK(glyph_matches(5, 5, 'Q', 0x01, 0xFF));  /* inverted while the cursor is shown */

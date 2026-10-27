@@ -292,7 +292,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `duart.S`, `duart.h` | `duart_reset_init` (stack-less 68681 channel A set-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values |
 | `memops.S`, `string.c` | memset/memcpy/memmove (long moves when alignment allows), str*/memcmp |
 | `main.c` | `bios_main`, banner, `putchar_both` (console, plus serial with `\n` -> CRLF only while `console_serial` is set: POST and banner) |
-| `console.c`, `font8x8_basic.h` | 40x30 console, nibble table renderer, scroll, cursor, shadow text; renders through `con_fb` (host-testable) |
+| `console.c`, `font6x10.h`, `mkfont.py` | 53x24 console (6x10 misc-fixed font), long+word table renderer, scroll, cursor, shadow text; renders through `con_fb` (host-testable) |
 | `serial.c` | GPIO shadow + atomic set/clear, DUART RX interrupt enable, polled TX, `delay_us` |
 | `input.c`, `queue.c` | serial 512 B (drained by `/dev/ttya` and `serial_getc`), keyboard 256 B, key events 64 x 16-bit rings; `input_pollchar` reads the keyboard only |
 | `ps2.c` | set-2 decoder: F0/E0/E1, shift/ctrl/caps, arrows/Home/End/Ins/Del/PgUp/PgDn/F1-F12 escape sequences, raw events |
@@ -321,7 +321,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
   the first character of the next typed line (the emulator types ahead).
 * Keyboard ASCII ring is 256 B (64 B overflowed when the emulator typed through a long,
   scrolling exception dump).
-* Hex dump line has no `|` bars so it fits 40 columns: `004000 aa 55 .. .U..`.
+* Hex dump line has no `|` bars so it fits the screen: `004000 aa 55 .. .U..`.
 * `bios_read(0)`/`bios_write(1,2)` work on the console so the newlib shim does one trap per
   `write()`; other fds return `E_NOSYS` (stage 2).
 * `delay_loops` is an 18-clock `subq/bhi` loop; `delay_us(us)` = `us*2/3` loops.
