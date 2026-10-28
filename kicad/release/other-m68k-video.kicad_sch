@@ -7488,7 +7488,7 @@
 				(hide yes)
 			)
 		)
-		(property "MPN" "BLM18PG601SN1D"
+		(property "MPN" "BLM18AG601SN1D"
 			(at 48.26 82.55 0)
 			(effects
 				(font
@@ -7498,6 +7498,15 @@
 			)
 		)
 		(property "Desc" "ferrite bead 600 ohm @ 100 MHz 0603"
+			(at 48.26 82.55 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Note" "PCBWay substituted this for the BLM18PG601SN1D we listed (2026-10-28 quote review); no distributor lists a PG 601 value, so the original number was probably wrong. 600 ohm, 500 mA, 0.38 ohm max. FB1 only feeds the AD724 analog supply (+5VA, about 30 mA), so any 0603 600 ohm bead does"
 			(at 48.26 82.55 0)
 			(effects
 				(font

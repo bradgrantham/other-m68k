@@ -1,4 +1,5 @@
 Designator,Manufacturer,MPN,Description,Who fits it,Sourcing note
+U1 socket,Mill-Max,110-43-964-41-001000,"DIP-64 socket, 22.86 mm (0.9 in) row spacing, machined gold contacts",customer supplies and solders the socket,"PCBWay could not source a 0.9 in DIP-64 socket and marked U1 DNP in the 2026-10-28 quote, so we buy and solder this one ourselves: DigiKey ED90055-ND, about $15. A stamped dual-wipe 0.9 in DIP-64 would do as well if one turns up"
 U1,Motorola,MC68000P12,68000 CPU 12 MHz DIP-64,customer supplies and inserts into socket,
 U2,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (upper byte, D15..D8)",customer supplies and inserts into socket,
 U3,Alliance Memory,AS6C4008-55PCN,"512K x 8 SRAM 55 ns DIP-32, 2.7-5.5 V (lower byte, D7..D0)",customer supplies and inserts into socket,

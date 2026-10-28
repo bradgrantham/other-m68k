@@ -10697,7 +10697,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Manufacturer" "any"
+		(property "Socket_Manufacturer" "Mill-Max"
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -10706,7 +10706,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_MPN" "DIP-64 socket, 0.9 in rows, dual-wipe"
+		(property "Socket_MPN" "110-43-964-41-001000"
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -10715,7 +10715,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) row spacing, stamped dual-wipe tin contacts; fallback if none is available: Mill-Max 110-43-964-41-001000 (machined)"
+		(property "Socket_Desc" "DIP-64 socket, 22.86 mm (0.9 in) row spacing, machined gold contacts"
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -10724,7 +10724,7 @@
 				(hide yes)
 			)
 		)
-		(property "Socket_Note" "Named generically so the assembler looks for a stamped socket first. PCBWay quoted the Mill-Max at $38 (2026-10); DigiKey sells it for about $15. No stamped 0.9 in DIP-64 found at DigiKey/Mouser"
+		(property "Socket_Note" "PCBWay could not source a 0.9 in DIP-64 socket and marked U1 DNP in the 2026-10-28 quote, so we buy and solder this one ourselves: DigiKey ED90055-ND, about $15. A stamped dual-wipe 0.9 in DIP-64 would do as well if one turns up"
 			(at 59.69 100.33 0)
 			(effects
 				(font
@@ -10734,6 +10734,15 @@
 			)
 		)
 		(property "Chip_Supply" "customer"
+			(at 59.69 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Socket_Supply" "customer"
 			(at 59.69 100.33 0)
 			(effects
 				(font

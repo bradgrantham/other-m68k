@@ -13380,6 +13380,15 @@
 				(hide yes)
 			)
 		)
+		(property "Socket_Supply" "pcba"
+			(at 69.85 63.5 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
 		(pin "32"
 			(uuid "a484f3e0-430a-5103-bfd7-ebd6e32d03e3")
 		)

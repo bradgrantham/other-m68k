@@ -55,10 +55,10 @@ assembly.
 | BOM for PCBWay | `other-m68k-pcbway-bom.csv` (Item, Designator, Qty, Manufacturer, Mfg Part #, Description, Package, Type SMD/THT, Supplied By). Only the assembled parts, and the Description column carries nothing but the part description and any substitution rule PCBWay may use |
 | BOM for us | `other-m68k-bom.csv`: every part including the chips we fit, with Assembly, Socket MPN and our sourcing notes (distributor numbers, stock, prices from the 2026-10 quote); `other-m68k-customer-parts.csv` is the subset we fit ourselves |
 | placement | `other-m68k-pcbway-centroid.csv` (KiCad convention: mm, Y up, KiCad rotation, top side only) |
-| scope | SMD **and** through-hole: passives, LDO, supervisor, 74AHCT245 and 74HC14 (SOIC), transistor and Schottky diodes, polyfuses, connectors, headers, jacks, switches, crystals, oscillator, electrolytics, and every IC socket (plain DIP/PLCC sockets, no ZIF). PCBWay buys and inserts no chips: every socket ships empty |
+| scope | SMD **and** through-hole: passives, LDO, supervisor, 74AHCT245 and 74HC14 (SOIC), transistor and Schottky diodes, polyfuses, connectors, headers, jacks, switches, crystals, oscillator, electrolytics, and every IC socket except U1 (plain DIP/PLCC sockets, no ZIF; PCBWay could not source a 0.9 in DIP-64 socket and marked U1 DNP in the 2026-10-28 quote). PCBWay buys and inserts no chips: every socket ships empty |
 | consigned | none. Nothing is mailed to PCBWay: the parts we supply are fitted here after the boards arrive (see the next row), so there is no consignment shipping or handling fee |
-| not in the assembly BOM (we buy and fit) | U11 AD724JRZ, SOIC-16W, hand-soldered (last-time-buy part: DigiKey LTB 2027-07-29, about $25 there against the $77 PCBWay quoted; buy spares for the bare boards while stock lasts); U2/U3 AS6C4008-55PCN SRAM and U4/U5 SST39SF040 flash, inserted into their sockets (about $11 and $3 each at DigiKey against $31 and $9.76 quoted). These five chips are the whole difference between the quoted $281 of parts and about $120 |
-| customer fits afterwards | `other-m68k-customer-parts.csv`: U1 MC68000P12, U6/U7 ATF1508AS-7JX84, U10 MC68681P, U2/U3 SRAM and U4/U5 flash into their sockets; U11 AD724JRZ soldered |
+| not in the assembly BOM (we buy and fit) | U11 AD724JRZ, SOIC-16W, hand-soldered (last-time-buy part: DigiKey LTB 2027-07-29, about $25 there against the $77 PCBWay quoted; buy spares for the bare boards while stock lasts); U2/U3 AS6C4008-55PCN SRAM and U4/U5 SST39SF040 flash, inserted into their sockets (about $11 and $3 each at DigiKey against $31 and $9.76 quoted). The U1 DIP-64 socket, Mill-Max 110-43-964-41-001000 (DigiKey ED90055-ND, about $15), soldered by us. The 2026-10-28 quote without the five chips and the socket came to $97.20 of parts, $29 assembly and $103.27 for the board, $226.82 in all with the member discount, against $281 of parts alone in the first quote |
+| customer fits afterwards | `other-m68k-customer-parts.csv`: the U1 DIP-64 socket (soldered), then U1 MC68000P12, U6/U7 ATF1508AS-7JX84, U10 MC68681P, U2/U3 SRAM and U4/U5 flash into their sockets; U11 AD724JRZ soldered |
 | first firmware | the flash chips arrive blank: program `fw/build/rom_even.bin` into U4 (D15..D8) and `rom_odd.bin` into U5 (D7..D0) with the TL866 (SST39SF040, 512 KB images, built by the top-level `make flash`; they carry the 256 KB BIOS image and the C: volume with AUTOEXEC.CMD and the example programs), then later BIOS updates with the monitor's `flash D:ROM.BIN` from the SD card (C: is left intact) |
 | not fitted | mounting holes, test pads, the crystal trim capacitor (DNP) |
 | loose parts | none (the PAL jumper is gone; no shunts) |
@@ -74,8 +74,16 @@ substitutes (parts from China), and put this in the order remarks:
 > match the row spacing in the BOM; stamped (dual-wipe) sockets preferred. Please keep the
 > connectors (J1, J3, J4, J5, J6, J10, J12) on the listed part numbers.
 
-The BOM lists each socket under its chip's designator (U1, U2..U7, U10) and the chips are not on
-it; if PCBWay asks about those designators, the sockets are the only parts to fit there.
+The BOM lists each socket under its chip's designator (U2..U7, U10) and the chips are not on
+it; if PCBWay asks about those designators, the sockets are the only parts to fit there. U1 is
+not on the BOM at all: its socket is ours to solder.
+
+Quote review of 2026-10-28 (T-V19W49409A): 51 lines matched our BOM designator for designator.
+PCBWay substituted Murata BLM18AG601SN1D for FB1 (accepted; the PG number we had listed is not a
+real 600 ohm part, and FB1 only feeds the AD724's 30 mA analog supply), confirmed the Yageo
+YC164-JR-07100RL arrays, and marked the U1 socket DNP. The three dear lines are connectors it
+has to buy from a distributor: J3 MD-60SM $9.06, J5 RCJ-041 $9.26 and J12 DE-9 $9.26 against
+about $2, $1.50 and $4 at DigiKey or Future; soldering those three ourselves would save about $20.
 
 All part numbers were checked against distributor listings on 2026-10-20 (`parts.json` has no
 `verify` flags left; `other-m68k-bom-check.txt` lists none). Substitutions made then: Lite-On

@@ -505,7 +505,7 @@ def build():
 def apply_parts(b, path=os.path.join(HERE, "parts.json")):
     """Attach sourcing fields from parts.json to every part: Manufacturer, MPN, LCSC, Desc,
     Note (our sourcing remarks, kept out of the assembler's BOM), Assembly (pcba | customer |
-    socket | dnp), and for socketed chips Socket_Manufacturer, Socket_MPN, Socket_Note, Chip_Supply.  A part without an entry is an error: the assembly BOM must
+    socket | dnp), and for socketed chips Socket_Manufacturer, Socket_MPN, Socket_Note, Chip_Supply, Socket_Supply.  A part without an entry is an error: the assembly BOM must
     be complete."""
     with open(path, encoding="utf-8") as f:
         db = json.load(f)
@@ -522,7 +522,8 @@ def apply_parts(b, path=os.path.join(HERE, "parts.json")):
             s = entry["socket"]
             fields.update({"Socket_Manufacturer": s.get("mfr", ""), "Socket_MPN": s.get("mpn", ""),
                            "Socket_LCSC": s.get("lcsc", ""), "Socket_Desc": s.get("desc", ""), "Socket_Note": s.get("note", ""),
-                           "Chip_Supply": entry.get("chip_supply", "customer")})
+                           "Chip_Supply": entry.get("chip_supply", "customer"),
+                           "Socket_Supply": entry.get("socket_supply", "pcba")})
         if entry.get("assembly") == "dnp":
             part.dnp = True
         part.props.update({k: v for k, v in fields.items() if v})

@@ -1,4 +1,4 @@
-assembled: 161 placements, 51 BOM lines; assembler-supplied chips inserted into sockets: 0; fitted by us: 9
+assembled: 160 placements, 50 BOM lines; assembler-supplied chips inserted into sockets: 0; fitted by us: 10
 
 Part numbers written from memory, not yet checked against a distributor listing:
 

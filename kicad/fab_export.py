@@ -20,7 +20,8 @@ sourcing remarks (Note) go to the KiCad BOM and the customer-parts list.
                               parts without an LCSC number (JLCPCB only)
     NAME-gerbers.zip          every Gerber/drill file already in <outdir>
 
-"Assembled" means Assembly = pcba, or the socket of an Assembly = socket part (the chip is a
+"Assembled" means Assembly = pcba, or the socket of an Assembly = socket part unless its
+Socket_Supply is customer (then we solder the socket ourselves and it is listed with our parts); the chip is a
 separate line: supplied by us, or by the assembler and inserted after reflow when
 Chip_Supply = pcba).  Positions follow KiCad's own position-file convention (mm, Y up,
 KiCad rotation) which both houses accept from KiCad users; the JLCPCB rotation offsets in
@@ -110,9 +111,14 @@ def main():
                              "note": "customer supplies and fits", "remark": f.get("Note", "")})
             continue
         if asm == "socket":
-            assembled.append({"ref": ref, "mfr": f.get("Socket_Manufacturer", ""), "mpn": f.get("Socket_MPN", ""), "lcsc": f.get("Socket_LCSC", ""),
-                              "desc": f.get("Socket_Desc", "socket for " + f.get("Desc", c["value"])), "footprint": c["footprint"],
-                              "type": p["type"], "comment": f.get("Socket_MPN", "")})
+            sock = {"ref": ref, "mfr": f.get("Socket_Manufacturer", ""), "mpn": f.get("Socket_MPN", ""), "lcsc": f.get("Socket_LCSC", ""),
+                    "desc": f.get("Socket_Desc", "socket for " + f.get("Desc", c["value"])), "footprint": c["footprint"],
+                    "type": p["type"], "comment": f.get("Socket_MPN", "")}
+            if f.get("Socket_Supply", "pcba") == "customer":      # we solder the socket too
+                customer.append({"ref": ref + " socket", "mfr": sock["mfr"], "mpn": sock["mpn"], "desc": sock["desc"],
+                                 "note": "customer supplies and solders the socket", "remark": f.get("Socket_Note", "")})
+            else:
+                assembled.append(sock)
             supply = f.get("Chip_Supply", "customer")
             customer.append({"ref": ref, "mfr": f.get("Manufacturer", ""), "mpn": f.get("MPN", ""), "desc": f.get("Desc", c["value"]),
                              "note": "customer supplies and inserts into socket" if supply == "customer"
