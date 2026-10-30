@@ -1,4 +1,4 @@
-# other-m68k SDK: libsys.a (syscall stubs + newlib shim + PDM audio encoder + BMP loader), crt0, and example programs.
+# other-m68k SDK: libsys.a (syscall stubs + newlib shim + PDM audio encoder + BMP loader + SSTV encoder), crt0, and example programs.
 # See README.md. Add a program: put foo.c in examples/ and add it to EXAMPLES.
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
@@ -10,14 +10,14 @@ SIZE    = $(CROSS)size
 GEN = ../generated
 B   = build
 
-CFLAGS  = -m68000 -Os -Wall -Wextra -ffunction-sections -fdata-sections -I$(GEN) -I.
+CFLAGS  = -m68000 -Os -Wall -Wextra -ffunction-sections -fdata-sections -I$(GEN) -I. -MMD -MP
 ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 # newlib in this toolchain expects the libgloss names (write/read/sbrk/_exit/...), which
 # newlib_shim.c provides; libsys comes after libc so libc's references resolve into it.
 LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments -L$(B)
 LDLIBS  = -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 
-EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term joytest
+EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv
 
 .PHONY: all clean check-sources host-bmpview
 
@@ -30,7 +30,7 @@ check-sources:
 $(B):
 	mkdir -p $(B)
 
-$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o $(B)/pdm.o $(B)/bmp.o
+$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o $(B)/pdm.o $(B)/bmp.o $(B)/sstv_enc.o $(B)/sstv_play.o
 	$(AR) rcs $@ $^
 
 $(B)/syscall_stubs.o: $(GEN)/syscall_stubs.S | $(B)
@@ -47,6 +47,7 @@ $(B)/%.o: examples/%.c | $(B)
 
 $(B)/bmp.o: CFLAGS += -O2            # pixel loops: speed over size
 $(B)/pdm.o: CFLAGS += -O2            # table build and encoder: speed over size
+$(B)/sstv_enc.o: CFLAGS += -O2          # per-sample NCO loop: speed over size
 $(B)/plasma.o: CFLAGS += -O2         # inner loop: 5 VBLANKs a frame against 6 at -Os
 
 $(B)/%.elf: $(B)/%.o $(B)/crt0.o $(B)/libsys.a user.ld $(GEN)/user.ld
@@ -65,3 +66,5 @@ $(B)/host/bmpview: examples/bmpview.c bmp.c bmp.h
 
 clean:
 	rm -rf $(B)
+
+-include $(wildcard $(B)/*.d)
