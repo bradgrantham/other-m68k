@@ -464,10 +464,11 @@ int main(int argc, char **argv)
     }
 
     serial_flush();
-    fprintf(stderr, "m68k-emu: %ld frames, %llu cycles, %lu serial bytes out, %lu in (%lu overruns, %lu lost), "
-            "%lu bus errors%s\n",
-            frames_done, (unsigned long long)cycle_base, duart_tx_bytes[0], duart_rx_bytes, duart_rx_overruns,
-            duart_rx_dropped, bus_berr_count, cpu_halted ? ", CPU halted" : "");
+    if (opts.headless || cpu_halted)             /* scripts read this; a person at the window does not */
+        fprintf(stderr, "m68k-emu: %ld frames, %llu cycles, %lu serial bytes out, %lu in (%lu overruns, %lu lost), "
+                "%lu bus errors%s\n",
+                frames_done, (unsigned long long)cycle_base, duart_tx_bytes[0], duart_rx_bytes, duart_rx_overruns,
+                duart_rx_dropped, bus_berr_count, cpu_halted ? ", CPU halted" : "");
     if (opts.dump_regs)
         emu_dump_regs(stderr);
     for (int i = 0; i < opts.dump_mem_count; i++)

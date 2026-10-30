@@ -122,15 +122,15 @@ FSTEST.ELF         61548 26-10-21 21:15
 README.TXT            33 26-10-21 21:15
 6 entries, 310549 bytes
 D:/> run hello.elf
-run hello.elf: 008000-010c33 entry 008000
 Hello from newlib on other-m68k!
 ...
 press a key: got 0x78
-
-[exit 0]
+D:/>
 ```
 
-Without the `D:` and `run`, plain `hello` finds `C:/hello.ELF` on the search path.
+Without the `D:` and `run`, plain `hello` finds `C:/hello.ELF` on the search path. A program
+that exits with a nonzero status gets an `[exit N]` line; `run -v` prints the load range and
+entry point.
 
 Other things verified the same way: `run ls.elf /` (argv), `run cat.elf README.TXT nope.txt`
 (newlib `fopen` -> `sys_open`, `ENOENT` for the missing file), `run fstest.elf exec ls.elf`
@@ -168,7 +168,7 @@ POST serial output, 38400 8N1 (`SERIAL_BAUD`):
 
 ```
 other-m68k POST
-ROM sum 0000 OK          <- 16-bit word sum of the 256 KB BIOS image, must be 0000
+ROM OK                   <- 16-bit word sum of the 256 KB BIOS image is 0 (else "ROM BAD sum xxxx")
 RAM ... OK               <- one dot per pass: address-in-address, inverted address, byte lanes
 ```
 
@@ -573,7 +573,7 @@ return address that performs `sys_exit(0)`, so a program may simply `rts`). Prog
 which are called from the BIOS ISRs in supervisor mode at the interrupt's own level (higher
 levels can still interrupt them). `sys_exit` closes the program's
 files (flushing the C: cache), restores the BIOS interrupt enables, drops user hooks, the audio callback and any
-queued audio buffers, selects page 0 and prints `[exit N]`. `sys_exec(path, args)` loads another ELF over the
+queued audio buffers, selects page 0 and prints `[exit N]` when N is not 0. `sys_exec(path, args)` loads another ELF over the
 current program and starts it (`argv[0] = path`, `args` split on blanks); it returns only
 on failure, before anything was overwritten.
 

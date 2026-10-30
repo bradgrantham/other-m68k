@@ -46,9 +46,4 @@ void        bmp_fit(int w, int h, int W, int H, int stretch, int *dw, int *dh); 
 
 extern const uint8_t bmp_lvl3[8], bmp_lvl2[4];       /* RGB332 channel levels expanded to 8 bits */
 
-#ifndef HOST
-struct bmp_profile { uint32_t read, hbox, vbox, dither; };   /* ticks spent in each stage, cumulative */
-extern struct bmp_profile bmp_prof;
-#endif
-
 #endif

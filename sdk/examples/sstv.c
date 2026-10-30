@@ -177,11 +177,8 @@ int main(int argc, char **argv)
         if (rc == 0) {
             if (wav) printf("sstv: %s, %d lines, %s in %lu.%lu s\n", sstv_mode_name(mode), sstv_mode_lines(mode), wav,
                             (unsigned long)dt / hz, (unsigned long)dt * 10 / hz % 10);
-            else {
-                unsigned long idle = dt ? (unsigned long)sstv_send_idle_ticks() * 100 / dt : 0;
-                printf("sstv: %s, %d lines, %lu.%lu s, %lu%% CPU idle\n", sstv_mode_name(mode), sstv_mode_lines(mode),
-                       (unsigned long)dt / hz, (unsigned long)dt * 10 / hz % 10, idle);
-            }
+            else printf("sstv: %s, %d lines, %lu.%lu s\n", sstv_mode_name(mode), sstv_mode_lines(mode),
+                        (unsigned long)dt / hz, (unsigned long)dt * 10 / hz % 10);
         } else if (rc == 2) printf("sstv: aborted\n");
     } while (loop && rc == 0 && !esc_pressed());
     (void)passes;

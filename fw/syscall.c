@@ -56,7 +56,10 @@ void user_cleanup(void)
 void bios_exit(int code)
 {
     user_cleanup();
-    kprintf("\n[exit %d]\n", code);
+    int x, y;
+    con_get_cursor(&x, &y);
+    if (x) kprintf("\n");                   /* the prompt starts on a fresh line */
+    if (code) kprintf("[exit %d]\n", code);  /* success is silent */
     monitor_restart();
 }
 

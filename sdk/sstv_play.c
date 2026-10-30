@@ -18,9 +18,6 @@ int sstv_encoder_next(sstv_enc_t *e, uint8_t *out, int n)
 }
 
 static sstv_enc_t enc;
-static uint32_t idle_ticks;
-
-uint32_t sstv_send_idle_ticks(void) { return idle_ticks; }
 
 int sstv_send(const uint8_t *fb, uint8_t *scratch, sstv_mode_t mode, sstv_progress_fn progress, void *ctx)
 {
@@ -33,11 +30,8 @@ int sstv_send(const uint8_t *fb, uint8_t *scratch, sstv_mode_t mode, sstv_progre
     uint8_t *buf = sys_audio_start(AUDIO_BUF_MAX);
     if (!buf) return -2;
     int total = sstv_mode_lines(mode), last = -1, rc = 0;
-    idle_ticks = 0;
     while (sstv_encoder_next(&enc, buf, AUDIO_BUF_MAX)) {
-        uint32_t t0 = sys_ticks();
         buf = sys_audio_next(buf, 1);
-        idle_ticks += sys_ticks() - t0;         /* 16 ms ticks: coarse per call, fair over a thousand */
         if (!buf) { rc = -3; break; }
         int line = sstv_encoder_line(&enc);
         if (progress && line != last && line < total) {

@@ -18,14 +18,10 @@ void putchar_both(int c)
 void print_banner(void)
 {
     uint16_t stored = *(volatile uint16_t *)(ROM_BASE + ROM_IMAGE_SIZE - 2);
-    uint16_t id = IO_ID;
     kprintf("%s BIOS %s\n", BOARD_NAME, FW_VERSION);
     kprintf("ROM %uK sum %04x (%s) C: %uK RAM %uK\n", (unsigned)(ROM_IMAGE_SIZE / 1024), stored,
             post_rom_sum == 0 ? "ok" : "BAD", (unsigned)(FLASH_VOL_SIZE / 1024), (unsigned)(RAM_SIZE / 1024));
-    kprintf("ID %04x  %s  DUART %u 8N1\n", id, video_standard == VIDEO_STD_PAL ? "PAL" : "NTSC",
-            (unsigned)SERIAL_BAUD);
-    kprintf("user RAM %06x-%06x  fb0 %06x\n", (unsigned)USER_BASE, (unsigned)(USER_END - 1),
-            (unsigned)FB_PAGE0_ADDR);
+    kprintf("%s  DUART %u 8N1\n", video_standard == VIDEO_STD_PAL ? "PAL" : "NTSC", (unsigned)SERIAL_BAUD);
 }
 
 void bios_main(void)

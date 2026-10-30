@@ -30,7 +30,7 @@ echo "== emulator"
 # Robot 36 from the console (38 s of audio): about 2300 frames after the 350-frame boot delay
 step "$EMU" --rom $FLASH --headless --no-stdin --exit-on-berr --frames 2900 \
     --type 'sstv --no-ui\n' --type-delay 350 --audio-wav $B/emu-r36.wav --text-dump $B/emu-r36.txt
-grep -q "CPU idle" $B/emu-r36.txt && pass "sstv ran: $(grep 'CPU idle' $B/emu-r36.txt)" || { cat $B/emu-r36.txt; fail "sstv summary line"; }
+grep -q "240 lines," $B/emu-r36.txt && pass "sstv ran: $(grep '240 lines,' $B/emu-r36.txt)" || { cat $B/emu-r36.txt; fail "sstv summary line"; }
 if python3 decode.py $B/emu-r36.wav $B/emu-r36.png --rate 48000/1 > $B/decode-emu.log 2>&1; then pass "decode emulator audio ($(grep -c '^PASS' $B/decode-emu.log) checks)"
 else cat $B/decode-emu.log; fail "decode emulator audio"; fi
 # --wav onto D:

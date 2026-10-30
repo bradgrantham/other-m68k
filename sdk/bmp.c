@@ -16,7 +16,7 @@
  *
  * Works for both down- and up-scaling.  Supports uncompressed BMP with 1, 4, 8 (palette),
  * 16 (555 or bit fields), 24 and 32 (xRGB or bit fields) bits per pixel, bottom-up or
- * top-down.  RLE is not supported.  Builds for the host with -DHOST (no sys_ticks profile). */
+ * top-down.  RLE is not supported.  Builds for the host with -DHOST. */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -278,12 +278,6 @@ const char *bmp_show_raw(FILE *f, long size, struct bmp_target *t, int W, int H)
     return NULL;
 }
 
-#ifndef HOST
-struct bmp_profile bmp_prof;                           /* profile in video ticks */
-#define TICK() sys_ticks()
-#else
-#define TICK() 0u
-#endif
 
 const char *bmp_show(struct bmp *b, int dw, int dh, struct bmp_target *t)
 {
@@ -307,41 +301,22 @@ const char *bmp_show(struct bmp *b, int dw, int dh, struct bmp_target *t)
     int pending = -1;                   /* destination row being accumulated (file order) */
     int reverse = 0;
     for (int y = 0; y < sh; y++) {
-        uint32_t t0 = TICK();
         if (fread(raw, 1, b->stride, b->f) != b->stride) { err = "short pixel data"; goto done; }
-        uint32_t t1 = TICK();
         bmp_decode_row(b, raw, rgb);
         box_row(&hx, rgb, hrow);
-        uint32_t t2 = TICK();
-#ifndef HOST
-        bmp_prof.read += t1 - t0; bmp_prof.hbox += t2 - t1;
-#else
-        (void)t0; (void)t1; (void)t2;
-#endif
         /* destination rows touched by source row y: those whose span intersects [y*dh, (y+1)*dh) */
         int r_lo = (int)(((uint32_t)y * dh) / sh), r_hi = (int)((((uint32_t)y + 1) * dh - 1) / sh);
         for (int r = r_lo; r <= r_hi; r++) {
-            uint32_t t3 = TICK();
             if (r != pending) { memset(vacc, 0, (size_t)n3 * sizeof *vacc); pending = r; }
             vacc_add(vacc, hrow, n3, vx.w[vx.start[r] + (y - vx.s0[r])]);
             if (y == vx.s0[r] + vx.cnt[r] - 1) {                        /* last source row of r */
                 for (int i = 0; i < n3; i++) drow[i] = (uint8_t)((vacc[i] + 128) >> 8);
                 pending = -1;
-                uint32_t t4 = TICK();
                 dither_row(drow, dw, out, e0, e1, reverse);
-#ifndef HOST
-                bmp_prof.vbox += t4 - t3; bmp_prof.dither += TICK() - t4;
-#else
-                (void)t3; (void)t4;
-#endif
                 int16_t *tmp = e0; e0 = e1; e1 = tmp;
                 reverse ^= 1;
                 int row = b->topdown ? r : dh - 1 - r;                  /* file order -> screen row */
                 memcpy(t->fb + (size_t)(t->oy + row) * t->stride + t->ox, out, (size_t)dw);
-            } else {
-#ifndef HOST
-                bmp_prof.vbox += TICK() - t3;
-#endif
             }
         }
     }

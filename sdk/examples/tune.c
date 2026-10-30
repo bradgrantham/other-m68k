@@ -81,9 +81,7 @@ int main(void)
     struct voice mel = { melody, N_MEL, 0, 0, 0, 0, 0, 0 };
     struct voice bas = { bass, N_BAS, 0, 0, 0, 0, 0, 0 };
     printf("tune: Ode to Joy at %u bpm, %u Hz samples. Any key stops.\n", BPM, SAMPLE_RATE);
-    uint32_t t0 = sys_ticks();
     pdm_init();
-    printf("pdm_init: %lu ms\n", (unsigned long)(sys_ticks() - t0) * 1000 / 60);
     uint8_t *buf = sys_audio_start(BUFSIZE);
     if (!buf) { printf("sys_audio_start failed\n"); return 1; }
     voice_next(&mel, 1);

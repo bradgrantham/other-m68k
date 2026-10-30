@@ -106,8 +106,8 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   1)` hands in the last one and waits for the end. Streaming costs the program about a third
   of the CPU (242 of the 764 clocks in each line go to the interrupt) plus 83 clocks per sample
   for `pdm_encode`; silence costs nothing. See `examples/tune.c`.
-* Returning from `main` or calling `exit()` ends in `sys_exit`, which prints `[exit N]` and
-  returns to the monitor. Page 0 is the console; a program that draws on it should
+* Returning from `main` or calling `exit()` ends in `sys_exit`, which returns to the monitor
+  (printing `[exit N]` first when N is not 0). Page 0 is the console; a program that draws on it should
   `sys_con_clear()` before exiting.
 * Time: `clock()` and `times()` count milliseconds since boot (newlib's `CLOCKS_PER_SEC` is
   1000), derived from `sys_ticks()` and the frame length of the video standard
@@ -171,9 +171,9 @@ line; `--no-ui` leaves the display alone. A BMP is fitted into 320x240 (letterbo
 borders), shown on page 1 and sent. `--loop` repeats until ESC; ESC on the keyboard or on
 serial port A aborts (exit status 2). `--wav D:NAME.WAV` writes the 8-bit mono PCM at the
 line rate (15707 Hz NTSC) to the card instead of playing it (Robot 36 is 566 KB, so the
-flash volume is refused). It prints the time taken and the share of the CPU that was
-left over (44 % in Robot 36 at 12 MHz: the encoder costs about 100 clocks per sample on
-top of `pdm_encode`'s 83 and the line interrupt's 242 of 764).
+flash volume is refused). It prints the time taken when done. Robot 36 leaves 44 % of the
+CPU idle at 12 MHz (measured in the emulator): the encoder costs about 100 clocks per
+sample on top of `pdm_encode`'s 83 and the line interrupt's 242 of 764.
 
 The encoder (`sstv.h`) is a library: `sstv_send(page, scratch, SSTV_ROBOT36, progress, ctx)`
 does the whole job from a program, and `sstv_encoder_init` / `sstv_encoder_next_pcm` give

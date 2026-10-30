@@ -222,6 +222,8 @@ static void cmd_beep(void)
 static void cmd_info(void)
 {
     print_banner();
+    kprintf("ID %04x  user RAM %06x-%06x  fb0 %06x\n", IO_ID, (unsigned)USER_BASE, (unsigned)(USER_END - 1),
+            (unsigned)FB_PAGE0_ADDR);
     kprintf("ticks %u (%u/s) INTSTAT %04x INTEN %04x\n", ticks, ticks_per_sec, IO_INTSTAT, inten_shadow);
     kprintf("GPIO %04x DUART SRA %02x rx overruns %u ps2 err %u\n", gpio_shadow, DUART_SRA,
             serial_rx_overruns, ps2_errors);
@@ -584,7 +586,7 @@ static void cmd_exit(void)
 /* Load `path` and run it with the raw argument string `args`.  Returns the loader's error
  * (E_NOENT if there is no such file) without printing when `quiet_noent` is set, so the
  * caller can fall back to "unknown command". */
-static int run_file(const char *path, char *args, int quiet_noent)
+static int run_file(const char *path, char *args, int quiet_noent, int verbose)
 {
     static struct exec_image img;
     static char expanded[ARGS_MAX_BYTES];
@@ -597,7 +599,7 @@ static int run_file(const char *path, char *args, int quiet_noent)
         if (!(quiet_noent && rc == E_NOENT)) kprintf("run %s: %s\n", path, fs_strerror(rc));
         return rc;
     }
-    kprintf("run %s: %06x-%06x entry %06x\n", img.path, img.lowest, img.highest - 1, img.entry);
+    if (verbose) kprintf("run %s: %06x-%06x entry %06x\n", img.path, img.lowest, img.highest - 1, img.entry);
     last_entry = img.entry;
     con_cursor_show(0);
     fs_sync();
@@ -617,13 +619,16 @@ static char *first_word(char *rest, char **args)
     return rest;
 }
 
-/* `run file [args...]`: rest is the raw remainder of the line after the command word. */
+/* `run [-v] file [args...]`: rest is the raw remainder of the line after the command word.
+ * -v prints the load range and entry point. */
 static void cmd_run(char *rest)
 {
     char *args;
     char *path = first_word(rest, &args);
-    if (!*path) { kprintf("run file [args]\n"); return; }
-    run_file(path, args, 0);
+    int verbose = 0;
+    if (!strcmp(path, "-v")) { verbose = 1; path = first_word(args, &args); }
+    if (!*path) { kprintf("run [-v] file [args]\n"); return; }
+    run_file(path, args, 0, verbose);
 }
 
 static int ends_with(const char *s, const char *ext)
@@ -672,7 +677,7 @@ static void run_unknown(char *word, char *args)
         return;
     }
     if (ends_with(path, ".cmd")) { script_start(path); return; }
-    run_file(path, args, 0);
+    run_file(path, args, 0, 0);
 }
 
 /* ---- dispatch -------------------------------------------------------------------------------- */
@@ -695,7 +700,7 @@ static void cmd_help(void)
             "del ren mkdir rmdir   file management\n"
             "date [Y-M-D H:M]  show/set the clock\n"
             "format C:      empty flash volume\n"
-            "run file [args] load ELF and run\n"
+            "run [-v] file [args] load ELF and run (-v: load addresses)\n"
             "name [args]    NAME.ELF or NAME.CMD\n"
             "               from ., C:/, D:/\n"
             "exit  history  end a script / typed lines\n"

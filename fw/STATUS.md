@@ -12,6 +12,19 @@ present here); `make -C sdk` builds `libsys.a` and the examples' `.elf/.srec`. `
 is 0x4780 bytes (ends at 0x4B80), leaving ~13 KB of supervisor stack below 0x8000. See
 README.md for usage, the exact emulator commands and their output.
 
+## Quieter console (2026-10-29)
+
+* Banner is three lines: name and version; ROM/C:/RAM sizes with the checksum; video
+  standard and baud rate. The board ID and the user RAM range moved to `info`.
+* POST prints `ROM OK`, or `ROM BAD sum xxxx` with the residue; `ROM sum 0000 OK` was
+  confusing next to the banner's stored word.
+* `run` and the bare-name shorthand print nothing on a successful load (`run -v file`
+  prints the range and entry); `sys_exit` prints `[exit N]` only for a nonzero N.
+* Benchmark residue removed from the examples: `tune`'s `pdm_init` time, `bmpview`'s stage
+  timings (and the profile counters in `bmp.c`), `sstv`'s CPU share. `sdplay` keeps its
+  underrun statistics. The emulator prints its frames/cycles/serial summary only in
+  headless runs (or after a CPU halt).
+
 ## SSTV encoder and `sstv` program (2026-10-29)
 
 * `sdk/sstv.h`, `sdk/sstv_enc.c`: pure C99 slow-scan television encoder (Robot 36, Robot 72,
@@ -293,7 +306,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 * GPIO bit map from `hw.h` (PS2CLK 0, PS2DAT 1, AUDIO 2, LED0 3, LED1 4); the idle value is
   `GPIO_PS2CLK_MASK + GPIO_PS2DAT_MASK` (= `IO_GPIO_RESET`). `INTSTAT_SERRXOVR`/`SERTXBUSY`,
   `IO_SERDATA`, `INTEN_SERRX` no longer exist; `irq_init` clears only VBLANK/HSYNC/PS2ERR.
-* Banner line: `ID 6802  NTSC  DUART 38400 8N1`; `info` adds `DUART SRA xx`. `bios_main`
+* Banner line: `NTSC  DUART 38400 8N1`; `info` adds the ID, the user RAM range, `DUART SRA xx`. `bios_main`
   zeroes `inten_shadow` with INTEN.
 * The S-record receiver still does not echo: at 38400 a record arrives every ~11 ms and
   echoing one (console glyphs, 35 ms scroll) takes longer, so the 512-byte ring would
@@ -354,12 +367,12 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 ## Verified in the emulator, stage 1 features (revision-1 ROM; POST, banner, help, info,
 ## S-records, go and exit re-checked with the DUART emulator during the stage 2 runs)
 
-* POST: `ROM sum 0000 OK`, `RAM ... OK`; banner; `help`, `info`, `ticks`, `md`, `mb/mw/ml`,
+* POST: `ROM OK` (`ROM BAD sum xxxx` otherwise), `RAM ... OK`; banner; `help`, `info`, `ticks`, `md`, `mb/mw/ml`,
   `fill`, `led`, `page`, `dir` (stage 2 message), unknown command.
 * `ml 400000 0` -> `Exception 2: Bus error ... fault 00400000 write FC=5`, monitor continues;
   `regs` repeats it.
 * `go 4000` on `nop nop illegal` -> `Exception 4` with SR=0000 (user mode), USP=0001a7fc.
-* `go 4000` on `trap #15` (exit) -> `[exit 0]`.
+* `go 4000` on `trap #15` (exit) -> back at the prompt (`[exit N]` only for a nonzero N).
 * Typed S-records (auto-detect, no echo) and `srec` command; hello.srec (2198 records) over
   the serial port with no bad lines, `go` runs newlib `printf`.
 * `--pal` -> banner `PAL`, 50 ticks/s (the revision-1 `--hw-serial-tx` option is obsolete).

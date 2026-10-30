@@ -33,19 +33,24 @@ post_run:
 2:	add.w	(%a1)+,%d6
 	subq.l	#1,%d1
 	bne	2b
-	lea	str_romsum,%a5
+	lea	str_rom,%a5
 	lea	3f,%a4
 	jmp	post_puts
-3:	move.l	%d6,%d3
+3:	tst.w	%d6
+	bne	4f
+	lea	str_rom_ok,%a5		/* "ROM OK" */
+	lea	6f,%a4
+	jmp	post_puts
+4:	lea	str_badsum,%a5		/* "ROM BAD sum xxxx": the residue, 0 when good */
+	lea	5f,%a4
+	jmp	post_puts
+5:	move.l	%d6,%d3
 	swap	%d3			/* 16-bit value: first nibble is bits 15..12 */
 	moveq	#4,%d5
-	lea	4f,%a4
+	lea	7f,%a4
 	jmp	post_puthex
-4:	lea	str_ok,%a5
-	tst.w	%d6
-	beq	5f
-	lea	str_bad,%a5
-5:	lea	6f,%a4
+7:	lea	str_crlf,%a5
+	lea	6f,%a4
 	jmp	post_puts
 6:
 /* ---- RAM test, all of RAM_BASE..RAM_END --------------------------------------------- */
@@ -250,7 +255,9 @@ blink:	bchg	#GPIO_LED0_BIT,%d7	/* alternate LED0 / LED1 at ~2 Hz */
 	.section .rodata
 	.align	2
 str_hello:	.asciz	"\r\n\r\nother-m68k POST\r\n"
-str_romsum:	.asciz	"ROM sum "
+str_rom:	.asciz	"ROM "
+str_rom_ok:	.asciz	"OK\r\n"
+str_badsum:	.asciz	"BAD sum "
 str_ok:		.asciz	" OK\r\n"
 str_bad:	.asciz	" BAD\r\n"
 str_ram:	.asciz	"RAM "

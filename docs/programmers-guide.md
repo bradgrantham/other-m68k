@@ -1042,7 +1042,7 @@ emu/build/m68k-emu --rom fw/build/flash.img --sd /tmp/card/sd.img --headless --f
 ```
 
 It prints `arpeggio at 15706 samples/s`, then, about 3 s later (0.4 s for `pdm_init` and
-2.6 s of sound, 16 notes of 2,560 samples), `done` and `[exit 0]`, all on the screen, which
+2.6 s of sound, 16 notes of 2,560 samples), `done`, all on the screen, which
 `--text-dump -` copies to stdout at the end; `arp.wav` holds the notes at their pitches (262
 to 659 Hz). With `--io-trace` added you can see that the line interrupt
 was switched on once and off once, with exactly 40,960 stream writes to AUDIO in between and
@@ -1167,7 +1167,7 @@ avoid the problem.
   exiting if the end of the sound matters) and puts the audio output back to the silence level, removes its hooks and
   audio callback, restores its
   interrupt enables, turns off the LEDs, selects page 0, prints
-  `[exit n]` and returns to the monitor prompt.
+  `[exit n]` if n is not 0 and returns to the monitor prompt.
 * `sys_exec(path, args)` loads another ELF in place of the running program and starts it with
   `argv[0]` = `path` and `args` split on blanks (at most 16 words, 255 bytes; `NULL` for none).
   `path` is an ordinary path, with the full name (`"C:/HELLO.ELF"`): there is no search path
@@ -1214,7 +1214,7 @@ so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw
 
 | # | prototype | description, results and errors |
 |---|---|---|
-| 0 | `void sys_exit(int code)` | End the program: close its files, switch paddle measuring off, stop the audio stream (queued buffers are dropped), drop hooks and audio callback, restore interrupt enables, audio to the silence level, LEDs off, select page 0, print `[exit code]`, return to the monitor. Does not return. |
+| 0 | `void sys_exit(int code)` | End the program: close its files, switch paddle measuring off, stop the audio stream (queued buffers are dropped), drop hooks and audio callback, restore interrupt enables, audio to the silence level, LEDs off, select page 0, print `[exit code]` if the code is not 0, return to the monitor. Does not return. |
 | 1 | `int sys_putchar(int c)` | Write a character to the video console (page 0). Returns `c & 0xFF`. |
 | 2 | `int sys_getchar(void)` | Wait for a character from the PS/2 keyboard; returns it (0..255). |
 | 3 | `int sys_pollchar(void)` | Next keyboard character, or -1 if none. |

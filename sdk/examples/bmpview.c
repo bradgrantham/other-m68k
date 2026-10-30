@@ -79,7 +79,6 @@ int main(int argc, char **argv)
     const char *err = bmp_open(&b, path);
     int show = vi.current_page == 0 ? 1 : 0;            /* draw on the page the console is not using */
     struct bmp_target t = { (uint8_t *)vi.page_addr[show], (int)vi.bytes_per_line, 0, 0 };
-    uint32_t t_start = sys_ticks();
     if (err && b.f) {                                   /* not a BMP: maybe a raw screen */
         fseek(b.f, 0, SEEK_END);
         long size = ftell(b.f);
@@ -96,17 +95,9 @@ int main(int argc, char **argv)
         err = bmp_show(&b, dw, dh, &t);
     }
     if (b.f) fclose(b.f);
-    uint32_t t_total = sys_ticks() - t_start;
     if (err) { sys_video_set_page((int)vi.current_page); printf("bmpview: %s: %s\n", path, err); return 1; }
     sys_getchar();
     sys_video_set_page((int)vi.current_page);
-    unsigned long hz = vi.standard == VIDEO_STD_PAL ? 50 : 60;   /* ticks are frames */
-    printf("%lu.%lu s: read %lu.%lu  hscale %lu.%lu  vscale %lu.%lu  dither %lu.%lu\n",
-           (unsigned long)t_total / hz, (unsigned long)t_total * 10 / hz % 10,
-           (unsigned long)bmp_prof.read / hz, (unsigned long)bmp_prof.read * 10 / hz % 10,
-           (unsigned long)bmp_prof.hbox / hz, (unsigned long)bmp_prof.hbox * 10 / hz % 10,
-           (unsigned long)bmp_prof.vbox / hz, (unsigned long)bmp_prof.vbox * 10 / hz % 10,
-           (unsigned long)bmp_prof.dither / hz, (unsigned long)bmp_prof.dither * 10 / hz % 10);
     return 0;
 }
 #endif

@@ -45,7 +45,7 @@ SERRX/SERRXOVR/SERTXBUSY/SERRXPIN INTSTAT bits (none of them exist on the rev 2 
   from a 1 MB image succeed in the test ROM; `test/sdtest` exercises the card model from a host
   program (4-bit reads/writes with CRC16s, the CRC status token, bad-CRC and illegal commands).
 * The real firmware (`fw/build/rom.bin` from commit cc49c7b / d4e453c, the DUART port) boots:
-  POST, banner ("ID 6802  NTSC  DUART 38400 8N1") and monitor prompt appear on stdout; `help`
+  POST, banner ("NTSC  DUART 38400 8N1") and monitor prompt appear on stdout; `help`
   fed in with `--serial-type 'help\n' --serial-type-delay 150` or piped on stdin is answered.
   The emulator warns that the firmware's CSRA 0xCC with ACR[7] = 1 selects 19200 baud (see the
   spec issue below); data still flows because the console delivery is rate-independent.

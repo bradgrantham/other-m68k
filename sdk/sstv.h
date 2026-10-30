@@ -90,7 +90,5 @@ int      sstv_encoder_next(sstv_enc_t *e, uint8_t *out, int n);
  * callback is installed), -3 if the BIOS refused a buffer. */
 int      sstv_send(const uint8_t *fb, uint8_t *scratch, sstv_mode_t mode,
                    sstv_progress_fn progress, void *ctx);
-uint32_t sstv_send_idle_ticks(void);    /* video ticks the last sstv_send spent blocked in
-                                           sys_audio_next: the CPU it left over */
 
 #endif
