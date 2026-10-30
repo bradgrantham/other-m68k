@@ -1,2 +1,2 @@
-other-m68k test image
+griffin-jr test image
 line two

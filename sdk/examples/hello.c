@@ -8,7 +8,7 @@ int main(void)
     struct mem_info mi;
     struct con_info ci;
 
-    printf("Hello from newlib on other-m68k!\n");
+    printf("Hello from newlib on griffin-jr!\n");
     if (sys_video_info(&vi) == 0)
         printf("video %lux%lu %lubpp stride %lu\n page0 %06lx page1 %06lx cur %lu %s\n",
                (unsigned long)vi.width, (unsigned long)vi.height, (unsigned long)vi.bpp,

@@ -36,7 +36,7 @@ static void draw_card(void)
         for (int x = 0; x < 320; x++) { int v = x * 255 / 319; card[y][x] = (uint8_t)(((v >> 5) << 5) | ((v >> 5) << 2) | (v >> 6)); }
     for (int y = 200; y < 240; y++)
         for (int x = 0; x < 320; x++) card[y][x] = 0x02;                                    /* dark blue */
-    text(8, 204, "other-m68k SSTV", 0xFF, 2);
+    text(8, 204, "griffin-jr SSTV", 0xFF, 2);
     text(8, 226, "test card: bars, ramp, text", 0xFF, 1);
 }
 

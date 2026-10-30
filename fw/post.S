@@ -254,7 +254,7 @@ blink:	bchg	#GPIO_LED0_BIT,%d7	/* alternate LED0 / LED1 at ~2 Hz */
 
 	.section .rodata
 	.align	2
-str_hello:	.asciz	"\r\n\r\nother-m68k POST\r\n"
+str_hello:	.asciz	"\r\n\r\ngriffin-jr POST\r\n"
 str_rom:	.asciz	"ROM "
 str_rom_ok:	.asciz	"OK\r\n"
 str_badsum:	.asciz	"BAD sum "
