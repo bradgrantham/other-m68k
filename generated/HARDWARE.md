@@ -1,5 +1,5 @@
 <!-- Generated from spec/board.json by tools/gen.py -- DO NOT EDIT; edit the spec and run `make gen`. -->
-# griffin-jr hardware reference
+# Griffin Jr. hardware reference
 
 68000 SBC: 1 MB SRAM, 1 MB flash ROM window (256 KB BIOS image + 768 KB FAT12 volume), memory-mapped 320x240x8 composite and S-video colour framebuffer that time-slices the SRAM with the CPU, PS/2 keyboard, Atari joystick/paddle port on the DUART's I/O pins, bit-banged SD, 68681 DUART serial (two FTDI headers), 8-bit PDM audio (one byte per video line shifted out by CPLD2).
 

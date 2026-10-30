@@ -122,7 +122,7 @@ FSTEST.ELF         61548 26-10-21 21:15
 README.TXT            33 26-10-21 21:15
 6 entries, 310549 bytes
 D:/> run hello.elf
-Hello from newlib on griffin-jr!
+Griffin Jr. says hello from newlib
 ...
 press a key: got 0x78
 D:/>
@@ -167,7 +167,7 @@ vectors live in RAM, which is being tested.
 POST serial output, 38400 8N1 (`SERIAL_BAUD`):
 
 ```
-griffin-jr POST
+Griffin Jr. POST
 ROM OK                   <- 16-bit word sum of the 256 KB BIOS image is 0 (else "ROM BAD sum xxxx")
 RAM ... OK               <- one dot per pass: address-in-address, inverted address, byte lanes
 ```

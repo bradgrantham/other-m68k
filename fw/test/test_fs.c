@@ -108,7 +108,7 @@ static void test_flash_volume(const char *cimg)
         CHECK_EQ(fs_opendir("C:/"), E_NODEV);
         CHECK_EQ(fs_mkfs("C:", (uint8_t *)buf, sizeof buf), 0);
     } else {
-        CHECK_EQ(fs_stat("C:/README.TXT", &e), 0); CHECK_EQ(e.size, 33);   /* put there by mkflashvol.sh */
+        CHECK_EQ(fs_stat("C:/README.TXT", &e), 0); CHECK_EQ(e.size, 34);   /* put there by mkflashvol.sh */
         CHECK_EQ(fs_stat("README.TXT", &e), 0);                            /* relative: current drive, root */
     }
     CHECK_EQ(fs_stat("C:", &e), 0); CHECK(e.attr & ATTR_DIR);            /* the root */

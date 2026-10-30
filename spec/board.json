@@ -1,6 +1,6 @@
 {
   "board": {
-    "name": "griffin-jr",
+    "name": "Griffin Jr.",
     "revision": 12,
     "cpu": "MC68000P12",
     "osc_hz": 24000000,

@@ -3,7 +3,7 @@
 #define HW_H
 #include <stdint.h>
 
-#define BOARD_NAME "griffin-jr"
+#define BOARD_NAME "Griffin Jr."
 #define BOARD_REVISION 12
 #define OSC_HZ 24000000UL
 #define CPU_CLOCK_HZ 12000000UL

@@ -1,2 +1,2 @@
-griffin-jr test image
+Griffin Jr. test image
 line two

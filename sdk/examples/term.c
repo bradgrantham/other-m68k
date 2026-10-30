@@ -17,7 +17,7 @@ int main(int argc, char **argv)
     int tty = sys_open(O_RDWR, "/dev/ttya");      /* fopen("/dev/ttya", "r+") works too */
     if (tty < 0) { printf("term: cannot open /dev/ttya\n"); return 1; }
     printf("term: serial A at 38400 8N1, ESC quits\n");
-    const char hello[] = "\r\ngriffin-jr term: type here, it shows on the screen\r\n";
+    const char hello[] = "\r\nGriffin Jr. term: type here, it shows on the screen\r\n";
     sys_write(tty, sizeof hello - 1, hello);
 
     unsigned long in = 0, out = 0;
