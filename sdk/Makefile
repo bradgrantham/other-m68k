@@ -1,4 +1,4 @@
-# other-m68k SDK: libsys.a (syscall stubs + newlib shim + PDM audio encoder), crt0, and example programs.
+# other-m68k SDK: libsys.a (syscall stubs + newlib shim + PDM audio encoder + BMP loader), crt0, and example programs.
 # See README.md. Add a program: put foo.c in examples/ and add it to EXAMPLES.
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
@@ -30,7 +30,7 @@ check-sources:
 $(B):
 	mkdir -p $(B)
 
-$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o $(B)/pdm.o
+$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o $(B)/pdm.o $(B)/bmp.o
 	$(AR) rcs $@ $^
 
 $(B)/syscall_stubs.o: $(GEN)/syscall_stubs.S | $(B)
@@ -45,7 +45,7 @@ $(B)/%.o: %.c | $(B)
 $(B)/%.o: examples/%.c | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(B)/bmpview.o: CFLAGS += -O2        # pixel loops: speed over size
+$(B)/bmp.o: CFLAGS += -O2            # pixel loops: speed over size
 $(B)/pdm.o: CFLAGS += -O2            # table build and encoder: speed over size
 $(B)/plasma.o: CFLAGS += -O2         # inner loop: 5 VBLANKs a frame against 6 at -Os
 
@@ -59,9 +59,9 @@ $(B)/%.srec: $(B)/%.elf
 # host build of the BMP viewer's scaler/dither pipeline (writes a PPM); see examples/bmpview.c
 host-bmpview: $(B)/host/bmpview
 
-$(B)/host/bmpview: examples/bmpview.c
+$(B)/host/bmpview: examples/bmpview.c bmp.c bmp.h
 	mkdir -p $(B)/host
-	gcc -std=gnu11 -O2 -Wall -Wextra -DHOST -o $@ $<
+	gcc -std=gnu11 -O2 -Wall -Wextra -DHOST -I. -o $@ examples/bmpview.c bmp.c
 
 clean:
 	rm -rf $(B)
