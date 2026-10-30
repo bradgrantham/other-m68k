@@ -109,8 +109,9 @@ with
 ```
 
 `libsys.a` holds the syscall stubs, `newlib_shim.c` (the `read`/`write`/`sbrk`/`open`...
-layer newlib calls) and the PDM audio encoder `pdm.c` (header `sdk/pdm.h`, see
-[1.8](#18-sound-the-easy-way)). `user.ld` places everything in one load region at `USER_BASE`
+layer newlib calls), the PDM audio encoder `pdm.c` (header `sdk/pdm.h`, see
+[1.8](#18-sound-the-easy-way)), the BMP reader and scaler `bmp.c` (`sdk/bmp.h`) and the
+SSTV encoder `sstv_enc.c`/`sstv_play.c` (`sdk/sstv.h`, see [the end of 1.8](#slow-scan-television)). `user.ld` places everything in one load region at `USER_BASE`
 (0x008000; it was 0x004000 before spec revision 9, and the loader refuses ELF files linked
 there with `E_NOMEM`, so relink them), entry point `_start`.
 
@@ -205,7 +206,7 @@ prompt (or `run D:/foo.elf`); `dir D:` lists the card. The socket has no card-de
 the BIOS treats the card as fixed: change it only with the power off (see
 [1.7](#17-files-and-directories)). `copy D:FOO.ELF C:` keeps the program in the flash, where
 it runs from any drive and without a card; the flash already holds the SDK's example
-programs (`hello`, `plasma`, `bmpview`, `tune`, ...) and `README.TXT`. At reset the monitor runs
+programs (`hello`, `plasma`, `bmpview`, `tune`, `sstv`, ...) and `README.TXT`. At reset the monitor runs
 `C:/AUTOEXEC.CMD`, a script of monitor commands (hold ESC during the POST to skip it): a
 `date` line there, for instance, asks for the time at every power-on. Without a card, type `srec` at the prompt, then send `sdk/build/foo.srec` over
 the serial port (38400 8N1, `cat foo.srec > /dev/ttyUSB0`); the monitor reads the records
@@ -767,7 +768,7 @@ There are two drives, named as in DOS:
 * **C:** is a 768 KB FAT12 volume in the flash ROM, after the BIOS image. It is always
   present, keeps its contents without power, and survives a BIOS update with the monitor's
   `flash` command. As `make flash` builds it, it holds `AUTOEXEC.CMD`, `README.TXT` and the
-  SDK's example programs (44-63 KB each, about 475 KB in all, 248 KB free). Reading it is
+  SDK's example programs (44-65 KB each, about 600 KB in all, 143 KB free). Reading it is
   fast; writing it is slow and stops interrupts for a moment ([below](#writing-to-c)).
 * **D:** is the SD card's FAT32 (or FAT16/FAT12) volume.
 
@@ -1062,6 +1063,33 @@ stream is not played while a callback is installed (and `sys_audio_start` fails)
 `sys_set_audio_cb(NULL)` (or exiting) removes it. It is dearer than the stream (an empty
 callback already costs 272 clocks per line, 36 % of the CPU); see [2.8](#28-audio) before
 using it.
+
+### Slow-scan television
+
+`sdk/sstv.h` sends a framebuffer page as SSTV audio, the amateur-radio picture format that
+phone apps such as Robot36 decode from a microphone: Robot 36 (36 s), Robot 72 and Martin M1.
+From a program it is one call after `pdm_init`:
+
+```c
+static uint8_t snap[FB_SIZE];
+int rc = sstv_send((const uint8_t *)vi.page_addr[0], snap, SSTV_ROBOT36, progress, ctx);
+```
+
+It copies the page into `snap` (so the program may draw on afterwards), opens the BIOS
+stream with 512-byte buffers, and blocks until the picture has played: a 500 ms 1900 Hz
+lead-in, the VIS header, the lines, 500 ms of silence. `progress(line, total, ctx)` is called
+as each line starts and may return nonzero to abort. The pure part of the encoder,
+`sstv_encoder_init` and `sstv_encoder_next_pcm`, produces 8-bit PCM at any rate and has no
+BIOS dependencies (the `sstv` program's `--wav` option and `tests/sstv` use it). Two details
+matter for a clean picture. The sample rate is passed as a fraction, `CPU_CLOCK_HZ` over
+`VIDEO_NTSC_LINE_CLOCKS` (or the PAL value), because the board's line rate is 15706.806 Hz and
+an integer 15707 is 12 ppm off, half a millisecond over a Robot 36 frame, a visible slant.
+And segment lengths come out of one 32.32 fixed-point accumulator, so 30 ms VIS bits and
+146.432 ms Martin scans never round against each other. The per-sample work is an NCO step
+lookup, a phase add and a sine table read, about 100 clocks at `-O2`; with `pdm_encode` and
+the line interrupt that leaves 44 % of the CPU idle in Robot 36, which is why `sstv` draws
+its progress bar straight into the other page rather than printing (a console scroll is
+40 ms, enough to underrun the stream and smear a few lines).
 
 ## 1.9 Interrupt hooks
 

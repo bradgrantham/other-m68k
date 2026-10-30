@@ -12,6 +12,27 @@ present here); `make -C sdk` builds `libsys.a` and the examples' `.elf/.srec`. `
 is 0x4780 bytes (ends at 0x4B80), leaving ~13 KB of supervisor stack below 0x8000. See
 README.md for usage, the exact emulator commands and their output.
 
+## SSTV encoder and `sstv` program (2026-10-29)
+
+* `sdk/sstv.h`, `sdk/sstv_enc.c`: pure C99 slow-scan television encoder (Robot 36, Robot 72,
+  Martin M1; VIS header; 1500..2300 Hz pixels; BT.601 studio-range Y, R-Y, B-Y for the Robot
+  modes). 8-bit PCM at a rate given as a fraction; one 32.32 samples-owed accumulator across
+  all segments; 32-bit NCO with a 256-entry sine table; per-channel RGB332 -> step tables.
+  `sdk/sstv_play.c`: PDM output through `pdm_encode` and `sstv_send`, which snapshots a page
+  and plays it through the BIOS stream with a progress/abort callback.
+* `sdk/examples/sstv.c` (`SSTV.ELF` on C:): `sstv [--page 0|1] [--mode r36|r72|m1] [--loop]
+  [--wav PATH] [--no-ui] [FILE.BMP]`; progress bar on the page not being sent, ESC from the
+  keyboard or serial A aborts, `--wav` writes the PCM to D: (C: refused). 44 % of the CPU
+  idle in Robot 36 on the emulator.
+* `sdk/bmp.c`, `sdk/bmp.h`: the BMP reader, scaler and dither factored out of `bmpview.c`
+  into libsys so `sstv FILE.BMP` shares them.
+* `tests/sstv/`: `host_test.c` (74 checks: exact sample budgets for 3 modes x 3 rates, the
+  same stream in any chunk size, lead-in frequency) writes a test card and WAVs; `decode.py`
+  (numpy) demodulates, parses the VIS, fits the line period to the sync pulses (within
+  20 ppm), checks the duration (1 ms) and the picture against the card; `run.sh` then runs
+  `sstv` in the emulator (`--audio-wav`, the RC filter model) and `--wav` onto an SD image
+  and decodes both. Top-level `make check` runs `fw test`, `emu test` and this.
+
 ## Spec rev 11 / board rev C3: Atari joystick and paddle port (2026-10-22)
 
 * `joy.c`: `sys_joystick` (40) reads the five switches from the DUART input port (IP0..IP4,
@@ -305,7 +326,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `lineedit.c`, `args.c` | line editor (cursor keys, 32-line history, Tab completion) and command-line words (quotes, `*`/`?` expansion; host tested) |
 | `joy.c` | joystick switches, paddle timing from the VBLANK and DUART interrupts (rev 11) |
 | `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, clock, FatFs/fd table on C: and D:, audio |
-| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/examples/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
+| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/pdm.c`, `sdk/bmp.c`, `sdk/sstv_enc.c`, `sdk/sstv_play.c`, `sdk/examples/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest,sstv}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
 | `../tools/mkflashvol.sh`, `../flashfs/` | C: volume image and its text files (rev 9) |
 
 ## Design as built (differences from the original plan)

@@ -9,7 +9,7 @@ PS/2 keyboard; files live on drive C: (the 768 KB FAT12 volume in the flash) and
 `sys_serial_putc`/`sys_serial_getc`) to talk to it.
 
 ```
-make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest}.elf + .srec
+make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest,sstv}.elf + .srec
 ```
 
 The `.elf` files are what `run` loads (ELF32 big-endian m68k, one `PT_LOAD` segment at
@@ -26,6 +26,8 @@ serial upload path.
 | `user.ld` | one load region from `../generated/user.ld`; `__bss_start/__bss_end/_end/__heap_start` |
 | `newlib_shim.c` | the libgloss-style functions this newlib calls (`write read sbrk open close lseek fstat isatty kill getpid _exit stat link unlink rename mkdir rmdir chdir getcwd times gettimeofday settimeofday`, no leading underscore) mapped onto TRAP #15; translates newlib's `O_CREAT/O_TRUNC/O_APPEND` values to the ABI's. `environ` is newlib's own (time functions pull in `getenv` for `TZ`, and with it newlib's `environ.o`) |
 | `../generated/syscall_stubs.S` | `sys_*` functions (`#include "syscalls.h"`); compiled into `build/libsys.a` |
+| `bmp.c`, `bmp.h` | BMP reader, streaming separable box scaler and Floyd-Steinberg dither to RGB332 (`bmp_open`, `bmp_fit`, `bmp_show` into a `struct bmp_target`, `bmp_show_raw`); in `build/libsys.a`, used by `bmpview` and `sstv`, builds on the host with `-DHOST` |
+| `sstv.h`, `sstv_enc.c`, `sstv_play.c` | slow-scan television encoder (see below): `sstv_encoder_init/next_pcm` is pure C99 (8-bit PCM at any rate given as a fraction, no BIOS calls; `tests/sstv` builds it on the host), `sstv_encoder_next` encodes to PDM patterns, `sstv_send(fb, scratch, mode, progress, ctx)` snapshots a page and plays it through the BIOS stream |
 | `pdm.c`, `pdm.h` | PDM encoder for the audio stream (`#include "pdm.h"`, in `build/libsys.a`): `pdm_init` builds a 64 KB first-order sigma-delta table in `.bss` (0.4 s), `pdm_encode(dst, samples, n)` turns unsigned 8-bit samples into pattern bytes (83 clocks each) with the accumulator carried across calls, `pdm_reset`, `pdm_silence` |
 | `examples/hello.c` | printf, `sys_video_info`, `sys_mem_info`, `sys_con_info`, wait for a key |
 | `examples/plasma.c` | double-buffered RGB332 effect in 4x4 blocks, page flip + `sys_wait_vblank`, any key exits; the sine terms are tabulated per frame and the palette kept as 4-byte words (5 VBLANKs a frame at `-O2`, see the programmer's guide) |
@@ -36,7 +38,8 @@ serial upload path.
 | `examples/abench.c` | measures the CPU left to a program with each audio path active (BIOS stream, empty/C/asm `sys_set_audio_cb` callbacks) in clocks per video line, plus `pdm_init` time and `pdm_encode` cost; `abench` at the prompt |
 | `examples/sdplay.c` | streams a sound file from the card: `sdplay FILE.PDM` plays raw pattern bytes (one per line, made on a host), `sdplay -pcm FILE.PCM` encodes unsigned 8-bit PCM at the line rate on the fly, `sdplay -half FILE.PCM` plays 8-bit PCM at half the line rate (7854 Hz); reports the elapsed time against the ideal and the share of time spent blocked in `sys_audio_next` (the CPU left over). With the 4-bit SD bus (spec rev 7, 5 ms per block) all three keep up; full-rate PCM with on-the-fly encoding has 57 % of the CPU to spare (with the SPI bus of rev B boards it fell 2-3 % short). `ODE.PDM`/`ODE.PCM` on the test image are the tune |
 | `examples/joytest.c` | shows the Atari port live: the joystick mask every frame and, unless started with `-j`, the two paddle positions and their valid bits (`sys_joystick`, `sys_paddles`); any key quits; `joytest` at the prompt (in the emulator: `--joy up,fire --paddle 300,700`) |
-| `examples/bmpview.c` | BMP viewer: streaming separable box scaler + Floyd-Steinberg dither to RGB332 on page 1; also shows raw 320x240 RGB332 blobs; `make host-bmpview` builds it for the host (see below) |
+| `examples/bmpview.c` | BMP viewer on page 1 (the pipeline is `bmp.c`); also shows raw 320x240 RGB332 blobs; `make host-bmpview` builds it for the host (see below) |
+| `examples/sstv.c` | sends a screen page or a BMP as SSTV audio (Robot 36/72, Martin M1), progress on the other page, ESC aborts, `--wav` writes the PCM to D: instead; `sstv` at the prompt (see below) |
 
 Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
 --start-group -lc -lsys --end-group -lgcc`. Add a program by dropping `foo.c` into
@@ -122,7 +125,7 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
 
 `run bmpview.elf PHOTO.BMP` fits the picture into the screen (aspect kept, letterboxed;
 `-s` stretches) and shows it on the framebuffer page the console is not using; any key
-returns. Uncompressed BMP with 1/4/8-bit palette, 16-bit (555 or bit fields), 24-bit and
+returns. The reader and scaler are `bmp.c` in libsys (`sstv` uses them too). Uncompressed BMP with 1/4/8-bit palette, 16-bit (555 or bit fields), 24-bit and
 32-bit (xRGB or bit fields) pixels, bottom-up or top-down, up to 4096x4096. The file is
 read one row at a time; each row is box-filtered horizontally, then rows are box-filtered
 vertically, with 8.8 fixed-point weight plans computed once per image (exact box filter
@@ -151,6 +154,39 @@ sdk/build/host/bmpview photo.bmp PHOTO.332 320 240    # 76800-byte blob for the 
 
 `run bmpview.elf PHOTO.332` recognises the blob by its size (exactly width*height bytes,
 row-major, top-down) and just copies it in. Any name works (long names are fine).
+
+## sstv: the screen as slow-scan television
+
+```
+sstv [--page 0|1] [--mode r36|r72|m1] [--loop] [--wav PATH] [--no-ui] [FILE.BMP]
+```
+
+Sends framebuffer page 0 (the console; `--page 1` the other page) or a BMP file as SSTV
+audio on the AUDIO jack: Robot 36 (36 s, the default), Robot 72 (72 s) or Martin M1
+(114 s, 256 lines of which the last 16 are black). Hold a phone running the Robot36 app (or
+any SSTV decoder: MMSSTV, QSSTV, slowrx) near the speaker, or cable the jack to its
+microphone input. The page is snapshotted first, so while page 0 is being sent the display
+shows page 1 with a progress bar, and while page 1 is sent the console keeps a status
+line; `--no-ui` leaves the display alone. A BMP is fitted into 320x240 (letterboxed, black
+borders), shown on page 1 and sent. `--loop` repeats until ESC; ESC on the keyboard or on
+serial port A aborts (exit status 2). `--wav D:NAME.WAV` writes the 8-bit mono PCM at the
+line rate (15707 Hz NTSC) to the card instead of playing it (Robot 36 is 566 KB, so the
+flash volume is refused). It prints the time taken and the share of the CPU that was
+left over (44 % in Robot 36 at 12 MHz: the encoder costs about 100 clocks per sample on
+top of `pdm_encode`'s 83 and the line interrupt's 242 of 764).
+
+The encoder (`sstv.h`) is a library: `sstv_send(page, scratch, SSTV_ROBOT36, progress, ctx)`
+does the whole job from a program, and `sstv_encoder_init` / `sstv_encoder_next_pcm` give
+the PCM to anything else (a WAV writer, the host tests). Timings are the Dayton 2000 paper's
+(VIS codes 8, 12, 44; 1500..2300 Hz pixels; Robot modes send Y, R-Y, B-Y in the BT.601 studio
+range, Martin sends G, B, R). Segment lengths accumulate in 32.32 fixed point so the picture
+does not drift, and the sample rate is a fraction (`CPU_CLOCK_HZ / VIDEO_NTSC_LINE_CLOCKS`),
+because the board's 15706.8 Hz rounded to 15707 would slant the picture by a pixel. If a
+received picture is smeared, the CPU stalled (an interrupt storm or a flash write) and the
+audio skipped; if it is slanted, the receiver's idea of the rate is off. `make -C tests/sstv
+check` encodes a test card on the host at the NTSC, PAL and 48 kHz rates, decodes it with
+`tests/sstv/decode.py` (numpy), then runs `sstv` in the emulator (through the board's RC
+filter model) and decodes that too.
 
 ## Running
 
