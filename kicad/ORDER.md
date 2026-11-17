@@ -87,6 +87,36 @@ contacts, RoHS; the 110-99 codes are tin-lead), ECS-36-20-4XDN. Rev 4 (same day)
 Future all stock it) in the same dual-wipe DIP-32 sockets as the flash. If PCBWay proposes
 equivalents in the quote review, same package and ratings are acceptable.
 
+### As ordered: PCBWay T-V19W49409A (2 units)
+
+What PCBWay actually builds differs from the generated BOM. The final quotation (2026-11-02,
+`updated quotation-T-V19W49409A-2units-other-m68k-pcbway-bom(2026-11-02).xls`, not in git) marks
+four rows `[DNP]`, unpriced, and the sample-board pictures of 2026-11-16 show those footprints
+empty:
+
+| ref | part | per board |
+|---|---|---|
+| J3 | CUI MD-60SM mini-DIN 6 (PS/2) | 1 |
+| J5 | CUI RCJ-041 RCA jack (composite) | 1 |
+| J12 | Amphenol L717SDE09PA4CH4F DE-9 male (any L717SDE09PA4CH4x) | 1 |
+| U1 | DIP-64 socket, 0.9 in rows (Mill-Max 110-43-964-41-001000 or a stamped one) | 1 |
+
+We buy and solder these four, with U11, after the boards arrive. They were taken off during the
+quote review (as recalled, over PCBWay's prices for them). This applies to this order only:
+`parts.json` and the generated `other-m68k-pcbway-bom.csv` still list them as assembled, so a
+later order (PCBWay or JLCPCB) starts from the full list and decides again.
+
+**RoHS note.** For these two boards the U1 socket bought is Mill-Max 110-99-964-41-001000
+(tin-lead contacts and posts, under $7 at DigiKey, 2026-11-17) instead of the BOM's
+110-43-964-41-001000 (gold contacts, tin posts, $11.54). The 110-99 is **not RoHS-compliant**.
+That is fine for our own boards, but any board built to sell or give to anyone else should get
+the 110-43 (or a RoHS stamped socket), as `parts.json` still specifies. Hand-fitted parts and the
+solder used on them are the places where a board of this order can pick up lead; the PCBWay
+assembly itself is lead-free HASL.
+
+The same quotation priced parts at $123.28, assembly at $88.00 and the PCBs at $103.27 ($310.73
+for two after the member discount), and offered BLM18AG601SN1D for FB1 (BOM: BLM18PG601SN1D).
+
 ## Power note for the order and for use
 
 The board draws about 1 A at 5 V (68000, 68681, two ATF1508AS, SRAM, flash, AD724,

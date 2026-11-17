@@ -1,0 +1,11 @@
+Ref,Part,Per board,Total for 2 boards,Note,In Hand,To Order
+J3,CUI MD-60SM mini-DIN 6 (PS/2),1,2,Solder on; marked DNP in the final quote,,
+J5,"CUI RCJ-041 RCA jack, yellow (composite)",1,2,Solder on; marked DNP in the final quote,,
+J12,Amphenol L717SDE09PA4CH4F DE-9 male,1,2,Solder on; any L717SDE09PA4CH4x fits; DigiKey lists it as L717SDE09PA4CH4FA610,,
+U1 socket,"DIP-64 socket, 0.9 in rows",1,2,Solder on; Mill-Max 110-99-964-41-001000 (tin-lead; NOT RoHS; under $7 at DigiKey) for our own boards; 110-43-964-41-001000 (RoHS; $11.54) for any board to sell,,
+U11,"AD724JRZ, SOIC-16W",1,2,Solder on; last-time-buy part (DigiKey LTB 2027-07-29; about $25); consider spares,,
+U1,"MC68000P12, DIP-64",1,2,Insert into socket; needs the U1 socket soldered first,,
+"U2, U3","AS6C4008-55PCN SRAM, DIP-32",2,4,Insert into sockets; about $11 each at DigiKey,,
+"U4, U5","SST39SF040-70-4C-PHE flash, DIP-32",2,4,Insert into sockets; about $3 each; arrive blank and need programming on the TL866,,
+"U6, U7","ATF1508AS-7JX84 CPLD, PLCC-84",2,4,Insert into sockets,,
+U10,"MC68681P DUART, DIP-40",1,2,Insert into socket,,
