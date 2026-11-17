@@ -29,6 +29,7 @@ emulator, all generated from one specification.
 | `sdk/` | user-program crt0, linker script, syscall library, newlib shim, examples |
 | `flashfs/` | the files that go into the C: volume besides the SDK examples (AUTOEXEC.CMD, README.TXT) |
 | `kicad/` | generated schematic and PCB |
+| `enclosure/` | printed case generated from the released board (OpenSCAD) |
 
 ## Building
 

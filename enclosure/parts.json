@@ -1,0 +1,79 @@
+{
+  "_comment": [
+    "What KiCad does not know about the Griffin Jr. board for the enclosure. Lengths in mm.",
+    "heights: tallest point above the board TOP surface, matched against the footprint name",
+    "(substring, first match wins) or a reference (refs take precedence). 'verify' marks a",
+    "number taken from a data sheet or memory; measure the real part and clear the flag.",
+    "cutouts: per connector the MATING PLUG envelope (not the jack), the plug axis height zc",
+    "above the board top, and the lid-top label. case.scad adds 'slop' on every side.",
+    "notches: wall slots open at the split for the right-angle serial headers: the adapter",
+    "housing passes through the wall to reach pins that end at the board edge. z_top is the",
+    "notch top above the board top; tab_z is how far the bottom half's wall rises into it.",
+    "pillars: board coordinates (x right, y DOWN from the back edge like placement.json)",
+    "of the mid-board support pairs; board_geometry.py checks they are clear of pads, vias",
+    "and top-side parts."
+  ],
+  "board_thickness": 1.6,
+  "default_height": 2.0,
+  "heights": {
+    "U1": {"h": 8.5, "note": "Mill-Max 110 DIP-64 socket 3.3 + MC68000P body 5.1", "verify": true},
+    "U6": {"h": 10.0, "note": "Assmann A-CCS-084 PLCC-84 THT socket with the chip seated", "verify": true},
+    "U7": {"h": 10.0, "note": "as U6", "verify": true},
+    "DIP-32_W15.24mm_Socket": {"h": 9.0, "note": "Assmann A 32-LC dual-wipe 4.4 + DIP body 4.6", "verify": true},
+    "DIP-40_W15.24mm_Socket": {"h": 9.0, "note": "Assmann A 40-LC dual-wipe + MC68681P", "verify": true},
+    "Oscillator_DIP-8": {"h": 5.3, "note": "ECS-2200B half-size DIP-8", "verify": true},
+    "Crystal_HC49-U_Vertical": {"h": 13.5, "note": "HC-49/U 13.46 body; an HC-49/US low-profile part is 4.5 and would shrink the lid by 2 mm", "verify": true},
+    "CP_Radial_D6.3mm": {"h": 11.5, "note": "Rubycon ZLH 6.3 x 11", "verify": false},
+    "PinHeader_1x06": {"h": 6.3, "note": "right-angle header fitted to the vertical footprint; top of the pins, measured 2026-11-17", "verify": false},
+    "PinHeader_2x05": {"h": 8.5, "note": "vertical 2.54 header, used with the lid off"},
+    "PinHeader_2x15": {"h": 8.5, "note": "vertical 2.54 header, used with the lid off"},
+    "SW_PUSH_6mm": {"h": 4.3, "note": "Omron B3F-1000 actuator top"},
+    "LED_0805": {"h": 1.1, "note": "0805 LED, top emitting"},
+    "USB_C_Receptacle": {"h": 3.3},
+    "MiniDIN": {"h": 12.5, "note": "CUI MD-60SM / MD-40SM body", "verify": true},
+    "RCA_CUI": {"h": 10.5, "note": "CUI RCJ-041 body", "verify": true},
+    "DSUB-9": {"h": 12.6, "note": "DE-9 housed right angle", "verify": true},
+    "Jack_3.5mm": {"h": 6.0, "note": "CUI SJ1-3523N", "verify": true},
+    "microSD": {"h": 1.9},
+    "SOIC": {"h": 2.7},
+    "SOT-23": {"h": 1.2},
+    "SOT-323": {"h": 1.1},
+    "Fuse_1206": {"h": 1.0},
+    "R_Array": {"h": 0.6},
+    "MountingHole": {"h": 0.0}
+  },
+  "cutouts": {
+    "J1":  {"shape": "rect",  "w": 12.5, "h": 6.5, "zc": 1.65, "label": "USB-C 5V",
+            "note": "USB-C plug overmould; the receptacle face is 2.5 mm behind the outer wall so the overmould must enter the hole"},
+    "J5":  {"shape": "round", "d": 8.4,  "zc": 5.5,  "label": "VIDEO",   "verify": true,
+            "note": "RCJ-041 barrel; it protrudes 9.4 mm past the board edge, through the wall"},
+    "J10": {"shape": "round", "d": 11.0, "zc": 6.5,  "label": "S-VIDEO", "verify": true,
+            "note": "mini-DIN 4 plug grip, so the shell seats through the 2.5 mm standoff"},
+    "J3":  {"shape": "round", "d": 11.0, "zc": 6.5,  "label": "PS/2",    "verify": true,
+            "note": "mini-DIN 6 plug grip; MD-60SM axis height from the data sheet"},
+    "J6":  {"shape": "round", "d": 7.0,  "zc": 3.0,  "label": "AUDIO",   "verify": true,
+            "note": "3.5 mm plug body; SJ1-3523N axis height from the data sheet"},
+    "J4":  {"shape": "rect",  "w": 11.0, "h": 1.0,  "zc": 1.4,  "label": "SD CARD",
+            "note": "microSD card; the slot gets slop on all sides and 1 mm extra height for a fingertip"},
+    "J12": {"shape": "rect",  "w": 31.0, "h": 14.0, "zc": 6.1,  "label": "JOYSTICK", "verify": true,
+            "note": "DE-9 plug hood; the D face sits 0.9 mm past the outer wall"}
+  },
+  "notches": {
+    "J2":  {"w": 16.0, "z_top": 9.0, "tab_z": 3.5, "label": "SERIAL A",
+            "note": "FTDI 1x6 socket housing 15.5 x 2.5; pin axis 6.0 above the board, housing bottom at 4.75"},
+    "J11": {"w": 16.0, "z_top": 9.0, "tab_z": 3.5, "label": "SERIAL B"}
+  },
+  "buttons": {
+    "SW1": {"label": "RESET"},
+    "SW2": {"label": "NMI"}
+  },
+  "leds": {
+    "D5": {"label": "PWR"},
+    "D3": {"label": "LED0"},
+    "D4": {"label": "LED1"}
+  },
+  "pillars": [[64, 69], [130, 104]],
+  "pillar_d": 5.0,
+  "vents": ["U1", "U6", "U7"],
+  "boss_r": 4.2
+}
