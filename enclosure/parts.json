@@ -11,19 +11,23 @@
     "notch top above the board top; tab_z is how far the bottom half's wall rises into it.",
     "pillars: board coordinates (x right, y DOWN from the back edge like placement.json)",
     "of the mid-board support pairs; board_geometry.py checks they are clear of pads, vias",
-    "and top-side parts."
+    "and top-side parts.",
+    "fit model: stl/board.stl combines KiCad's 3D models (parts at least model_min_h tall) with",
+    "boxes for parts marked 'box' (sockets: the KiCad model is the empty socket) or lacking a",
+    "model, and right-angle headers drawn from pin_top/pin_len for the notch refs."
   ],
+  "model_min_h": 3.0,
   "board_thickness": 1.6,
   "default_height": 2.0,
   "heights": {
-    "U1": {"h": 8.5, "note": "Mill-Max 110 DIP-64 socket 3.3 + MC68000P body 5.1", "verify": true},
-    "U6": {"h": 10.0, "note": "Assmann A-CCS-084 PLCC-84 THT socket with the chip seated", "verify": true},
-    "U7": {"h": 10.0, "note": "as U6", "verify": true},
-    "DIP-32_W15.24mm_Socket": {"h": 9.0, "note": "Assmann A 32-LC dual-wipe 4.4 + DIP body 4.6", "verify": true},
-    "DIP-40_W15.24mm_Socket": {"h": 9.0, "note": "Assmann A 40-LC dual-wipe + MC68681P", "verify": true},
-    "Oscillator_DIP-8": {"h": 5.3, "note": "ECS-2200B half-size DIP-8", "verify": true},
-    "Crystal_HC49-U_Vertical": {"h": 13.5, "note": "HC-49/U 13.46 body; an HC-49/US low-profile part is 4.5 and would shrink the lid by 2 mm", "verify": true},
-    "CP_Radial_D6.3mm": {"h": 11.5, "note": "Rubycon ZLH 6.3 x 11", "verify": false},
+    "U1": {"h": 8.5, "box": true, "note": "Mill-Max 110 DIP-64 socket 3.3 + MC68000P body 5.1", "verify": true},
+    "U6": {"h": 10.0, "box": true, "note": "Assmann A-CCS-084 PLCC-84 THT socket with the chip seated", "verify": true},
+    "U7": {"h": 10.0, "box": true, "note": "as U6", "verify": true},
+    "DIP-32_W15.24mm_Socket": {"h": 9.0, "box": true, "note": "Assmann A 32-LC dual-wipe 4.4 + DIP body 4.6", "verify": true},
+    "DIP-40_W15.24mm_Socket": {"h": 9.0, "box": true, "note": "Assmann A 40-LC dual-wipe + MC68681P", "verify": true},
+    "Oscillator_DIP-8": {"h": 5.9, "note": "full-can DIP-8 oscillator, KiCad model height", "verify": true},
+    "Crystal_HC49-U_Vertical": {"h": 13.5, "note": "HC-49/U 13.46 body (KiCad model 13.1); an HC-49/US low-profile part is 4.5 and would shrink the lid by 2 mm", "verify": true},
+    "CP_Radial_D6.3mm": {"h": 11.5, "note": "Rubycon ZLH 6.3 x 11; the KiCad model is only 6.3 tall", "verify": false},
     "PinHeader_1x06": {"h": 6.3, "note": "right-angle header fitted to the vertical footprint; top of the pins, measured 2026-11-17", "verify": false},
     "PinHeader_2x05": {"h": 8.5, "note": "vertical 2.54 header, used with the lid off"},
     "PinHeader_2x15": {"h": 8.5, "note": "vertical 2.54 header, used with the lid off"},
@@ -56,12 +60,13 @@
     "J4":  {"shape": "rect",  "w": 11.0, "h": 1.0,  "zc": 1.4,  "label": "SD CARD",
             "note": "microSD card; the slot gets slop on all sides and 1 mm extra height for a fingertip"},
     "J12": {"shape": "rect",  "w": 31.0, "h": 14.0, "zc": 6.1,  "label": "JOYSTICK", "verify": true,
-            "note": "DE-9 plug hood; the D face sits 0.9 mm past the outer wall"}
+            "note": "DE-9 plug hood; the KiCad model's D face reaches 2.6 mm past the board edge, flush with the outer wall"}
   },
   "notches": {
-    "J2":  {"w": 16.0, "z_top": 9.0, "tab_z": 3.5, "label": "SERIAL A",
+    "J2":  {"w": 16.0, "z_top": 9.0, "tab_z": 3.5, "pin_top": 6.3, "pin_len": 6.55, "label": "SERIAL A",
             "note": "FTDI 1x6 socket housing 15.5 x 2.5; pin axis 6.0 above the board, housing bottom at 4.75"},
-    "J11": {"w": 16.0, "z_top": 9.0, "tab_z": 3.5, "label": "SERIAL B"}
+    "J11": {"w": 16.0, "z_top": 9.0, "tab_z": 3.5, "pin_top": 6.3, "pin_len": 6.55, "label": "SERIAL B",
+            "note": "pin_top: top of the horizontal pins above the board; pin_len: bend to tip, measured 2026-11-17"}
   },
   "buttons": {
     "SW1": {"label": "RESET"},

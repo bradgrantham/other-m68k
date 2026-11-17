@@ -20,12 +20,13 @@ include <build/board.scad>
 use <inserts.scad>
 
 part = "assembly";
+board_stl = true;    // assembly preview: import the merged stl/board.stl (false: slab and boxes only)
 
 // ---------------------------------------------------------------- parameters (mm)
 wall       = 2;      // side walls
 wall_top   = 2;      // lid and tray floor
 gap        = 0.5;    // board edge to inner wall
-tray       = 3;      // inside depth below the board: solder and lead ends only
+tray       = 4;      // inside depth below the board: lead ends and the DE-9's board locks (3.8 in the KiCad model)
 top_space  = 1;      // above the tallest part
 lip_h      = 2.5;    // the bottom half's lip rising into the lid
 lip_fudge  = 0.15;   // clearance per side between lip and lid recess
@@ -51,7 +52,7 @@ pipe_in    = 4.25;   // light pipe bore (TAP rod stock)
 pipe_out   = 6.25;
 
 vent_w = 2; vent_pitch = 4; vent_margin = 2;
-label_size = 2.6; label_depth = 0.5; label_inset = 4;   // debossed labels on the lid top (bold, 0.4 mm strokes)
+label_size = 2.6; label_depth = 0.6; label_inset = 4;   // labels sunk into the lid top; 0.6 = three 0.2 mm layers, see "labels"
 
 $fn = 48;
 eps = 0.01;
@@ -118,8 +119,7 @@ module top_pillars() for (p = pillars) translate([p[0], p[1], board_t + pillar_c
 
 // ---------------------------------------------------------------- wall cutouts
 // children: a 2D shape centred on the connector axis, extruded through the named wall
-module through_wall(edge, along, z) {
-    len = wall + gap + 2;
+module through_wall(edge, along, z, len = wall + gap + 2) {
     if (edge == "back")  translate([along, in_y1 - 1, z]) rotate([-90, 0, 0]) linear_extrude(len) children();
     if (edge == "front") translate([along, in_y0 + 1, z]) rotate([90, 0, 0])  linear_extrude(len) children();
     if (edge == "left")  translate([in_x0 + 1, along, z]) rotate([0, -90, 0]) linear_extrude(len) children();
@@ -151,7 +151,7 @@ function min_tab_z() = min([for (n = notches) n[5]]);
 module notch_tabs() if (len(notches) > 0) intersection() {
     translate([0, 0, -eps]) linear_extrude(board_t + min_tab_z() + eps)
         offset(delta = -notch_fudge) projection() for (n = notches) notch_box(n, n[3] + 2 * slop, 0, 1);
-    outer_solid();
+    difference() { outer_solid(); translate([in_x0, in_y0, -500]) cube([in_x1 - in_x0, in_y1 - in_y0, 1000]); }  // the wall only
 }
 
 // ---------------------------------------------------------------- buttons and LEDs
@@ -190,6 +190,10 @@ module labels_sub() {
     for (l = leds)          deboss_top(l[0], l[1] + pipe_out / 2 + 3, l[3]);
     for (b = buttons)       deboss_front_wall(b[0], z_mid_wall, b[3]);   // the spring ring fills the lid above them
 }
+// the same letters as solids filling the pockets exactly: printed in a second colour on a
+// multi-material printer (load top.stl and labels.stl as one multi-part object), or used
+// as a guide for a filament change at 0.6 mm since the lid prints face down
+module labels_add() intersection() { labels_sub(); outer_solid(); }
 
 // ---------------------------------------------------------------- the halves
 module top_half() difference() {
@@ -217,7 +221,49 @@ module board_model() color("green", 0.5) difference() {
     for (h = holes) translate([h[0], h[1], -1]) cylinder(d = 3.2, h = 5);
 }
 
+// ---------------------------------------------------------------- fit-check models
+// Parts KiCad has no usable model for come out as boxes to their parts.json height (sockets
+// are boxes too: the library model is the empty socket). The merged stl/board.stl adds the
+// KiCad models of the connectors, switches, crystals and capacitors to this.
+module part_boxes() color("dimgray") for (b = boxes)
+    translate([b[1], b[2], board_t]) cube([b[3] - b[1], b[4] - b[2], b[5]]);
+
+// a right-angle header on a vertical footprint: body on the pin row, legs up to the bend,
+// horizontal pins toward the edge. hd = [ref, edge, along, row from edge, width, pin top, bend to tip]
+module ra_header(hd) {
+    e = hd[1]; row = hd[3]; w = hd[4]; top = hd[5]; len = hd[6]; pin = 0.64;
+    // local frame: x across the row, y toward the edge (the edge at y = row), z up
+    module placed() {
+        if (e == "back")  translate([hd[2], board_d - row, board_t]) children();
+        if (e == "front") translate([hd[2], row, board_t]) rotate([0, 0, 180]) children();
+        if (e == "left")  translate([row, hd[2], board_t]) rotate([0, 0, 90]) children();
+        if (e == "right") translate([board_w - row, hd[2], board_t]) rotate([0, 0, -90]) children();
+    }
+    color("black") placed() translate([-w / 2, -1.27, 0]) cube([w, 2.54, 2.54]);
+    color("silver") placed() {
+        translate([-w / 2, -pin / 2, 0]) cube([w, pin, top]);                 // legs (as a bar)
+        translate([-w / 2, -pin / 2, top - pin]) cube([w, len + pin / 2, pin]); // horizontal pins
+    }
+}
+module part_models() { part_boxes(); for (hd = headers) ra_header(hd); }
+
+// the mating plugs, slop-free, from just inside the board edge to 20 mm outside the wall;
+// the serial adapters' socket housings over the right-angle header pins
+module plugs() color("orange", 0.7) {
+    for (c = rect_cutouts)  through_wall(c[1], c[2], board_t + c[5], 20) square([c[3], c[4]], center = true);
+    for (c = round_cutouts) through_wall(c[1], c[2], board_t + c[4], 20) circle(d = c[3]);
+    for (n = notches) {
+        hd = [for (h = headers) if (h[0] == n[0]) h][0];
+        through_wall(n[1], n[2], board_t + (n[5] + n[4]) / 2, 20 + hd[3]) square([n[3], n[4] - n[5]], center = true);
+    }
+}
+
 if (part == "top")       translate([0, 0, z_lid_out]) rotate([180, 0, 0]) top_half();   // lid face down for printing
+if (part == "labels")    translate([0, 0, z_lid_out]) rotate([180, 0, 0]) labels_add();  // same placement as top
 if (part == "bottom")    translate([0, 0, -z_floor_out]) bottom_half();
 if (part == "inserts")   inserts(pressor_d, shaft_d, pipe_in, z_lid_out - board_t - 0.4 - 1.1, len(buttons), len(leds));
-if (part == "assembly") { bottom_half(); board_model(); color("gray", 0.6) top_half(); }
+if (part == "board")     { board_model(); part_models(); }              // merged with the KiCad models into stl/board.stl
+if (part == "plugs")     plugs();
+if (part == "fit")       { top_half(); bottom_half(); }                  // both halves in place; stl/fit.stl adds board and plugs
+if (part == "assembly") { bottom_half(); color("gray", 0.6) top_half(); plugs();
+                          if (!board_stl) { board_model(); part_models(); } else import("stl/board.stl"); }

@@ -14,10 +14,18 @@ z = 0 at the board bottom. It also checks the geometry that the printed case dep
   * cutouts: the connector sits on the edge it is cut into, the envelope stays on the board
   * heights: every footprint has a height; the tallest parts are listed
 
+It also writes, next to the .scad, the list of references whose KiCad 3D models go into the
+fit-check board model (components.txt, for kicad-cli's --component-filter): parts at least
+model_min_h tall that have a model file and are not marked "box" in parts.json and are not
+notch refs. Parts without a usable model, or marked "box", come out as boxes (their F.Fab
+outline clipped to the board, their parts.json height); the notch refs come out as
+right-angle headers.
+
 Exits 1 on any failed check so `make` stops before an STL is rendered.
 """
 import json
 import math
+import os
 import sys
 
 import pcbnew
@@ -39,6 +47,31 @@ def is_hole(f):
 def bbox(f):
     r = f.GetBoundingBox(False, False)       # footprint without its text
     return (mm(r.GetLeft()), mm(r.GetTop()), mm(r.GetRight()), mm(r.GetBottom()))
+
+
+def fab_bbox(f):
+    """the body outline on F.Fab, or the full bbox when the footprint has none"""
+    xs, ys = [], []
+    for g in f.GraphicalItems():
+        if g.GetLayer() == pcbnew.F_Fab:
+            r = g.GetBoundingBox()
+            xs += [mm(r.GetLeft()), mm(r.GetRight())]
+            ys += [mm(r.GetTop()), mm(r.GetBottom())]
+    return (min(xs), min(ys), max(xs), max(ys)) if xs else bbox(f)
+
+
+MODEL_DIR = os.environ.get("KICAD9_3DMODEL_DIR", "/usr/share/kicad/3dmodels")
+
+
+def has_model(f):
+    """a 3D model file exists for the footprint (step, stp or wrl; kicad-cli --subst-models
+    swaps between them)"""
+    for m in f.Models():
+        path = m.m_Filename.replace("${KICAD9_3DMODEL_DIR}", MODEL_DIR)
+        base = os.path.splitext(path)[0]
+        if any(os.path.exists(base + ext) for ext in (".step", ".stp", ".STEP", ".wrl")):
+            return True
+    return False
 
 
 def main():
@@ -83,11 +116,25 @@ def main():
     tall = []
     for f in top:
         h, ent = height_of(f)
-        if ent is None and fp_name(f) and not fp_name(f).startswith(("R_", "C_", "L_", "LED_", "D_")):
-            pass  # small SMD parts take the default silently
         tall.append((h, f.GetReference(), fp_name(f), bool(ent and ent.get("verify"))))
     tall.sort(reverse=True)
     max_h = tall[0][0]
+
+    # ---- fit-check board model: which parts come from KiCad's models, which are drawn as boxes ---
+    components, fit_boxes = [], []
+    for f in top:
+        h, ent = height_of(f)
+        ref = f.GetReference()
+        if h < P["model_min_h"] or is_hole(f) or ref in P["notches"]:
+            continue
+        if has_model(f) and not (ent and ent.get("box")):
+            components.append(ref)
+        else:
+            l, t, r, b = fab_bbox(f)
+            l, r = max(l, x0), min(r, x1)                 # clipped to the board (the RCA barrel)
+            t, b = max(t, y0), min(b, y1)
+            (cl, cb), (cr, ct) = (round(l - x0, 2), round(y1 - b, 2)), (round(r - x0, 2), round(y1 - t, 2))
+            fit_boxes.append([ref, cl, cb, cr, ct, h])
 
     # ---- holes --------------------------------------------------------------------------------
     holes = []
@@ -176,11 +223,16 @@ def main():
                 errors.append("cutout %s runs past the board edge" % ref)
             rounds.append([ref, e, a, c["d"], c["zc"], c["label"]])
 
-    notches = []
+    notches, headers = [], []
     for ref, n in P["notches"].items():
         f = fps[ref]
         e, (cx, cy) = edge_of(f)
         notches.append([ref, e, along(e, cx, cy), n["w"], n["z_top"], n["tab_z"], n["label"]])
+        # the right-angle header: pin row distance from the edge, row width from the pad count
+        pads = [(mm(p.GetPosition().x), mm(p.GetPosition().y)) for p in f.Pads()]
+        px, py = sum(p[0] for p in pads) / len(pads), sum(p[1] for p in pads) / len(pads)
+        row = {"back": py - y0, "front": y1 - py, "left": px - x0, "right": x1 - px}[e]
+        headers.append([ref, e, along(e, cx, cy), round(row, 3), len(pads) * 2.54, n["pin_top"], n["pin_len"]])
 
     def centre(ref):
         l, t, r, b = bbox(fps[ref])              # courtyard centre: the SW_PUSH footprint's origin is pin 1
@@ -209,6 +261,8 @@ def main():
         print("  notch %-4s %-5s along %6.1f  %4.1f wide to z %.1f, tab to %.1f  %s" % (ref, e, a, w, zt, tz, label))
     for x, y in pillars:
         print("  pillar at case (%g, %g)" % (x, y))
+    print("fit model: KiCad models for %s" % ", ".join(sorted(components)))
+    print("           boxes for %s" % ", ".join(b[0] for b in fit_boxes))
     if errors:
         print("\n".join("ERROR: " + e for e in errors), file=sys.stderr)
         sys.exit(1)
@@ -236,11 +290,18 @@ def main():
         "leds = %s;" % scad(leds),
         "// [ref, x0, y0, x1, y1] footprint extents to vent over",
         "vents = %s;" % scad(vents),
+        "// fit model: [ref, x0, y0, x1, y1, height] parts drawn as boxes (no KiCad model, or sockets)",
+        "boxes = %s;" % scad(fit_boxes),
+        "// fit model: [ref, edge, along, pin row from the edge, row width, pin top, bend to tip] right-angle headers",
+        "headers = %s;" % scad(headers),
         "",
     ]
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
-    print("wrote", out_path)
+    comp_path = os.path.join(os.path.dirname(out_path), "components.txt")
+    with open(comp_path, "w", encoding="utf-8") as f:
+        f.write(",".join(sorted(components)) + "\n")
+    print("wrote", out_path, "and", comp_path)
 
 
 if __name__ == "__main__":

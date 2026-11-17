@@ -2,7 +2,7 @@
 // (clear or white). case.scad calls inserts() with its own dimensions; this file can also be
 // rendered alone for a quick look.
 //
-//   openscad -D 'part="inserts"' -o build/inserts.stl case.scad
+//   openscad -D 'part="inserts"' --export-format binstl -o stl/inserts.stl case.scad
 
 // cap: a disc the size of the pressor column with a shaft that glues into the pressor's hole
 module button_cap(pressor_d, shaft_d, cap_t = 1.0, shaft_len = 6) {
