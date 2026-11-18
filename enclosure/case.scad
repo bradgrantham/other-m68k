@@ -52,7 +52,7 @@ pipe_in    = 4.25;   // light pipe bore (TAP rod stock)
 pipe_out   = 6.25;
 
 vent_w = 2; vent_pitch = 4; vent_margin = 2;
-label_size = 2.6; label_depth = 0.6; label_inset = 4;   // labels sunk into the lid top; 0.6 = three 0.2 mm layers, see "labels"
+label_size = 2.6; label_depth = 0.4; label_inset = 4;   // letter pockets in the lid top: two 0.2 mm layers, filled by labels.stl in a second colour
 
 $fn = 48;
 eps = 0.01;
@@ -178,21 +178,21 @@ module vents_sub() difference() {
     }
     for (p = pillars) translate([p[0], p[1], 0]) cylinder(d = pillar_d + 6, h = 100);
 }
-module deboss_top(x, y, s) translate([x, y, z_lid_out - label_depth])
-    linear_extrude(label_depth + eps) text(s, size = label_size, halign = "center", valign = "center", font = "Liberation Sans:style=Bold");
-module deboss_front_wall(x, z, s) translate([x, out_y0 + label_depth, z]) rotate([90, 0, 0])
-    linear_extrude(label_depth + eps) text(s, size = label_size, halign = "center", valign = "center", font = "Liberation Sans:style=Bold");
+module deboss_top(x, y, s, halign = "center") translate([x, y, z_lid_out - label_depth])
+    linear_extrude(label_depth + eps) text(s, size = label_size, halign = halign, valign = "center", font = "Liberation Sans:style=Bold");
 function label_y(edge) = edge == "back" ? in_y1 - label_inset : in_y0 + label_inset;
+function leftmost_button() = min([for (b = buttons) b[0]]);
 module labels_sub() {
     for (c = rect_cutouts)  deboss_top(c[2], label_y(c[1]), c[6]);
     for (c = round_cutouts) deboss_top(c[2], label_y(c[1]), c[5]);
     for (n = notches)       deboss_top(n[2], label_y(n[1]), n[6]);
     for (l = leds)          deboss_top(l[0], l[1] + pipe_out / 2 + 3, l[3]);
-    for (b = buttons)       deboss_front_wall(b[0], z_mid_wall, b[3]);   // the spring ring fills the lid above them
+    // beside the buttons, outside the spring rings: the leftmost button's label to its left, the others to the right
+    for (b = buttons) let (left = b[0] == leftmost_button())
+        deboss_top(b[0] + (left ? -1 : 1) * (spring_d / 2 + 1.5), b[1], b[3], left ? "right" : "left");
 }
-// the same letters as solids filling the pockets exactly: printed in a second colour on a
-// multi-material printer (load top.stl and labels.stl as one multi-part object), or used
-// as a guide for a filament change at 0.6 mm since the lid prints face down
+// the same letters as solids filling the pockets exactly, so lid and letters can be two
+// extruders (or two manual filament swaps) in the same first layers; see README "Labels"
 module labels_add() intersection() { labels_sub(); outer_solid(); }
 
 // ---------------------------------------------------------------- the halves

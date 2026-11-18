@@ -1,7 +1,8 @@
 # Griffin Jr. enclosure: generated from the released KiCad board. See README.md.
 #   make          build/board.scad (geometry + checks), then the STLs in stl/:
-#                 top, labels, bottom, inserts (to print); board, plugs, fit (to check the
-#                 fit), then fit_check.py: nothing on the board or any plug inside the case
+#                 top, labels, bottom, inserts (to print), top.3mf (lid + letters as one
+#                 two-extruder object for PrusaSlicer); board, plugs, fit (to check the fit),
+#                 then fit_check.py: nothing on the board or any plug inside the case
 #   make check    the pcbnew checks only (pillars, bosses, cutouts, heights)
 #   make png      previews (needs a display or xvfb-run)
 # The STLs are checked in (binary, so they view on GitHub and open in a slicer without a
@@ -14,7 +15,10 @@ S = stl
 SCAD = $(OPENSCAD) --export-format binstl
 
 .PHONY: all check png clean
-all: $(S)/top.stl $(S)/labels.stl $(S)/bottom.stl $(S)/inserts.stl $(S)/board.stl $(S)/plugs.stl $(S)/fit.stl $(B)/fit-check.ok
+all: $(S)/top.stl $(S)/labels.stl $(S)/top.3mf $(S)/bottom.stl $(S)/inserts.stl $(S)/board.stl $(S)/plugs.stl $(S)/fit.stl $(B)/fit-check.ok
+
+$(S)/top.3mf: make_3mf.py merge_stl.py $(S)/top.stl $(S)/labels.stl
+	python3 make_3mf.py -o $@ --name top $(S)/top.stl:lid:1 $(S)/labels.stl:labels:2
 
 $(B)/board.scad $(B)/components.txt &: board_geometry.py parts.json $(PCB)
 	mkdir -p $(B)

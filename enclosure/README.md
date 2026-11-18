@@ -25,6 +25,7 @@ the board or the design changes. About two minutes, most of it the two lid rende
 | `build/board.scad` | generated include: board size, holes, cutouts, notches, buttons, LEDs, pillars, vents, the tallest part, the fit-model boxes and headers |
 | `stl/top.stl` | the lid, already turned face down for printing |
 | `stl/labels.stl` | the lid's letters as solids, same placement as `top.stl`, for a second colour (see "Labels") |
+| `stl/top.3mf` | lid and letters as one two-part PrusaSlicer object, extruders 1 and 2 already assigned |
 | `stl/bottom.stl` | the tray |
 | `stl/inserts.stl` | two button caps and three light-pipe rods |
 | `stl/board.stl` | fit check: the board with its parts, in case coordinates (see "Fit check") |
@@ -41,6 +42,7 @@ the board or the design changes. About two minutes, most of it the two lid rende
 | `inserts.scad` | the button caps and light pipes, called from `case.scad` with its dimensions |
 | `merge_stl.py` | combines STLs into one binary STL; moves a `kicad-cli` export into case coordinates and drops its board body |
 | `fit_check.py` | ray-casts every point of the board and plug meshes against the closed case mesh; fails `make` if anything is inside the plastic by more than 0.05 mm |
+| `make_3mf.py` | writes a PrusaSlicer multi-part 3MF from STLs with an extruder per part |
 
 ## Coordinates
 
@@ -101,16 +103,23 @@ tray's lip.
   trimmed.
 * **Vents.** 2 mm slots at 4 mm pitch over the footprints of U1, U6 and U7 (the 68000 and the
   two ATF1508s, the hottest parts), 2 mm inside each outline, kept 3 mm clear of the pillars.
-* **Labels.** Port names sunk 0.6 mm into the lid top 4 mm in from the wall above each cutout
-  and behind each LED, RESET and NMI into the front wall, 2.6 mm bold Liberation Sans. The lid
-  prints face down, so the letters are in the first three 0.2 mm layers against the bed, the
-  cleanest surface a printer makes. `labels.stl` is the same letters as solids that fill the
-  pockets exactly, placed like `top.stl`: on a multi-material printer load the two as one
-  multi-part object and give the labels the second extruder, and the letters print in their
-  own colour within the same layers. With one extruder, a filament change at 0.6 mm colours
-  the pocket floors (visible through 0.6 mm of the face colour) instead; or fill the pockets
-  with paint. The letters are small for a 0.4 mm nozzle; `label_size` in `case.scad` can go
-  to 3.2 before the back-edge labels touch. No badge: glue one on or use a sticker.
+* **Labels.** Port names in the lid top 4 mm in from the wall above each cutout, behind each
+  LED, and beside the buttons (RESET to the left of its button, NMI to the right, outside the
+  12 mm spring rings), 2.6 mm bold Liberation Sans. They are 0.4 mm pockets in the lid, two
+  0.2 mm layers, and `labels.stl` is the same letters as solids that fill the pockets exactly
+  and lie flush with the face. The lid prints face down, so letters and face share the first
+  two layers against the bed, and a two-extruder print puts them in two colours in the same
+  plane. `top.3mf` carries both as one object with the lid on extruder 1 and the letters on
+  extruder 2. On a single-extruder printer use PrusaSlicer's single-extruder multi-material
+  mode with a manual swap as the tool change: Printer Settings, General: 2 extruders, "Single
+  Extruder Multi Material" on; Printer Settings, Custom G-code, Tool change G-code: `M600` (or
+  the printer's pause command); Print Settings, Multiple Extruders: wipe tower off; Print
+  Settings, Advanced: elephant foot compensation 0 and "Detect thin walls" on, or the
+  one-extrusion-wide strokes disappear. Expect three swaps: within layer 1, within layer 2,
+  and back to the face colour for layer 3, then none. To test, cut the object at 2 mm in the
+  slicer and print the slab. The letters are small for a 0.4 mm nozzle; `label_size` in
+  `case.scad` can go to 3.2 before the back-edge labels touch. No badge: glue one on or use
+  a sticker.
 
 ## Fit check
 
@@ -171,11 +180,11 @@ only 1.5 mm of wall left under the lid.
 
 ## Printing
 
-Five prints, as for Rocinante: the lid face down in black PETG (the STL is already turned; the
-button membranes and the label pockets are its first layers, so print them at 0.2 mm), the
-tray in PETG, the two button caps in silver PLA, the three light pipes in clear or white.
-`labels.stl` goes with the lid on a multi-material printer. A brim helps the long walls.
-Hardware: four M3 x 8 screws, four M3 heat-set inserts, rubber feet.
+Five prints, as for Rocinante: the lid face down from `top.3mf` in black PETG with the
+letters in a second colour (the button membranes and the letters are its first layers, so
+print them at 0.2 mm), the tray in PETG, the two button caps in silver PLA, the three light
+pipes in clear or white. A brim helps the long walls. Hardware: four M3 x 8 screws, four M3
+heat-set inserts, rubber feet.
 
 ## Why generated
 
