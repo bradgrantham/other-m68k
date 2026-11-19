@@ -26,6 +26,10 @@
 #define SSTV_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef enum { SSTV_ROBOT36, SSTV_ROBOT72, SSTV_MARTIN_M1 } sstv_mode_t;
 
 /* Progress: called once per picture line as it starts (line 0..total-1) and once more
@@ -90,5 +94,9 @@ int      sstv_encoder_next(sstv_enc_t *e, uint8_t *out, int n);
  * callback is installed), -3 if the BIOS refused a buffer. */
 int      sstv_send(const uint8_t *fb, uint8_t *scratch, sstv_mode_t mode,
                    sstv_progress_fn progress, void *ctx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

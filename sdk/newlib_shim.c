@@ -270,6 +270,8 @@ int settimeofday(const struct timeval *tv, const struct timezone *tz)
     return 0;
 }
 
-/* Referenced by __libc_init_array if anything pulls it in; we have no crti/crtn. */
+/* newlib's __libc_init_array and __libc_fini_array (called and registered by crt0.S) call
+ * these between the tables; they are the .init/.fini sections' entry points on targets
+ * that have crti/crtn, which we do not. */
 void _init(void) {}
 void _fini(void) {}

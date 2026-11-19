@@ -1,9 +1,10 @@
 # other-m68k SDK: libsys.a (syscall stubs + newlib shim + PDM audio encoder + BMP loader + SSTV encoder), crt0, and example programs.
-# See README.md. Add a program: put foo.c in examples/ and add it to EXAMPLES.
+# See README.md. Add a program: put foo.c (or foo.cpp) in examples/ and add it to EXAMPLES.
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
 CROSS   = $(XTOOLS)/m68k-unknown-elf-
 CC      = $(CROSS)gcc
+CXX     = $(CROSS)g++
 AR      = $(CROSS)ar
 OBJCOPY = $(CROSS)objcopy
 SIZE    = $(CROSS)size
@@ -11,13 +12,16 @@ GEN = ../generated
 B   = build
 
 CFLAGS  = -m68000 -Os -Wall -Wextra -ffunction-sections -fdata-sections -I$(GEN) -I. -MMD -MP
+# C++ programs: crt0 runs static constructors and destructors; they link with the same
+# libraries as C programs (no libstdc++), so no exceptions, RTTI or guards for local statics.
+CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 # newlib in this toolchain expects the libgloss names (write/read/sbrk/_exit/...), which
 # newlib_shim.c provides; libsys comes after libc so libc's references resolve into it.
 LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments -L$(B)
 LDLIBS  = -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 
-EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv
+EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv ctors
 
 .PHONY: all clean check-sources host-bmpview
 
@@ -44,6 +48,9 @@ $(B)/%.o: %.c | $(B)
 
 $(B)/%.o: examples/%.c | $(B)
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(B)/%.o: examples/%.cpp | $(B)
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(B)/bmp.o: CFLAGS += -O2            # pixel loops: speed over size
 $(B)/pdm.o: CFLAGS += -O2            # table build and encoder: speed over size

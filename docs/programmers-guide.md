@@ -115,7 +115,7 @@ SSTV encoder `sstv_enc.c`/`sstv_play.c` (`sdk/sstv.h`, see [the end of 1.8](#slo
 (0x008000; it was 0x004000 before spec revision 9, and the loader refuses ELF files linked
 there with `E_NOMEM`, so relink them), entry point `_start`.
 
-**Adding a program.** Put `foo.c` in `sdk/examples/`, add `foo` to the `EXAMPLES` line in
+**Adding a program.** Put `foo.c` (or `foo.cpp`) in `sdk/examples/`, add `foo` to the `EXAMPLES` line in
 `sdk/Makefile`, and run `make -C sdk`. You get `sdk/build/foo.elf` (what the monitor loads)
 and `sdk/build/foo.srec` (for upload over the serial port). File names may be long (up to 63
 characters with the `.ELF`), but a program named like a monitor command (`ls`, `cat`, `dir`,
@@ -307,8 +307,18 @@ graphics; the loader will not put ELF segments there, but you can point at it:
   for double precision. Use fixed point in anything that has to be fast. `printf("%f")` and
   `libm` work.
 * Not available: `fork`/`exec*` (use `sys_exec`), signals, environment variables.
-* Static constructors and destructors are not run (`-nostartfiles`, no crti/crtn); the SDK is
-  for C.
+* Static constructors and destructors run: `__attribute__((constructor))` functions and the
+  constructors of C++ static objects before `main` (those with a priority first, lowest
+  number first, then the rest in link order), and at `exit()` or on return from `main` the
+  `atexit` handlers and the objects' destructors in the reverse order of their registration,
+  then the `__attribute__((destructor))` functions. They run in user mode like the rest of
+  the program, so they may print and open files. `sys_exit()` and `_exit()` skip the
+  destructors. `sdk/examples/ctors.cpp` prints the order.
+* C++ works without its library: put `foo.cpp` in `sdk/examples/` and it is compiled with
+  `-fno-exceptions -fno-rtti -fno-threadsafe-statics` and linked like a C program. Classes,
+  templates, virtual functions and static objects are fine; `new`/`delete` and the standard
+  library need `-lstdc++` added in front of `-lc` on the link line, and there are no
+  exceptions. See `sdk/README.md`.
 
 ### User mode
 
@@ -1161,8 +1171,8 @@ avoid the problem.
 
 ## 1.10 Exiting and chaining
 
-* Returning from `main(argc, argv)` or calling `exit(n)` flushes stdio and calls
-  `sys_exit(n)`. The BIOS closes the program's files (and `/dev/ttya`), stops the audio
+* Returning from `main(argc, argv)` or calling `exit(n)` runs the `atexit` handlers and
+  static destructors, flushes stdio and calls `sys_exit(n)`. The BIOS closes the program's files (and `/dev/ttya`), stops the audio
   stream at once (buffers still queued are dropped; call `sys_audio_last(NULL, 1)` before
   exiting if the end of the sound matters) and puts the audio output back to the silence level, removes its hooks and
   audio callback, restores its

@@ -23,11 +23,19 @@
 #define PDM_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern uint16_t pdm_table[32768];
 
 void    pdm_init(void);                                           /* build the table; call once */
 void    pdm_reset(void);                                          /* accumulator back to 0 */
 void    pdm_encode(uint8_t *dst, const uint8_t *samples, unsigned n);
 uint8_t pdm_silence(void);                                        /* the idle pattern, 0xAA */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

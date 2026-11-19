@@ -18,6 +18,10 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct bmp {
     FILE    *f;
     int32_t  w, h;
@@ -45,5 +49,9 @@ const char *bmp_show_raw(FILE *f, long size, struct bmp_target *t, int W, int H)
 void        bmp_fit(int w, int h, int W, int H, int stretch, int *dw, int *dh);   /* aspect-preserving size */
 
 extern const uint8_t bmp_lvl3[8], bmp_lvl2[4];       /* RGB332 channel levels expanded to 8 bits */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

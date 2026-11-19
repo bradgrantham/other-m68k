@@ -26,7 +26,7 @@ hdl:
 	$(MAKE) -C hdl
 
 # The flash window image: the BIOS image plus the C: volume (flashfs/ and the SDK's example
-# programs), and the two chip images for the TL866. `make run` boots it and keeps what the
+# programs, except the constructor demo `ctors`), and the two chip images for the TL866. `make run` boots it and keeps what the
 # machine writes to C: in fw/build/flash.img across runs (--rom-save).
 FLASHFS_PROGRAMS = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv
 FLASHFS_FILES = flashfs/AUTOEXEC.CMD flashfs/README.TXT $(foreach p,$(FLASHFS_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
@@ -45,12 +45,13 @@ fw/build/flash.img fw/build/rom_even.bin fw/build/rom_odd.bin: fw/build/rom.bin 
 	python3 fw/mkrom.py --split fw/build/flash.img fw/build/rom_even.bin fw/build/rom_odd.bin fw/build/rom.bin fw/build/c.img
 
 # all the tests: firmware host tests, static constructors in the ROM (emulator), emulator
-# tests, the SSTV encoder (host + emulator)
+# tests, the SSTV encoder (host + emulator), static constructors in a program (emulator)
 check: flash emu
 	$(MAKE) -C fw test
 	$(MAKE) -C fw test-ctors
 	$(MAKE) -C emu test
 	$(MAKE) -C tests/sstv check
+	$(MAKE) -C tests/sdk-ctors check
 
 run: flash emu
 	./emu/build/m68k-emu --rom fw/build/flash.img --rom-save fw/build/flash.img $(EMUFLAGS)

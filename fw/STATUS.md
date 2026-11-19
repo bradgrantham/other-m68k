@@ -40,10 +40,20 @@ README.md for usage, the exact emulator commands and their output.
   generated `syscalls.h`/`bios_syscalls.h` and every BIOS header with declarations carry
   `extern "C"` guards. `test/ctors_cxx.cpp` includes all of them and calls `ksnprintf` from a
   constructor. `rom.bin` is byte-identical before and after the header changes.
-* SDK programs are unchanged: `sdk/crt0.S` does not run a program's constructors and
-  `sdk/user.ld` does not keep `.init_array`, so a C++ program with a static object links and
-  runs with the object unconstructed (checked: a `Thing thing;` whose constructor sets
-  `v = 42` prints `thing.v = 0`). The examples are all C and have no constructors.
+* SDK programs (second step, same day): `sdk/user.ld` has the `.preinit_array`,
+  `.init_array` and `.fini_array` tables and `sdk/crt0.S` registers newlib's
+  `__libc_fini_array` with `atexit`, then calls `__libc_init_array` before `main`. This is
+  Griffin's recipe as it stands, because programs do link newlib; `_init`/`_fini` were
+  already in `newlib_shim.c`, and `crt0.S` defines `__dso_handle` (crtbegin.o is not linked).
+  Before this a C++ program with a static object linked and ran with the object
+  unconstructed. Every program grows by about 300 bytes of code and 400 of `.bss`.
+  `sdk/Makefile` has `CXX`, `CXXFLAGS` and a rule for `examples/*.cpp`; programs link without
+  libstdc++ unless `-lstdc++` is added to the group. New example `sdk/examples/ctors.cpp`
+  (not on C:) and `tests/sdk-ctors` (in `make check`): it runs from a C: volume of its own
+  in the emulator and must print its 11 numbered steps in order (preinit, constructors
+  101/102, two static objects, main, the atexit handler, the objects in reverse, the plain
+  destructor, destructor 101) and exit with status 0. The test fails when either call is
+  removed from `crt0.S`.
 
 ## Quieter console (2026-10-29)
 
@@ -77,7 +87,7 @@ README.md for usage, the exact emulator commands and their output.
   (numpy) demodulates, parses the VIS, fits the line period to the sync pulses (within
   20 ppm), checks the duration (1 ms) and the picture against the card; `run.sh` then runs
   `sstv` in the emulator (`--audio-wav`, the RC filter model) and `--wav` onto an SD image
-  and decodes both. Top-level `make check` runs `fw test`, `fw test-ctors`, `emu test` and this.
+  and decodes both. Top-level `make check` runs `fw test`, `fw test-ctors`, `emu test`, this and `tests/sdk-ctors`.
 
 ## Spec rev 11 / board rev C3: Atari joystick and paddle port (2026-10-22)
 
@@ -372,7 +382,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 | `lineedit.c`, `args.c` | line editor (cursor keys, 32-line history, Tab completion) and command-line words (quotes, `*`/`?` expansion; host tested) |
 | `joy.c` | joystick switches, paddle timing from the VBLANK and DUART interrupts (rev 11) |
 | `test/test_main.c` (+ `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`) | host tests: printf, queue, srec (good/bad checksum, S1/S2/S3/S5/S7/S8/S9, CRLF, junk), ps2 (shift/caps/ctrl/arrows/F-keys/pause/ack), console (glyphs, tab, backspace, wrap, scroll, cursor, colours), hexdump, SD framing, ELF, clock, FatFs/fd table on C: and D:, audio |
-| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/pdm.c`, `sdk/bmp.c`, `sdk/sstv_enc.c`, `sdk/sstv_play.c`, `sdk/examples/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest,sstv}.c`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
+| `sdk/crt0.S`, `sdk/newlib_shim.c`, `sdk/pdm.c`, `sdk/bmp.c`, `sdk/sstv_enc.c`, `sdk/sstv_play.c`, `sdk/examples/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest,sstv}.c`, `sdk/examples/ctors.cpp`, `sdk/README.md` | link uses `--start-group -lc -lsys --end-group -lgcc`; crt0 passes argc/argv |
 | `../tools/mkflashvol.sh`, `../flashfs/` | C: volume image and its text files (rev 9) |
 
 ## Design as built (differences from the original plan)

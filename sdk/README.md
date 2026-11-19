@@ -1,6 +1,6 @@
 # sdk/ -- other-m68k user programs
 
-Programs are plain C with newlib, linked at `USER_BASE` (0x8000) and started by the BIOS
+Programs are C or C++ with newlib, linked at `USER_BASE` (0x8000) and started by the BIOS
 monitor in user mode: by name (`prog [args]`, found on the search path: the current
 directory, then C:, then D:), `run prog.elf [args]`, `go` after an S-record upload, or
 `sys_exec` from another program. Output goes to the video console; input comes from the
@@ -9,12 +9,12 @@ PS/2 keyboard; files live on drive C: (the 768 KB FAT12 volume in the flash) and
 `sys_serial_putc`/`sys_serial_getc`) to talk to it.
 
 ```
-make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest,sstv}.elf + .srec
+make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fstest,bmpview,tune,abench,sdplay,term,joytest,sstv,ctors}.elf + .srec
 ```
 
 The `.elf` files are what `run` loads (ELF32 big-endian m68k, one `PT_LOAD` segment at
 0x8000, entry `_start` = 0x8000); copy them onto the card or onto C: (`HELLO.ELF`, so that
-`hello` finds it). The top-level `make flash` puts all the examples on C:, stripped
+`hello` finds it). The top-level `make flash` puts the examples (all but `ctors`) on C:, stripped
 (43-62 KB each; the loader reads only the program headers). The `.srec` files are for the
 serial upload path.
 
@@ -22,8 +22,8 @@ serial upload path.
 
 | file | contents |
 |---|---|
-| `crt0.S` | `_start` at 0x8000: clears `.bss`, reads `argc`/`argv` from the stack the BIOS built, calls `main(argc, argv)`, then newlib `exit()` (flushes stdio) and `sys_exit` |
-| `user.ld` | one load region from `../generated/user.ld`; `__bss_start/__bss_end/_end/__heap_start` |
+| `crt0.S` | `_start` at 0x8000: clears `.bss`, registers newlib's `__libc_fini_array` with `atexit`, runs the static constructors (`__libc_init_array`), reads `argc`/`argv` from the stack the BIOS built, calls `main(argc, argv)`, then newlib `exit()` (atexit handlers and static destructors, flushes stdio) and `sys_exit`; defines `__dso_handle` |
+| `user.ld` | one load region from `../generated/user.ld`; the `.preinit_array`/`.init_array`/`.fini_array` tables; `__bss_start/__bss_end/_end/__heap_start` |
 | `newlib_shim.c` | the libgloss-style functions this newlib calls (`write read sbrk open close lseek fstat isatty kill getpid _exit stat link unlink rename mkdir rmdir chdir getcwd times gettimeofday settimeofday`, no leading underscore) mapped onto TRAP #15; translates newlib's `O_CREAT/O_TRUNC/O_APPEND` values to the ABI's. `environ` is newlib's own (time functions pull in `getenv` for `TZ`, and with it newlib's `environ.o`) |
 | `../generated/syscall_stubs.S` | `sys_*` functions (`#include "syscalls.h"`); compiled into `build/libsys.a` |
 | `bmp.c`, `bmp.h` | BMP reader, streaming separable box scaler and Floyd-Steinberg dither to RGB332 (`bmp_open`, `bmp_fit`, `bmp_show` into a `struct bmp_target`, `bmp_show_raw`); in `build/libsys.a`, used by `bmpview` and `sstv`, builds on the host with `-DHOST` |
@@ -39,11 +39,12 @@ serial upload path.
 | `examples/sdplay.c` | streams a sound file from the card: `sdplay FILE.PDM` plays raw pattern bytes (one per line, made on a host), `sdplay -pcm FILE.PCM` encodes unsigned 8-bit PCM at the line rate on the fly, `sdplay -half FILE.PCM` plays 8-bit PCM at half the line rate (7854 Hz); reports the elapsed time against the ideal and the share of time spent blocked in `sys_audio_next` (the CPU left over). With the 4-bit SD bus (spec rev 7, 5 ms per block) all three keep up; full-rate PCM with on-the-fly encoding has 57 % of the CPU to spare (with the SPI bus of rev B boards it fell 2-3 % short). `ODE.PDM`/`ODE.PCM` on the test image are the tune |
 | `examples/joytest.c` | shows the Atari port live: the joystick mask every frame and, unless started with `-j`, the two paddle positions and their valid bits (`sys_joystick`, `sys_paddles`); any key quits; `joytest` at the prompt (in the emulator: `--joy up,fire --paddle 300,700`) |
 | `examples/bmpview.c` | BMP viewer on page 1 (the pipeline is `bmp.c`); also shows raw 320x240 RGB332 blobs; `make host-bmpview` builds it for the host (see below) |
+| `examples/ctors.cpp` | C++: static objects, `__attribute__((constructor))`/`((destructor))` functions with and without priorities, a `.preinit_array` entry and an `atexit` handler, each printing a numbered line, so the output is the order the start-up and exit code ran them (`tests/sdk-ctors` checks it in the emulator); not on C: |
 | `examples/sstv.c` | sends a screen page or a BMP as SSTV audio (Robot 36/72, Martin M1), progress on the other page, ESC aborts, `--wav` writes the PCM to D: instead; `sstv` at the prompt (see below) |
 
 Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
---start-group -lc -lsys --end-group -lgcc`. Add a program by dropping `foo.c` into
-`examples/` and adding `foo` to `EXAMPLES`.
+--start-group -lc -lsys --end-group -lgcc`. Add a program by dropping `foo.c` or `foo.cpp`
+into `examples/` and adding `foo` to `EXAMPLES`.
 
 ## Runtime model
 
@@ -119,7 +120,24 @@ Link line (see the Makefile): `-m68000 -nostartfiles -T user.ld crt0.o prog.o
   counter. Files written while the clock is unset get the stamp 2026-01-01 00:00.
   `sys_sleep_ms(ms)` waits `ms * ticks_per_sec / 1000` whole frames (nominal 60 or 50 per
   second) plus a calibrated loop for the rest of a frame.
-* Static constructors are not run (no crti/crtn); C only.
+* Static constructors and destructors run. Before `main`, `crt0.S` calls newlib's
+  `__libc_init_array`: the `.preinit_array` entries, then `.init_array`, where the compiler
+  puts `__attribute__((constructor))` functions and the constructors of C++ static objects
+  (entries with a priority first, lowest number first, then the rest in link order). `exit()`
+  and returning from `main` undo them in reverse: `atexit` handlers and the destructors of
+  C++ static objects in the reverse order of their registration, then the
+  `__attribute__((destructor))` functions (`.fini_array`, walked backwards). `sys_exit()` and
+  `_exit()` skip all of that. Constructors run in user mode with the whole SDK usable
+  (`printf`, files, system calls). `examples/ctors.cpp` prints the order. It costs every
+  program about 300 bytes of code and 400 of `.bss`.
+* C++: a `.cpp` in `examples/` is compiled with `$(CXXFLAGS)`, which is `$(CFLAGS)` plus
+  `-fno-exceptions -fno-rtti -fno-threadsafe-statics`, and linked like a C program, so
+  without the C++ library: classes, templates, virtual functions and static objects work,
+  `new`/`delete` and the standard library do not link. Putting `-lstdc++` in front of
+  `-lc` inside the `--start-group` brings them in (a small program using `new`, `delete`
+  and a virtual destructor grows from 36 KB to 56 KB and runs); exceptions stay off the
+  table because `user.ld` discards `.eh_frame`. `syscalls.h`, `pdm.h`, `bmp.h` and
+  `sstv.h` declare their functions `extern "C"`, so a C++ source includes them as they are.
 
 ## bmpview: pictures from the card
 
