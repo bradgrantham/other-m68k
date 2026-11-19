@@ -3,11 +3,14 @@
 #          the last word: the file for the monitor's `flash` command), build/rom.lst.
 #          The chip images for the TL866 (rom_even.bin / rom_odd.bin) also carry the C:
 #          volume, so the top-level `make flash` builds them (mkrom.py --split).
-# `make` builds everything; `make test` runs the host unit tests of the pure-C modules.
+# `make` builds everything; `make test` runs the host unit tests of the pure-C modules;
+# `make test-ctors` boots a ROM with static constructors in the emulator (needs ../emu built).
 
 XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
 CROSS   = $(XTOOLS)/m68k-unknown-elf-
 CC      = $(CROSS)gcc
+CXX     = $(CROSS)g++
+NM      = $(CROSS)nm
 AS      = $(CROSS)gcc
 LD      = $(CROSS)gcc
 OBJCOPY = $(CROSS)objcopy
@@ -22,18 +25,23 @@ FW_VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 
 CFLAGS  = -m68000 --param=min-pagesize=0 -Os -Wall -Wextra -ffreestanding -nostdlib -fno-delete-null-pointer-checks \
           -fno-common -ffunction-sections -fdata-sections -I$(GEN) -I. -Ifatfs -DFW_VERSION=\"$(FW_VERSION)\"
+# C++ in the ROM: static constructors run from crt0.S; there is no runtime for exceptions,
+# RTTI or the guards of function-local statics.
+CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
-LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections -Wl,-Map=$(B)/rom.map
+LDFLAGS = -m68000 -nostdlib -ffreestanding -T rom.ld -Wl,--gc-sections
 
 # Planned source list (see STATUS.md); only files that exist are built.
 ASRCS = crt0.S post.S duart.S memops.S sd4.S flashram.S irq_hsync.S
 CSRCS = main.c console.c serial.c input.c ps2.c irq.c exception.c monitor.c srec.c queue.c \
         hexdump.c printf.c syscall.c string.c sd.c diskio.c fs.c elf.c exec.c flash.c audio.c \
         clock.c flashdisk.c args.c lineedit.c joy.c
+CXXSRCS =
 FATFS = fatfs/ff.c fatfs/ffunicode.c
-OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS)) $(B)/ff.o $(B)/ffunicode.o
+OBJS  = $(patsubst %.S,$(B)/%.o,$(ASRCS)) $(patsubst %.c,$(B)/%.o,$(CSRCS)) \
+        $(patsubst %.cpp,$(B)/%.o,$(CXXSRCS)) $(B)/ff.o $(B)/ffunicode.o
 
-.PHONY: all clean test check-sources
+.PHONY: all clean test test-ctors check-sources
 
 all: check-sources $(B)/rom.bin $(B)/rom.lst
 
@@ -50,6 +58,9 @@ $(B)/%.o: %.S | $(B)
 $(B)/%.o: %.c | $(B)
 	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 
+$(B)/%.o: %.cpp | $(B)
+	$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
+
 # header dependencies (generated/hw.h and friends change with the spec)
 -include $(wildcard $(B)/*.d)
 
@@ -61,7 +72,7 @@ $(B)/ffunicode.o: fatfs/ffunicode.c fatfs/ffconf.h | $(B)
 	$(CC) $(CFLAGS) -Wno-unused-parameter -c -o $@ $<
 
 $(B)/rom.elf: $(OBJS) rom.ld $(GEN)/memory.ld
-	$(LD) $(LDFLAGS) -o $@ $(OBJS) -lgcc
+	$(LD) $(LDFLAGS) -Wl,-Map=$(B)/rom.map -o $@ $(OBJS) -lgcc
 	$(SIZE) $@
 
 # ROM_IMAGE_SIZE image, gaps 0xFF (the .romtail section puts the last word at the end of
@@ -103,6 +114,31 @@ $(TEST_IMG): test/mkimage.sh
 $(TEST_CIMG): ../tools/mkflashvol.sh $(GEN)/hw.h
 	mkdir -p $(B)/test
 	sh ../tools/mkflashvol.sh $@ test/data/README.TXT || { rm -f $@; touch $@; }
+
+# Static constructors (rom.ld tables, crt0.S walk): the BIOS objects plus test/ctors.c and
+# test/ctors_cxx.cpp linked as a second ROM, booted headless in the emulator; test/ctors.py
+# reads the record the constructors left in BIOS RAM from the emulator's memory dump.
+EMU       = ../emu/build/m68k-emu
+CTOR_OBJS = $(B)/test/ctors.o $(B)/test/ctors_cxx.o
+
+$(B)/test/ctors.o: test/ctors.c test/ctors.h bios.h
+	mkdir -p $(B)/test
+	$(CC) $(CFLAGS) -Itest -c -o $@ $<
+
+$(B)/test/ctors_cxx.o: test/ctors_cxx.cpp test/ctors.h $(wildcard *.h) $(GEN)/syscalls.h $(GEN)/bios_syscalls.h $(GEN)/hw.h
+	mkdir -p $(B)/test
+	$(CXX) $(CXXFLAGS) -Itest -c -o $@ $<
+
+$(B)/test/rom_ctors.elf: $(OBJS) $(CTOR_OBJS) rom.ld $(GEN)/memory.ld
+	$(LD) $(LDFLAGS) -Wl,-Map=$(B)/test/rom_ctors.map -o $@ $(OBJS) $(CTOR_OBJS) -lgcc
+
+$(B)/test/rom_ctors.bin: $(B)/test/rom_ctors.elf mkrom.py
+	$(OBJCOPY) -O binary --gap-fill=0xFF $< $@
+	$(PYTHON) mkrom.py $@
+
+test-ctors: $(B)/test/rom_ctors.bin
+	@test -x $(EMU) || { echo "test-ctors: build the emulator first (make -C emu)"; exit 1; }
+	$(PYTHON) test/ctors.py $(EMU) $(NM) $(B)/test/rom_ctors.elf $(B)/test/rom_ctors.bin
 
 clean:
 	rm -rf $(B)

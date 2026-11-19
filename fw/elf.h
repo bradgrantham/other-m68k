@@ -3,6 +3,10 @@
 #define ELF_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define ELF_HDR_SIZE   52
 #define ELF_PHDR_SIZE  32
 #define ELF_PT_LOAD    1
@@ -26,5 +30,9 @@ int  elf_parse_header(const uint8_t *buf, uint32_t len, struct elf_hdr_info *out
 void elf_parse_phdr(const uint8_t *p, struct elf_phdr *ph);
 /* 1 if [vaddr, vaddr+memsz) lies inside [USER_BASE, USER_END) and filesz <= memsz. */
 int  elf_segment_fits(const struct elf_phdr *ph);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

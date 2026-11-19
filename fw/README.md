@@ -23,6 +23,8 @@ make -C fw test       # host unit tests (590 checks): printf, queue, srec, ps2, 
                       # (+ ../sdk/build/hello.elf), the clock's calendar arithmetic, FatFs + fd
                       # table on both drives: D: a FAT32 image, C: a FAT12 image in a simulated
                       # flash array (images made with mkfs.vfat/mcopy; skipped if those are missing)
+make -C fw test-ctors # static constructors: build/test/rom_ctors.bin (the BIOS + test/ctors.c and
+                      # test/ctors_cxx.cpp) booted in ../emu/build/m68k-emu, 24 checks
 make -C fw clean
 ```
 
@@ -146,7 +148,7 @@ plus loading the 35 KB `hello.elf` takes about 2.5 s of emulated time.
 |---|---|
 | LED0 on | reset reached `_start`; DUART programmed; ROM checksum running |
 | LED0 + LED1 on | RAM test running (~4 s for 1 MB) |
-| LED1 on | RAM passed; C initialisation (vectors, .data/.bss, console, interrupts) |
+| LED1 on | RAM passed; C initialisation (vectors, .data/.bss, static constructors, console, interrupts) |
 | both off | monitor idle / running normally |
 | LED0 / LED1 alternating at ~2 Hz forever | RAM test failed (details on serial) |
 
@@ -163,6 +165,25 @@ Nothing in the POST uses RAM: the ROM checksum, the RAM test and the serial outp
 from registers only (`post.S`, `duart.S`; `post_putc` polls SRA.TXRDY and writes TBA),
 returning through address registers. Do not press the NMI button during the POST: the
 vectors live in RAM, which is being tested.
+
+After the POST `post_return` (`crt0.S`) copies the vectors to RAM, copies `.data`, clears
+`.bss` and runs the static constructors, then calls `bios_main`. The constructors are the
+function pointers the compiler leaves in `.preinit_array` and `.init_array` (C++ objects
+with constructors, `__attribute__((constructor))`); `rom.ld` collects them into two tables
+in the ROM, entries with a priority first (lowest number first), then the rest in link
+order, and `crt0.S` walks them itself (the BIOS has no newlib and so no
+`__libc_init_array`). They run once per reset, the monitor's `reset` included, in
+supervisor mode with interrupts masked, and before every driver: no console, no serial RX
+queue, no filesystem, so a constructor sets up its object and leaves the I/O to code called
+from `bios_main`. Nothing runs destructors because the BIOS never exits: `rom.ld` discards
+`.fini_array`, and `__cxa_atexit` (where a C++ constructor registers its object's
+destructor) is a stub that records nothing. The BIOS has no constructors of its own yet, so
+the tables are empty in `rom.bin`. A C++ source goes into `CXXSRCS` in the Makefile and is
+built with `$(CXXFLAGS)` (`-fno-exceptions -fno-rtti -fno-threadsafe-statics`; no
+`new`/`delete` or other C++ runtime is provided). It includes `bios.h` and the other BIOS
+headers as a C source does: each header that declares functions or variables wraps them in
+`extern "C"`, the generated `syscalls.h` and `bios_syscalls.h` included, and `tools/gen.py`
+refuses a spec in which a syscall, argument, structure or field name is a C++ keyword.
 
 POST serial output, 38400 8N1 (`SERIAL_BAUD`):
 
@@ -588,7 +609,7 @@ direction and `lseek` on them `E_INVAL`.
 
 | file | contents |
 |---|---|
-| `crt0.S` | vector table, stubs, `_start` (GPIO idle, DUART init, POST), `post_return`, `exception_common`, `trap15_handler`, `run_user`, `monitor_restart` |
+| `crt0.S` | vector table, stubs, `_start` (GPIO idle, DUART init, POST), `post_return` (vectors, .data/.bss, static constructors), `__cxa_atexit` stub, `exception_common`, `trap15_handler`, `run_user`, `monitor_restart` |
 | `post.S` | ROM checksum and RAM test, registers only |
 | `duart.S`, `duart.h` | `duart_reset_init` (stack-less DUART bring-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values with data-sheet references |
 | `memops.S`, `string.c` | memcpy/memmove/memset, str* |
@@ -608,5 +629,6 @@ direction and `lseek` on them `E_INVAL`.
 | `fs.c`, `fs.h` | two volumes, fd table, `O_*` to FatFs mode mapping, `FRESULT` to `E_*`, `struct dirent`, unlink/rename/mkdir/chdir/getcwd/copy/mkfs |
 | `elf.c`, `elf.h`, `exec.c`, `exec.h` | ELF32 parsing, `exec_prepare`/`exec_load`, `user_launch` (argv convention) |
 | `test/test_main.c`, `test_sd.c`, `test_elf.c`, `test_fs.c`, `test_audio.c`, `test.h` | host unit tests (`make test`, including `test_clock`); `test/mkimage.sh` builds the FAT32 image (D:), `../tools/mkflashvol.sh` the FAT12 image (C:) that `test_fs.c` loads into a RAM array with a simulated `flash_write_sector` (erase to 0xFF, programming clears bits, cycles counted); `test/data/` their files |
-| `rom.ld`, `mkrom.py`, `Makefile` | link, checksum, window image and chip split, build |
+| `test/ctors.c`, `ctors_cxx.cpp`, `ctors.h`, `ctors.py` | static-constructor test (`make test-ctors`): C and C++ constructors that record their order and what they saw in a 56-byte record in BIOS RAM; the C++ file includes every BIOS header and calls `ksnprintf`, which is the check that the headers work from C++; `ctors.py` boots the ROM in the emulator (cold, then the monitor's `reset`) and reads the record from `--dump-mem` |
+| `rom.ld`, `mkrom.py`, `Makefile` | link (with the `.preinit_array`/`.init_array` tables), checksum, window image and chip split, build |
 | `../tools/mkflashvol.sh`, `../flashfs/` | the C: volume image and the files the top-level `make flash` puts on it besides the programs |

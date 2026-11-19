@@ -798,10 +798,10 @@ Rules:
   and put both the directory and the drive back at the end, or use absolute paths.
 * **Create, delete, rename and mkdir** work on both drives, in subdirectories too.
   `remove`/`unlink` deletes a file or an empty directory (`E_EXIST` if it is not empty,
-  `E_ACCES` if it is read-only); `rmdir` is the same call. `sys_rename(old, new)` renames or
-  moves within one volume and fails with `E_EXIST` if `new` exists. `new` is an ordinary path,
+  `E_ACCES` if it is read-only); `rmdir` is the same call. `sys_rename(oldpath, newpath)` renames or
+  moves within one volume and fails with `E_EXIST` if `newpath` exists. `newpath` is an ordinary path,
   resolved like any other: a bare name lands in the current directory of the volume, not in
-  `old`'s directory, and a drive letter in `new` is ignored, so the file never changes
+  `oldpath`'s directory, and a drive letter in `newpath` is ignored, so the file never changes
   volume. To move a file to the other drive, copy it and delete the original. (newlib's
   `rename()` calls this.)
 * At most 8 files and 4 directories open at once (an open `/dev/ttya` counts as a file).
@@ -1248,7 +1248,7 @@ so a file can stream straight into it (`sdk/examples/sdplay.c` does this for raw
 | 31 | `uint8_t *sys_audio_next(const uint8_t *filled, int block)` | Queue the filled buffer (the one last returned) for playing and return the next free buffer. If none is free: `block` != 0 waits, with interrupts running, until the playing buffer finishes (this paces the program to the audio rate); `block` = 0 returns NULL, and the handed buffer is still queued. `filled` = NULL hands nothing in and only asks for a free buffer. NULL also if the stream is not open or `filled` is not the buffer the program holds. Turns the line interrupt on when a buffer is queued with nothing playing. |
 | 32 | `int sys_audio_last(const uint8_t *filled, int block)` | Queue the final buffer (`filled` may be NULL) and close the stream; `block` != 0 waits until everything queued has played. After the last byte the BIOS writes the idle pattern 0xAA and switches the line interrupt off. 0, or `E_INVAL` if the stream is not open. |
 | 33 | `int sys_unlink(const char *path)` | Delete a file or an empty directory. 0, or `E_NOENT`, `E_EXIST` (directory not empty), `E_ACCES` (read-only entry), `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
-| 34 | `int sys_rename(const char *old, const char *new)` | Rename or move a file or directory within `old`'s volume. `new` is resolved as a path on that volume, against its current directory (a bare name does not stay in `old`'s directory), and a drive letter in it is ignored. 0, or `E_NOENT`, `E_EXIST` (`new` exists), `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
+| 34 | `int sys_rename(const char *oldpath, const char *newpath)` | Rename or move a file or directory within `oldpath`'s volume. `newpath` is resolved as a path on that volume, against its current directory (a bare name does not stay in `oldpath`'s directory), and a drive letter in it is ignored. 0, or `E_NOENT`, `E_EXIST` (`newpath` exists), `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
 | 35 | `int sys_mkdir(const char *path)` | Create a directory. 0, or `E_EXIST` (the name is taken), `E_NOENT` (no parent), `E_NOSPC`, `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
 | 36 | `int sys_chdir(const char *path)` | Set the current directory of the path's volume; `"X:"` alone makes X the current drive instead. `chdir("D:/GAMES")` sets D:'s directory without switching to D:. The setting is global: it outlives the program. 0, or `E_NOENT`, `E_NAMETOOLONG`, `E_NODEV`, `E_INVAL`, `E_IO`, `E_FAULT`. |
 | 37 | `int sys_getcwd(unsigned len, char *buf)` | The current drive and directory as `"X:/dir/sub"` into `buf` (`len` bytes, NUL included). Returns the length, or `E_INVAL` (does not fit), `E_NODEV` (the current volume is not mounted), `E_FAULT` (also for `len` 0). |

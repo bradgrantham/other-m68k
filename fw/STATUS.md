@@ -12,6 +12,39 @@ present here); `make -C sdk` builds `libsys.a` and the examples' `.elf/.srec`. `
 is 0x4780 bytes (ends at 0x4B80), leaving ~13 KB of supervisor stack below 0x8000. See
 README.md for usage, the exact emulator commands and their output.
 
+## Static constructors in the BIOS (2026-11-19)
+
+* Ported from Griffin's `firmware/linker.ld` and `crt0.s`: `rom.ld` collects
+  `.preinit_array` and `.init_array` (and old-style `.ctors` input) into two read-only
+  tables in the ROM with the same sort rules as ld's default script; `post_return` walks
+  them after `.data`/`.bss` and before `bios_main` (interrupts masked, supervisor stack, no
+  driver up yet). Griffin calls newlib's `__libc_init_array`; the BIOS links no libc, so
+  `crt0.S` has the 6-instruction loop itself and needs no `_init`/`_fini`.
+* Destructors: Griffin runs `__libc_fini_array` if `main` returns. The BIOS never exits, so
+  `.fini_array`/`.dtors` are discarded at link time and `__cxa_atexit` + `__dso_handle`
+  (which the constructor of a C++ object with a destructor refers to) are a stub in
+  `crt0.S`.
+* The BIOS itself has no constructors (tables empty, +52 bytes of code). The Makefile has
+  `CXX`, `CXXFLAGS` (`-fno-exceptions -fno-rtti -fno-threadsafe-statics`), a `.cpp` rule and
+  an empty `CXXSRCS` list for future C++ sources; no `new`/`delete` or other C++ runtime.
+* `make -C fw test-ctors` (also in the top-level `make check`): `test/ctors.c` and
+  `test/ctors_cxx.cpp` linked with the BIOS objects as `build/test/rom_ctors.bin`, booted
+  headless; 24 checks on the order (`P123cXY`: preinit, priorities 101/200/300, then link
+  order), single execution, SR, `.data` copied, before `bios_main`, three C++ objects
+  constructed in place, no destructor run, and the same again after the monitor's `reset`.
+  Verified to fail when the walk is removed, when it does not call, and when it runs after
+  `bios_main`.
+* `bios.h` from C++: `sys_rename`'s arguments were `old` and `new` in the spec, and `new`
+  is a C++ keyword; they are `oldpath` and `newpath` now (prototype and description only, no
+  ABI change) and `tools/gen.py` validates the spec against the C++ keyword list. The
+  generated `syscalls.h`/`bios_syscalls.h` and every BIOS header with declarations carry
+  `extern "C"` guards. `test/ctors_cxx.cpp` includes all of them and calls `ksnprintf` from a
+  constructor. `rom.bin` is byte-identical before and after the header changes.
+* SDK programs are unchanged: `sdk/crt0.S` does not run a program's constructors and
+  `sdk/user.ld` does not keep `.init_array`, so a C++ program with a static object links and
+  runs with the object unconstructed (checked: a `Thing thing;` whose constructor sets
+  `v = 42` prints `thing.v = 0`). The examples are all C and have no constructors.
+
 ## Quieter console (2026-10-29)
 
 * Banner is three lines: name and version; ROM/C:/RAM sizes with the checksum; video
@@ -44,7 +77,7 @@ README.md for usage, the exact emulator commands and their output.
   (numpy) demodulates, parses the VIS, fits the line period to the sync pulses (within
   20 ppm), checks the duration (1 ms) and the picture against the card; `run.sh` then runs
   `sstv` in the emulator (`--audio-wav`, the RC filter model) and `--wav` onto an SD image
-  and decodes both. Top-level `make check` runs `fw test`, `emu test` and this.
+  and decodes both. Top-level `make check` runs `fw test`, `fw test-ctors`, `emu test` and this.
 
 ## Spec rev 11 / board rev C3: Atari joystick and paddle port (2026-10-22)
 
@@ -321,7 +354,7 @@ overruns. `--sd-trace` shows CMD0, CMD8, CMD55/ACMD41 x2, CMD58, CMD9, CMD10, th
 
 | file | status |
 |---|---|
-| `crt0.S` | vectors (256 entries, `.rept`-generated 10-byte stubs, asserted size), `_start`, `post_return` (vector copy, .data/.bss), `exception_common` (group-0 decode), `trap15_handler`, `run_user`, `user_exit_stub`, `monitor_restart`, `cpu_reset`, `irq_disable/restore` |
+| `crt0.S` | vectors (256 entries, `.rept`-generated 10-byte stubs, asserted size), `_start`, `post_return` (vector copy, .data/.bss, static constructors), `exception_common` (group-0 decode), `trap15_handler`, `run_user`, `user_exit_stub`, `monitor_restart`, `cpu_reset`, `irq_disable/restore` |
 | `post.S` | ROM word sum, RAM test (address, inverted address, byte lanes with both write orders), failure report + blink; registers only |
 | `duart.S`, `duart.h` | `duart_reset_init` (stack-less 68681 channel A set-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values |
 | `memops.S`, `string.c` | memset/memcpy/memmove (long moves when alignment allows), str*/memcmp |

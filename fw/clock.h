@@ -6,6 +6,10 @@
 #define CLOCK_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct clock_tm { int year, mon, day, hour, min, sec; };   /* 1970.., 1..12, 1..31, 0..23, 0..59, 0..59 */
 
 extern uint32_t clock_frame_clocks;     /* CPU clocks per video frame (set with the video standard) */
@@ -23,5 +27,9 @@ uint32_t clock_to_fat(uint32_t secs);                      /* (fdate << 16) | ft
 int      clock_parse(const char *s, uint32_t *secs);
 /* "YYYY-MM-DD HH:MM:SS" into buf[20] */
 void     clock_format(uint32_t secs, char *buf);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

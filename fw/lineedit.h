@@ -5,6 +5,10 @@
 #ifndef LINEEDIT_H
 #define LINEEDIT_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define LE_HISTORY 32
 #define LE_LINE_MAX 128
 
@@ -19,5 +23,9 @@ typedef int (*le_complete_fn)(const char *word, int first, char *out, int outsz,
  * set the line is recorded and Up/Down browse earlier ones. */
 int  lineedit_read(const char *prompt, char *buf, int max, le_complete_fn complete, int history);
 void lineedit_history_print(void);          /* the `history` command */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

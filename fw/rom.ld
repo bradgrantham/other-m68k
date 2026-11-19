@@ -21,6 +21,28 @@ SECTIONS
         . = ALIGN(4);
     } > ROM
 
+    /* Static constructors (C++ objects with constructors, __attribute__((constructor))):
+       tables of function pointers that crt0.S walks after .data/.bss are set up and before
+       bios_main, .preinit_array first. The layout is ld's default one: entries with a
+       priority first, in priority order, then the plain ones in link order; .ctors input
+       from an object built for the older scheme lands in the same table. KEEP because
+       nothing references the entries (--gc-sections), READONLY because the compiler
+       marks its entries writable, which would make the ROM segment one. The symbol names
+       are the ones newlib's __libc_init_array uses, although the BIOS does not link newlib
+       and crt0 does the walk itself. */
+    .preinit_array (READONLY) : {
+        PROVIDE_HIDDEN(__preinit_array_start = .);
+        KEEP(*(.preinit_array))
+        PROVIDE_HIDDEN(__preinit_array_end = .);
+    } > ROM
+
+    .init_array (READONLY) : {
+        PROVIDE_HIDDEN(__init_array_start = .);
+        KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
+        KEEP(*(.init_array EXCLUDE_FILE(*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o) .ctors))
+        PROVIDE_HIDDEN(__init_array_end = .);
+    } > ROM
+
     /* Initialised data: lives in SYSDATA, image stored in ROM, copied by crt0. */
     .data : {
         _data_start = .;
@@ -43,6 +65,10 @@ SECTIONS
         _rom_checksum = .;
         SHORT(0xFFFF)
     } > ROM
+
+    /* Destructors are dropped: the BIOS never exits, so nothing would ever walk the table
+       (and with it gone --gc-sections removes the functions it pointed at). */
+    /DISCARD/ : { *(.fini_array .fini_array.* .dtors .dtors.*) }
 
     /DISCARD/ : { *(.comment .note* .eh_frame .debug_*) }
 }

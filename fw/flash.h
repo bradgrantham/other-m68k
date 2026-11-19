@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include "flash_layout.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct flash_op {
     uint32_t cmd1, cmd2;
     uint32_t dst;
@@ -34,5 +38,9 @@ void flash_update(const char *path);
  * added to `ticks` and the clock.  0 ok, 1 erase timeout, 2 program timeout, 3 verify
  * mismatch. */
 int flash_write_sector(void *dst, const uint16_t *src);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

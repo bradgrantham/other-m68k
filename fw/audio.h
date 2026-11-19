@@ -22,6 +22,10 @@
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 #include "syscalls.h"                   /* AUDIO_NBUF, AUDIO_BUF_MAX */
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct audio_state {
     uint8_t  buf[AUDIO_NBUF][AUDIO_BUF_MAX];
     uint8_t *volatile play;
@@ -47,5 +51,9 @@ int      audio_active(void);              /* a buffer is playing or queued: INTE
 void     audio_update_mode(void);         /* pick the fast or the slow level-4 handler (if vector 28 is the BIOS's) */
 void     audio_reset_vector(void);        /* force vector 28 back to a BIOS handler (program exit) */
 void     audio_isr_service(void);         /* one line of the player in C (the slow handler) */
+
+#ifdef __cplusplus
+}
+#endif
 #endif
 #endif

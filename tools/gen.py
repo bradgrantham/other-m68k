@@ -320,8 +320,12 @@ def classify_args(s):
         out.append((ctype, name, reg))
     return out
 
+# C linkage for the prototypes, so that C++ sources (BIOS or user programs) can include the headers
+CXX_OPEN = ["#ifdef __cplusplus", 'extern "C" {', "#endif", ""]
+CXX_CLOSE = ["#ifdef __cplusplus", "}", "#endif", ""]
+
 def gen_syscalls_h(d):
-    o = ["/* %s */" % HDR, "#ifndef SYSCALLS_H", "#define SYSCALLS_H", "#include <stdint.h>", ""]
+    o = ["/* %s */" % HDR, "#ifndef SYSCALLS_H", "#define SYSCALLS_H", "#include <stdint.h>", ""] + CXX_OPEN
     A = o.append
     A("#define SYSCALL_TRAP %d" % d["syscall"]["trap"])
     A("")
@@ -348,6 +352,7 @@ def gen_syscalls_h(d):
         args = ", ".join("%s %s" % (t, nme) for t, nme in s["args"]) or "void"
         A("%s sys_%s(%s); /* %s */" % (s["ret"], s["name"], args, s["desc"]))
     A("")
+    o += CXX_CLOSE
     A("#endif /* SYSCALLS_H */")
     return "\n".join(o) + "\n"
 
@@ -401,11 +406,11 @@ def gen_syscall_dispatch(d):
     return "\n".join(o) + "\n"
 
 def gen_bios_protos(d):
-    o = ["/* %s */" % HDR, "#ifndef BIOS_SYSCALLS_H", "#define BIOS_SYSCALLS_H", "#include \"syscalls.h\"", ""]
+    o = ["/* %s */" % HDR, "#ifndef BIOS_SYSCALLS_H", "#define BIOS_SYSCALLS_H", "#include \"syscalls.h\"", ""] + CXX_OPEN
     for s in d["syscalls"]:
         args = ", ".join("%s %s" % (t, nme) for t, nme in s["args"]) or "void"
         o.append("%s bios_%s(%s);" % (s["ret"], s["name"], args))
-    o += ["", "#endif", ""]
+    o += [""] + CXX_CLOSE + ["#endif", ""]
     return "\n".join(o)
 
 # ---------------------------------------------------------------- emulator tables
@@ -570,6 +575,13 @@ def main():
     else:
         print("wrote %d files (%d changed)" % (len(outputs), len(changed)))
 
+# C++ keywords that are ordinary identifiers in C
+CXX_KEYWORDS = set("""alignas alignof and and_eq asm bitand bitor bool catch char8_t char16_t char32_t class
+    compl concept consteval constexpr constinit const_cast co_await co_return co_yield decltype delete
+    dynamic_cast explicit export false friend mutable namespace new noexcept not not_eq nullptr operator or
+    or_eq private protected public reflexpr reinterpret_cast requires static_assert static_cast template
+    this thread_local throw true try typeid typename using virtual wchar_t xor xor_eq""".split())
+
 def validate(d):
     # regions must not overlap, sizes powers of two, bases aligned
     regs = sorted(((n(r["base"]), n(r["size"]), r["name"]) for r in d["memory_map"]))
@@ -592,6 +604,13 @@ def validate(d):
     for s in d["syscalls"]:
         ints = sum(1 for t, _ in s["args"] if not is_pointer(t)); ptrs = len(s["args"]) - ints
         assert ints <= 3 and ptrs <= 2, "syscall %s exceeds register budget" % s["name"]
+    # syscalls.h is included from C++ too: no C++ keyword as a syscall, argument, struct or field name
+    names = [("syscall %s" % s["name"], s["name"]) for s in d["syscalls"]]
+    names += [("syscall %s argument" % s["name"], a) for s in d["syscalls"] for _, a in s["args"]]
+    names += [("struct", st) for st in d["abi"]["structs"]]
+    names += [("struct %s field" % st, f) for st, fields in d["abi"]["structs"].items() for _, f in fields]
+    for where, name in names:
+        assert name.split("[")[0] not in CXX_KEYWORDS, "%s `%s` is a C++ keyword (syscalls.h must compile as C++)" % (where, name)
     for blk in d["registers"].values():
         offs = [(r["offset"], r["access"]) for r in blk["regs"]]
         assert len(offs) == len(set(offs)), "duplicate register offset/access"

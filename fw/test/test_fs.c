@@ -384,7 +384,7 @@ void test_fs(const char *path, const char *cimg)
 
     /* lazy mount on first use, files put there by mcopy */
     CHECK_EQ(find_entry("README.TXT", &e), 1);
-    CHECK_EQ(e.size, 33); CHECK_EQ(e.attr, 0);
+    CHECK_EQ(e.size, 34); CHECK_EQ(e.attr, 0);
     CHECK_EQ(find_entry("HELLO.TXT", &e), 1);
     CHECK_EQ(e.size, 13);
     CHECK_EQ(find_entry("NOPE.TXT", &e), 0);

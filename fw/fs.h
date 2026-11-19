@@ -10,6 +10,10 @@
 #include <stdint.h>
 #include "syscalls.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define FS_NFILES  8
 #define FS_NDIRS   4
 #define FS_FD_BASE 3
@@ -43,5 +47,9 @@ int  fs_copy(const char *src, const char *dst, uint8_t *buf, unsigned buflen);
 int  fs_mkfs(const char *drive, uint8_t *buf, unsigned buflen);
 void fs_close_all(void);                /* user program ended: release every slot */
 const char *fs_strerror(int err);       /* E_* -> text */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -5,6 +5,10 @@
 #include "elf.h"
 #include "fs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct exec_image {
     char path[FS_PATH_MAX];
     uint32_t entry;
@@ -24,5 +28,9 @@ int exec_load(struct exec_image *img);
 void user_launch(uint32_t entry, const char *argv0, const char *args) __attribute__((noreturn));
 
 #define EXEC_MAX_ARGS 32        /* = ARGS_MAX_WORDS (args.h) */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

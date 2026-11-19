@@ -44,9 +44,11 @@ fw/build/c.img: tools/mkflashvol.sh $(FLASHFS_FILES) generated/hw.h
 fw/build/flash.img fw/build/rom_even.bin fw/build/rom_odd.bin: fw/build/rom.bin fw/build/c.img fw/mkrom.py
 	python3 fw/mkrom.py --split fw/build/flash.img fw/build/rom_even.bin fw/build/rom_odd.bin fw/build/rom.bin fw/build/c.img
 
-# all the tests: firmware host tests, emulator tests, the SSTV encoder (host + emulator)
+# all the tests: firmware host tests, static constructors in the ROM (emulator), emulator
+# tests, the SSTV encoder (host + emulator)
 check: flash emu
 	$(MAKE) -C fw test
+	$(MAKE) -C fw test-ctors
 	$(MAKE) -C emu test
 	$(MAKE) -C tests/sstv check
 

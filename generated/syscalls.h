@@ -3,6 +3,10 @@
 #define SYSCALLS_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SYSCALL_TRAP 15
 
 /* ---- ABI constants ---- */
@@ -166,7 +170,7 @@ uint8_t * sys_audio_start(unsigned bufsize); /* Begin streaming PDM pattern byte
 uint8_t * sys_audio_next(const uint8_t * filled, int block); /* Hand the BIOS a buffer the program has filled (one obtained from audio_start or a previous audio_next) and get the next buffer to fill. Buffers play in the order handed in; the HSYNC interrupt is enabled while any are queued. If no buffer is free: block != 0 waits (interrupts enabled) until the one being played finishes, which paces the program to the audio rate; block == 0 returns NULL at once and the program retries later (the handed buffer is still accepted). filled == NULL hands nothing in and only tries to obtain a free buffer. Returns NULL also when the stream is not started, or when filled is not one of the BIOS buffers. */
 int sys_audio_last(const uint8_t * filled, int block); /* Hand in the final buffer (filled may be NULL for none) and end the stream. block != 0 waits until everything queued has played; block == 0 returns at once and the queued buffers finish playing on their own. When the last byte has played the handler writes the idle pattern 0xAA and disables the HSYNC interrupt, so idle audio costs no CPU. Returns 0, or E_INVAL if the stream was not started. Exiting the program stops the stream at once instead: queued buffers are dropped, the idle pattern is written and the interrupt is disabled. */
 int sys_unlink(const char * path); /* Delete a file or an empty directory. E_NOENT if missing, E_EXIST if the directory is not empty, E_ACCES if the entry is read-only. */
-int sys_rename(const char * old, const char * new); /* Rename or move a file or directory within one volume: `new` is resolved against the current directory of the volume `old` is on (a drive letter in `new` is ignored), so give a directory in `new` to move the entry and a bare name to rename it in place when that volume's current directory is the one it lives in. E_EXIST if `new` exists. */
+int sys_rename(const char * oldpath, const char * newpath); /* Rename or move a file or directory within one volume: `newpath` is resolved against the current directory of the volume `oldpath` is on (a drive letter in `newpath` is ignored), so give a directory in `newpath` to move the entry and a bare name to rename it in place when that volume's current directory is the one it lives in. E_EXIST if `newpath` exists. */
 int sys_mkdir(const char * path); /* Create a directory. E_EXIST if the name is taken. */
 int sys_chdir(const char * path); /* Change the current directory of a volume, or with a bare "X:" the current drive (DOS semantics: `chdir("D:/GAMES")` sets D:'s directory without switching to it). The setting is global and survives program exit. */
 int sys_getcwd(unsigned len, char * buf); /* Current drive and directory as "X:/dir/sub" into buf (len bytes, NUL included). Returns the length, E_INVAL if len is 0 or it does not fit, E_NODEV if the current volume is not mounted. */
@@ -174,5 +178,9 @@ uint32_t sys_time(void); /* BIOS clock: seconds since 1970-01-01 00:00 local tim
 int sys_set_time(uint32_t secs); /* Set the BIOS clock (seconds since 1970-01-01 00:00 local time). Used by the monitor's `date` command; a program may set it too. */
 int sys_joystick(void); /* Joystick switches as a bit mask (JOY_UP, JOY_DOWN, JOY_LEFT, JOY_RIGHT, JOY_FIRE; 1 = pressed), read directly from the DUART input port. With paddles plugged in, left and right are the paddle buttons and up/down are the pot lines (meaningless). */
 int sys_paddles(struct paddles * p); /* Paddle positions: a and b are 0..PADDLE_FULL (1023 = the nominal 12 ms full scale), valid has PADDLE_A_VALID/PADDLE_B_VALID for the lines that fell during the measured frame (clear: no paddle, or at the end stop; the value is then 1023), frame is the ticks value of the measurement. The first call switches measuring on (that call returns valid 0; data follows a frame later); p == NULL switches it off and leaves the capacitors discharged so up/down read as a joystick again. Off at program exit. */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SYSCALLS_H */

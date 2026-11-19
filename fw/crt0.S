@@ -6,7 +6,8 @@
  *             first instruction fetch). IRQ autovectors 25..28 and TRAP #15 (47) point
  *             directly at their handlers; every other vector points at a 10-byte stub
  *             that pushes its vector number and jumps to exception_common.
- *   After POST the table is copied to RAM at 0 so programs can hook vectors.
+ *   After POST the table is copied to RAM at 0 so programs can hook vectors, .data is
+ *   copied, .bss cleared and the static constructors run; then bios_main.
  */
 #include "hw.inc"
 
@@ -95,8 +96,39 @@ post_return:
 5:	/* hand POST results to C */
 	move.w	%d6,post_rom_sum
 	move.w	%d7,gpio_shadow
+	/* Static constructors: .preinit_array, then .init_array (rom.ld). They run once per
+	 * reset, in supervisor mode with interrupts masked, on the supervisor stack, with
+	 * .data/.bss and the RAM vector table in place and nothing else: the drivers
+	 * (console, serial RX, input, filesystem) come up in bios_main, after them. */
+	lea	__preinit_array_start,%a2
+	lea	__preinit_array_end,%a3
+	bsr	run_init_table
+	lea	__init_array_start,%a2
+	lea	__init_array_end,%a3
+	bsr	run_init_table
 	jsr	bios_main
 	bra	monitor_restart
+
+/* Call the function pointers in [a2, a3) in ascending order. The C ABI preserves a2/a3
+ * across the calls. */
+run_init_table:
+1:	cmp.l	%a3,%a2
+	bhs	2f
+	move.l	(%a2)+,%a0
+	jsr	(%a0)
+	bra	1b
+2:	rts
+
+/* int __cxa_atexit(void (*fn)(void *), void *obj, void *dso) -- the constructor of a C++
+ * static object that has a destructor registers the destructor here, with &__dso_handle
+ * as the third argument. The BIOS never exits, so nothing is recorded and no destructor
+ * ever runs; 0 = registered. __dso_handle is only an address. */
+	.globl	__cxa_atexit
+__cxa_atexit:
+	moveq	#0,%d0
+	rts
+	.globl	__dso_handle
+	.equ	__dso_handle, _vectors
 
 /* ------------------------------------------------------------------------- */
 /* Common exception entry. On entry the stack holds: vector.w, [group-0 extension],

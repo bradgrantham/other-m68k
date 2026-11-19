@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include "syscalls.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int  joy_read(void);                        /* JOY_* mask, 1 = pressed */
 void joy_paddles_set(int on);               /* start / stop measuring (off leaves the capacitors shorted) */
 int  joy_paddles_on(void);
@@ -14,5 +18,9 @@ void joy_paddles_get(struct paddles *p);    /* the last completed frame */
 void joy_vblank(void);                      /* from irq_vblank: finish the frame, start the next */
 void joy_ipc(uint8_t ipcr);                 /* from irq_duart when ISR.IPC is set, with the IPCR just read */
 uint32_t joy_scale(uint32_t counts);        /* counter ticks (X1/16) -> 0..PADDLE_FULL (pure; host tested) */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

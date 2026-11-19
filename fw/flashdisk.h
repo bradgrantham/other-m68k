@@ -5,6 +5,10 @@
 #define FLASHDISK_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define FLASHDISK_SECTORS   (FLASH_VOL_SIZE / 512)
 #define FLASHDISK_BLOCK     (FLASH_SECTOR_BYTES / 512)      /* sectors per erase sector */
 
@@ -15,6 +19,10 @@ int flashdisk_dirty(void);
 extern uint32_t flashdisk_programs;         /* erase+program cycles since boot */
 #ifdef HOST_TEST
 extern uint8_t *flashdisk_base;             /* the test's stand-in for the flash array */
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

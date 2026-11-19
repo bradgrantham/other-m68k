@@ -1424,14 +1424,14 @@
       "args": [
         [
           "const char *",
-          "old"
+          "oldpath"
         ],
         [
           "const char *",
-          "new"
+          "newpath"
         ]
       ],
-      "desc": "Rename or move a file or directory within one volume: `new` is resolved against the current directory of the volume `old` is on (a drive letter in `new` is ignored), so give a directory in `new` to move the entry and a bare name to rename it in place when that volume's current directory is the one it lives in. E_EXIST if `new` exists."
+      "desc": "Rename or move a file or directory within one volume: `newpath` is resolved against the current directory of the volume `oldpath` is on (a drive letter in `newpath` is ignored), so give a directory in `newpath` to move the entry and a bare name to rename it in place when that volume's current directory is the one it lives in. E_EXIST if `newpath` exists."
     },
     {
       "num": 35,

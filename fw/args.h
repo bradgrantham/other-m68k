@@ -5,6 +5,10 @@
 #define ARGS_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define ARGS_MAX_WORDS 32       /* what a program may receive (exec.h EXEC_MAX_ARGS agrees) */
 #define ARGS_MAX_BYTES 512      /* the argument string after expansion, NUL included */
 
@@ -29,5 +33,9 @@ int  join_path(char *out, unsigned outsz, const char *dir, const char *name);
  * (outsz bytes). Returns the word count, or E_INVAL when more than ARGS_MAX_WORDS words or
  * outsz bytes would result. */
 int  args_expand(const char *args, char *out, unsigned outsz);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

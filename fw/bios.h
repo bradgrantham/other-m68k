@@ -17,7 +17,14 @@
 
 #ifdef HOST_TEST
 #include <string.h>
-#else
+#endif
+
+/* Everything the BIOS declares has C linkage, so a C++ source can include this header. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifndef HOST_TEST
 /* string.c / memops.S */
 void *memcpy(void *dst, const void *src, size_t n);
 void *memmove(void *dst, const void *src, size_t n);
@@ -180,5 +187,9 @@ void bios_main(void);
 void print_banner(void);
 void putchar_both(int c);               /* console, plus serial while console_serial is set */
 extern int console_serial;              /* 1 during POST/banner, 0 after: serial A belongs to programs */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

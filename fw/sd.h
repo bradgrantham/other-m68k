@@ -5,6 +5,10 @@
 #define SD_H
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SD_BLOCK_SIZE 512
 
 enum sd_type { SD_NONE = 0, SD_V1, SD_V2, SD_V2_HC };
@@ -57,6 +61,10 @@ void sd4_write512(const uint8_t *buf, const uint8_t *crcnib);
 /* The host tests route the register accesses to the emulator's card model. */
 void     sdt_write(uint16_t drive);
 uint16_t sdt_read(void);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif
