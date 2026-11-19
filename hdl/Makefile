@@ -5,6 +5,10 @@
 #   make lint    iverilog -tnull on the synthesisable sources
 #   make synth   yosys generic synthesis + cell statistics for each CPLD (build/synth_*.log)
 #   make fit     yosys -> EDIF -> Atmel fitter (wine) -> build/fit/*.jed; see fit.sh
+#   make svf     build/fit/*.jed -> build/fit/*.svf with prjbureau's fuseconv (needs PRJBUREAU)
+#   make jtag-scan                 list the TAPs OpenOCD finds (expect two, 0x0150803f)
+#   make flash-cpld1 TAP=tap0|tap1 play cpld1_mmu.svf into one TAP (FT232H/UM232H, OpenOCD)
+#   make flash-cpld2 TAP=tap0|tap1 play cpld2_io.svf into the other
 #   make clean
 
 IVERILOG ?= iverilog
@@ -18,7 +22,7 @@ RTL      := cpld1_mmu.v cpld2_io.v
 TB       := tb/tb_m68k_bus.v tb/tb_sram.v tb/tb_system.v
 BUILD    := build
 
-.PHONY: all sim wave lint synth fit pins-check clean
+.PHONY: all sim wave lint synth fit svf jtag-scan flash-cpld1 flash-cpld2 pins-check clean
 
 all: lint sim synth
 
@@ -51,6 +55,40 @@ FITFLAGS ?= -preassign keep -strategy JTAG = on -strategy power_reset on -strate
 fit:
 	./fit.sh cpld1_mmu cpld1_mmu.v cpld1_mmu -- $(FITFLAGS) -strategy xor_synthesis = on
 	./fit.sh cpld2_io  cpld2_io.v  cpld2_io  -- $(FITFLAGS)
+
+# JED -> SVF: whitequark/prjbureau's util.fuseconv, run from its checkout (it needs the
+# python module bitarray; PRJBUREAU_PYDEPS is an optional directory holding it).
+PRJBUREAU        ?= $(HOME)/.local/src/prjbureau
+PRJBUREAU_PYDEPS ?= $(HOME)/.local/src/prjbureau-pydeps
+FIT := $(BUILD)/fit
+svf: $(FIT)/cpld1_mmu.svf $(FIT)/cpld2_io.svf
+$(FIT)/%.svf: $(FIT)/%.jed
+	cd $(PRJBUREAU) && PYTHONPATH=$(PRJBUREAU_PYDEPS) python3 -m util.fuseconv -d ATF1508AS $(abspath $<) $(abspath $@)
+
+# Programming, the sequence Griffin's cpld/Makefile uses.  The chain is header TDI -> U6
+# (CPLD1) -> U7 (CPLD2) -> header TDO: two ATF1508AS TAPs, IR length 10.  The SVF files
+# are per-chip; OpenOCD's "svf -tap" pads the other TAP with BYPASS.  Which of tap0/tap1
+# is U6 has not been established on hardware, so TAP has no default: see
+# docs/bringup-checklist.md stage D (program CPLD1, look for 12 MHz CPUCLK).
+OPENOCD ?= sudo openocd
+OPENOCD_JTAG = $(OPENOCD) -f interface/ftdi/um232h.cfg \
+    -c "adapter speed 500" \
+    -c "transport select jtag" \
+    -c "jtag newtap tap0 tap -irlen 10 -expected-id 0x0150803f" \
+    -c "jtag newtap tap1 tap -irlen 10 -expected-id 0x0150803f" \
+    -c "adapter speed 2000" \
+    -c init
+
+jtag-scan:
+	$(OPENOCD_JTAG) -c "scan_chain" -c shutdown
+
+# No dependency on the .svf rule: the files are usually copied here from the build machine.
+flash-cpld1 flash-cpld2: flash-%:
+	@case "$(TAP)" in tap0|tap1) ;; *) echo "set TAP=tap0 or TAP=tap1"; exit 1;; esac
+	@test -s $(FIT)/$(SVF_$*).svf || { echo "$(FIT)/$(SVF_$*).svf missing: make svf, or copy it here"; exit 1; }
+	$(OPENOCD_JTAG) -c "svf $(FIT)/$(SVF_$*).svf -tap $(TAP).tap" -c shutdown
+SVF_cpld1 := cpld1_mmu
+SVF_cpld2 := cpld2_io
 
 pins-check:
 	python3 pins.py check cpld1_mmu cpld1_mmu.v
