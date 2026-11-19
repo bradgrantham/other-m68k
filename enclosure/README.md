@@ -111,11 +111,13 @@ tray's lip.
   two layers against the bed, and a two-extruder print puts them in two colours in the same
   plane. `top.3mf` carries both as one object with the lid on extruder 1 and the letters on
   extruder 2. On a single-extruder printer use PrusaSlicer's single-extruder multi-material
-  mode with a manual swap as the tool change: Printer Settings, General: 2 extruders, "Single
-  Extruder Multi Material" on; Printer Settings, Custom G-code, Tool change G-code: `M600` (or
-  the printer's pause command); Print Settings, Multiple Extruders: wipe tower off; Print
-  Settings, Advanced: elephant foot compensation 0 and "Detect thin walls" on, or the
-  one-extrusion-wide strokes disappear. Expect three swaps: within layer 1, within layer 2,
+  mode with a manual swap as the tool change (Expert mode shows these settings): Printer
+  Settings, General: 2 extruders, "Single Extruder Multi Material" on; Printer Settings,
+  Custom G-code, Tool change G-code: `M600` (or the printer's pause command); Print Settings,
+  Multiple Extruders: wipe tower off; Print Settings, Advanced: elephant foot compensation 0,
+  or the one-extrusion-wide strokes disappear. The Arachne perimeter generator (the default)
+  handles the thin strokes; with the Classic generator turn "Detect thin walls" on. Expect
+  three swaps: within layer 1, within layer 2,
   and back to the face colour for layer 3, then none. To test, cut the object at 2 mm in the
   slicer and print the slab. The letters are small for a 0.4 mm nozzle; `label_size` in
   `case.scad` can go to 3.2 before the back-edge labels touch. No badge: glue one on or use
