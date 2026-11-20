@@ -6,10 +6,12 @@
 // (PS/2, audio, SD, joystick, buttons), z = 0 at the board bottom; the board rests on the
 // bottom half's corner bosses and pillars, the halves split at the board bottom.
 //
-//   openscad -D 'part="top"'      -o build/top.stl      case.scad   (print upside down)
-//   openscad -D 'part="bottom"'   -o build/bottom.stl   case.scad
-//   openscad -D 'part="inserts"'  -o build/inserts.stl  case.scad   (button caps, light pipes)
-//   openscad -D 'part="assembly"' case.scad                         (preview with the board)
+//   openscad -D 'part="top"'      -o stl/top.stl      case.scad   (lid body, print upside down)
+//   openscad -D 'part="face"'     -o stl/face.stl     case.scad   (lid face veneer with the raised
+//                                                                  labels, print face up, glue on)
+//   openscad -D 'part="bottom"'   -o stl/bottom.stl   case.scad
+//   openscad -D 'part="inserts"'  -o stl/inserts.stl  case.scad   (button caps, light pipes)
+//   openscad -D 'part="assembly"' case.scad                       (preview with the board)
 //
 // Descended from the Rocinante rev1 case (~/trees/rocinante/case): same shell, lip, heat-set
 // insert bosses, membrane-spring button pressors and LED light pipes; the bosses are fused into
@@ -52,7 +54,14 @@ pipe_in    = 4.25;   // light pipe bore (TAP rod stock)
 pipe_out   = 6.25;
 
 vent_w = 2; vent_pitch = 4; vent_margin = 2;
-label_size = 2.6; label_depth = 0.4; label_inset = 4;   // letter pockets in the lid top: two 0.2 mm layers, filled by labels.stl in a second colour
+// the face: a veneer glued on the lid top, printed face up with the port names raised on it in
+// a second colour (one colour change in the slicer at face_t); see README "Labels"
+face_t = 0.6;        // veneer, three 0.2 mm layers
+face_inset = 0.2;    // veneer edge inside the lid edge, per side
+label_h = 0.4;       // letters proud of the veneer, two layers
+label_size = 3.2;    // cap height; strokes about 0.5 mm, one Arachne line
+label_inset = 4;     // letter centre line in from the wall
+label_row   = 5;     // second row, further in: the back-edge and LED labels alternate rows, they are too close for one
 
 $fn = 48;
 eps = 0.01;
@@ -68,7 +77,8 @@ r_out = r_in + wall;
 z_floor_in  = -tray;
 z_floor_out = z_floor_in - wall_top;
 z_lid_in    = board_t + max_part_h + top_space;
-z_lid_out   = z_lid_in + wall_top;
+z_lid_out   = z_lid_in + wall_top;    // lid body top; the face veneer sits on it
+z_face_out  = z_lid_out + face_t;
 z_mid_wall  = (z_lid_in + board_t) / 2;
 
 module rrect(x0, y0, x1, y1, r)
@@ -162,11 +172,11 @@ module pressors_sub() for (b = buttons) translate([b[0], b[1], board_t + b[2]]) 
         cylinder(d = spring_d, h = z_lid_out - spring_t - (board_t + b[2]));
         cylinder(d = pressor_d, h = z_lid_out);
     }
-    translate([0, 0, 2.2]) cylinder(d = shaft_d, h = z_lid_out);   // cap shaft hole; 2 mm of solid pressor foot stays
+    translate([0, 0, 2.2]) cylinder(d = shaft_d, h = z_face_out);  // cap shaft hole; 2 mm of solid pressor foot stays
 }
 module pipes_add() for (l = leds) translate([l[0], l[1], board_t + l[2] + 0.4])
     cylinder(d = pipe_out, h = z_lid_out - (board_t + l[2] + 0.4));
-module pipes_sub() for (l = leds) translate([l[0], l[1], board_t + l[2]]) cylinder(d = pipe_in, h = z_lid_out);
+module pipes_sub() for (l = leds) translate([l[0], l[1], board_t + l[2]]) cylinder(d = pipe_in, h = z_face_out);
 
 // ---------------------------------------------------------------- vents and labels
 module vents_sub() difference() {
@@ -174,26 +184,39 @@ module vents_sub() difference() {
         x0 = v[1] + vent_margin; x1 = v[3] - vent_margin;
         y0 = v[2] + vent_margin; y1 = v[4] - vent_margin;
         for (y = [y0 : vent_pitch : y1 - vent_w])
-            translate([x0, y, z_lid_in - 1]) cube([x1 - x0, vent_w, wall_top + 2]);
+            translate([x0, y, z_lid_in - 1]) cube([x1 - x0, vent_w, wall_top + face_t + 2]);
     }
     for (p = pillars) translate([p[0], p[1], 0]) cylinder(d = pillar_d + 6, h = 100);
 }
-module deboss_top(x, y, s, halign = "center") translate([x, y, z_lid_out - label_depth])
-    linear_extrude(label_depth + eps) text(s, size = label_size, halign = halign, valign = "center", font = "Liberation Sans:style=Bold");
-function label_y(edge) = edge == "back" ? in_y1 - label_inset : in_y0 + label_inset;
+module label_text(x, y, s, halign = "center") translate([x, y])
+    text(s, size = label_size, halign = halign, valign = "center", font = "Liberation Sans:style=Bold");
 function leftmost_button() = min([for (b = buttons) b[0]]);
-module labels_sub() {
-    for (c = rect_cutouts)  deboss_top(c[2], label_y(c[1]), c[6]);
-    for (c = round_cutouts) deboss_top(c[2], label_y(c[1]), c[5]);
-    for (n = notches)       deboss_top(n[2], label_y(n[1]), n[6]);
-    for (l = leds)          deboss_top(l[0], l[1] + pipe_out / 2 + 3, l[3]);
+// port labels: [x, edge, text]; the back edge alternates rows by order along the edge
+edge_labels = concat([for (c = rect_cutouts) [c[2], c[1], c[6]]], [for (c = round_cutouts) [c[2], c[1], c[5]]],
+                     [for (n = notches) [n[2], n[1], n[6]]]);
+function rank(x, list) = len([for (m = list) if (m[0] < x) 1]);   // how many of list come before x
+function label_row_of(l) = l[1] == "back" ? rank(l[0], [for (m = edge_labels) if (m[1] == "back") m]) % 2 : 0;
+function label_y(edge, row) = edge == "back" ? in_y1 - label_inset - row * label_row : in_y0 + label_inset + row * label_row;
+module labels_2d() {
+    for (l = edge_labels) label_text(l[0], label_y(l[1], label_row_of(l)), l[2]);
+    for (l = leds)        label_text(l[0], l[1] + pipe_out / 2 + 3 + (rank(l[0], leds) % 2) * (label_row - 0.5), l[3]);
     // beside the buttons, outside the spring rings: the leftmost button's label to its left, the others to the right
     for (b = buttons) let (left = b[0] == leftmost_button())
-        deboss_top(b[0] + (left ? -1 : 1) * (spring_d / 2 + 1.5), b[1], b[3], left ? "right" : "left");
+        label_text(b[0] + (left ? -1 : 1) * (spring_d / 2 + 1.5), b[1], b[3], left ? "right" : "left");
 }
-// the same letters as solids filling the pockets exactly, so lid and letters can be two
-// extruders (or two manual filament swaps) in the same first layers; see README "Labels"
-module labels_add() intersection() { labels_sub(); outer_solid(); }
+// the face: a face_t veneer the shape of the lid top, face_inset inside its edge, with the
+// vents, pipe bores and cap shaft holes through it, an opening over each button's spring ring
+// (so the veneer does not stiffen the membrane; the cap sits inside it on the pressor), and
+// the letters label_h proud. Printed face up, glued on the lid body.
+module face() {
+    difference() {
+        translate([0, 0, z_lid_out]) linear_extrude(face_t)
+            offset(delta = -face_inset) rrect(out_x0, out_y0, out_x1, out_y1, r_out);
+        vents_sub(); pipes_sub(); pressors_sub();
+        for (b = buttons) translate([b[0], b[1], z_lid_out - 1]) cylinder(d = spring_d + 0.4, h = face_t + 2);
+    }
+    translate([0, 0, z_face_out - eps]) linear_extrude(label_h + eps) labels_2d();
+}
 
 // ---------------------------------------------------------------- the halves
 module top_half() difference() {
@@ -204,7 +227,7 @@ module top_half() difference() {
         pressors_add();
         pipes_add();
     }
-    cutouts(); notches(); pressors_sub(); pipes_sub(); vents_sub(); labels_sub();
+    cutouts(); notches(); pressors_sub(); pipes_sub(); vents_sub();
 }
 module bottom_half() difference() {
     union() {
@@ -258,12 +281,12 @@ module plugs() color("orange", 0.7) {
     }
 }
 
-if (part == "top")       translate([0, 0, z_lid_out]) rotate([180, 0, 0]) top_half();   // lid face down for printing
-if (part == "labels")    translate([0, 0, z_lid_out]) rotate([180, 0, 0]) labels_add();  // same placement as top
+if (part == "top")       translate([0, 0, z_lid_out]) rotate([180, 0, 0]) top_half();   // lid body face down for printing
+if (part == "face")      translate([0, 0, -z_lid_out]) face();                           // veneer face up, letters on top
 if (part == "bottom")    translate([0, 0, -z_floor_out]) bottom_half();
-if (part == "inserts")   inserts(pressor_d, shaft_d, pipe_in, z_lid_out - board_t - 0.4 - 1.1, len(buttons), len(leds));
+if (part == "inserts")   inserts(pressor_d, shaft_d, pipe_in, z_face_out - board_t - 0.4 - 1.1, len(buttons), len(leds));
 if (part == "board")     { board_model(); part_models(); }              // merged with the KiCad models into stl/board.stl
 if (part == "plugs")     plugs();
-if (part == "fit")       { top_half(); bottom_half(); }                  // both halves in place; stl/fit.stl adds board and plugs
-if (part == "assembly") { bottom_half(); color("gray", 0.6) top_half(); plugs();
+if (part == "fit")       { top_half(); bottom_half(); face(); }          // all in place; stl/fit.stl adds board and plugs
+if (part == "assembly") { bottom_half(); color("gray", 0.6) top_half(); color("gold") face(); plugs();
                           if (!board_stl) { board_model(); part_models(); } else import("stl/board.stl"); }

@@ -23,9 +23,8 @@ the board or the design changes. About two minutes, most of it the two lid rende
 | file | what |
 |---|---|
 | `build/board.scad` | generated include: board size, holes, cutouts, notches, buttons, LEDs, pillars, vents, the tallest part, the fit-model boxes and headers |
-| `stl/top.stl` | the lid, already turned face down for printing |
-| `stl/labels.stl` | the lid's letters as solids, same placement as `top.stl`, for a second colour (see "Labels") |
-| `stl/top.3mf` | lid and letters as one two-part PrusaSlicer object, extruders 1 and 2 already assigned |
+| `stl/top.stl` | the lid body, already turned face down for printing |
+| `stl/face.stl` | the lid face: a 0.6 mm veneer with the port names raised 0.4 mm, printed face up and glued on (see "Labels") |
 | `stl/bottom.stl` | the tray |
 | `stl/inserts.stl` | two button caps and three light-pipe rods |
 | `stl/board.stl` | fit check: the board with its parts, in case coordinates (see "Fit check") |
@@ -42,7 +41,6 @@ the board or the design changes. About two minutes, most of it the two lid rende
 | `inserts.scad` | the button caps and light pipes, called from `case.scad` with its dimensions |
 | `merge_stl.py` | combines STLs into one binary STL; moves a `kicad-cli` export into case coordinates and drops its board body |
 | `fit_check.py` | ray-casts every point of the board and plug meshes against the closed case mesh; fails `make` if anything is inside the plastic by more than 0.05 mm |
-| `make_3mf.py` | writes a PrusaSlicer multi-part 3MF from STLs with an extruder per part |
 
 ## Coordinates
 
@@ -59,7 +57,8 @@ tray's lip.
   rounded to follow the board's 3 mm corners. The tray is 4 mm deep inside: lead ends, and the
   DE-9's board-lock pegs, which the KiCad model puts 3.8 mm below the board (the fit check
   caught them against a 3 mm floor). The lid interior is the tallest part plus 1 mm: 13.5 mm
-  for the two vertical HC-49/U crystals today, so the case is 180 + 5 by 125 + 5 by 24.1 mm.
+  for the two vertical HC-49/U crystals today, so the case is 180 + 5 by 125 + 5 by 24.7 mm
+  with the 0.6 mm face veneer on the lid.
   An HC-49/US low-profile crystal pair would take 2 mm off the height.
 * **Lip.** The tray's wall rises 2.5 mm into the lid along the inner half of the wall
   thickness, 0.15 mm clearance per side (Rocinante used 1 mm, which with a 150 mm box already
@@ -96,32 +95,30 @@ tray's lip.
 * **Buttons.** Omron B3F-1000 (actuator 4.3 mm above the board). A 6 mm pressor column comes
   down from the lid to 0.2 mm above the actuator inside a 12 mm ring cavity that leaves a
   0.4 mm membrane at the lid top as the spring; a 3 mm hole from the top takes the cap's
-  shaft, with 2 mm of solid pressor foot left. RESET and NMI are debossed on the front wall
-  below them, because the spring rings fill the lid above.
+  shaft, with 2 mm of solid pressor foot left. The face veneer has a 12.4 mm opening over
+  each spring ring so it does not stiffen the membrane; the cap sits inside it on the
+  pressor, 0.4 mm proud of the face. RESET and NMI are on the face beside the buttons.
 * **LEDs.** 0805 top-emitting LEDs, 1.1 mm tall. A 6.25 mm tube comes down to 0.4 mm above
   the LED with a 4.25 mm bore for TAP rod stock; the insert rods are printed to length and
   trimmed.
 * **Vents.** 2 mm slots at 4 mm pitch over the footprints of U1, U6 and U7 (the 68000 and the
   two ATF1508s, the hottest parts), 2 mm inside each outline, kept 3 mm clear of the pillars.
-* **Labels.** Port names in the lid top 4 mm in from the wall above each cutout, behind each
-  LED, and beside the buttons (RESET to the left of its button, NMI to the right, outside the
-  12 mm spring rings), 2.6 mm bold Liberation Sans. They are 0.4 mm pockets in the lid, two
-  0.2 mm layers, and `labels.stl` is the same letters as solids that fill the pockets exactly
-  and lie flush with the face. The lid prints face down, so letters and face share the first
-  two layers against the bed, and a two-extruder print puts them in two colours in the same
-  plane. `top.3mf` carries both as one object with the lid on extruder 1 and the letters on
-  extruder 2. On a single-extruder printer use PrusaSlicer's single-extruder multi-material
-  mode with a manual swap as the tool change (Expert mode shows these settings): Printer
-  Settings, General: 2 extruders, "Single Extruder Multi Material" on; Printer Settings,
-  Custom G-code, Tool change G-code: `M600` (or the printer's pause command); Print Settings,
-  Multiple Extruders: wipe tower off; Print Settings, Advanced: elephant foot compensation 0,
-  or the one-extrusion-wide strokes disappear. The Arachne perimeter generator (the default)
-  handles the thin strokes; with the Classic generator turn "Detect thin walls" on. Expect
-  three swaps: within layer 1, within layer 2,
-  and back to the face colour for layer 3, then none. To test, cut the object at 2 mm in the
-  slicer and print the slab. The letters are small for a 0.4 mm nozzle; `label_size` in
-  `case.scad` can go to 3.2 before the back-edge labels touch. No badge: glue one on or use
-  a sticker.
+* **Labels.** Port names above each cutout, behind each LED, and beside the buttons (RESET
+  to the left of its button, NMI to the right, outside the spring rings), 3.2 mm bold
+  Liberation Sans. They are raised 0.4 mm (two layers) on `face.stl`, a 0.6 mm veneer the
+  shape of the lid top, 0.2 mm inside its edge, with the vents, light-pipe bores, cap shaft
+  holes and spring-ring openings through it. The veneer prints face up, so the letters are
+  the last two layers: add one colour change in the slicer at 0.6 mm (the + on PrusaSlicer's
+  layer slider, which inserts `M600`), no multi-material profile needed. Glue the veneer on
+  the lid body (which prints face down and has no letters) with CA or epoxy, lining up the
+  bores. Iron the veneer's top layer if a smooth face matters; the letters print on it fine.
+  The earlier coplanar letters, 0.4 mm pockets in the lid filled by a second colour in the
+  same first layers, did not print: at 2.6 mm a third of each glyph is thinner than the
+  0.4 mm nozzle and the face between letters cannot be filled at all, so the first layers
+  came out as blobs. Raised letters only need the strokes themselves to be printable, which
+  at 3.2 mm they are (0.5 mm and up, one Arachne line). The back-edge labels and the LED
+  labels are too close together for one row at this size and alternate between two rows
+  5 mm apart (`label_row`). No badge: glue one on or use a sticker.
 
 ## Fit check
 
@@ -182,10 +179,10 @@ only 1.5 mm of wall left under the lid.
 
 ## Printing
 
-Five prints, as for Rocinante: the lid face down from `top.3mf` in black PETG with the
-letters in a second colour (the button membranes and the letters are its first layers, so
-print them at 0.2 mm), the tray in PETG, the two button caps in silver PLA, the three light
-pipes in clear or white. A brim helps the long walls. Hardware: four M3 x 8 screws, four M3
+Six prints: the lid body face down in PETG (the button membranes are its first layers, so
+print at 0.2 mm), the face veneer face up in the same PETG with a colour change at 0.6 mm
+for the letters, the tray in PETG, the two button caps in silver PLA, the three light pipes
+in clear or white. A brim helps the long walls. Hardware: four M3 x 8 screws, four M3
 heat-set inserts, rubber feet.
 
 ## Why generated
