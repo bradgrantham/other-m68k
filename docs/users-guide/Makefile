@@ -17,7 +17,7 @@ PDF      := build/griffin-jr-users-guide.pdf
 
 all: $(PDF)
 
-$(PDF): build/guide.typ build/figures/board.svg
+$(PDF): build/guide.typ build/figures/board.svg build/figures/diagrams.stamp
 	$(TYPST) compile --root . build/guide.typ $@
 
 # One Typst file: the page design, then the chapters in file-name order.  (A chapter pulled in
@@ -43,6 +43,10 @@ screens:
 build/figures/board.svg: figures/board.py $(BOARD)
 	@mkdir -p build/figures
 	python3 figures/board.py $(BOARD) $@
+
+build/figures/diagrams.stamp: figures/diagrams.py $(TOP)/generated/hw.h
+	python3 figures/diagrams.py build/figures
+	@touch $@
 
 clean:
 	rm -rf build

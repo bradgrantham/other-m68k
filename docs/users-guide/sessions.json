@@ -219,5 +219,22 @@
   "sd": true,
   "frames": 1800,
   "start": "GRIFFIN BASIC"
+ },
+ "rows": {
+  "keys": "cls\nmb f6aa0 ff\nfill f8300 140 e0\nfill f8580 280 1c\nfill f8a80 500 03\n",
+  "shot": true
+ },
+ "sdinfo": {
+  "keys": "sd\n",
+  "sd": true,
+  "start": "C:/> sd"
+ },
+ "vectors": {
+  "keys": "md 0 10\n",
+  "start": "C:/> md"
+ },
+ "regs9": {
+  "keys": "md f0000e 2\nmw f00006 b\nmw f00006 1b\nmw f00006 3\n",
+  "start": "C:/> md"
  }
 }

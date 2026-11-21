@@ -17,8 +17,10 @@ make clean
 | `NN-name.md` | one chapter each, in file-name order |
 | `sessions.json` | the emulator sessions the chapters show: what is typed, how long to run |
 | `screens.py` | runs the sessions in `emu/build/m68k-emu` on `fw/build/flash.img` and writes `build/screens/NAME.txt` (the console text) and `build/shots/NAME.png` (the picture) |
-| `card/` | the files on the SD card (drive D:) that the sessions use |
+| `card/` | the files on the SD card (drive D:) that the sessions use; `screens.py` adds a picture and a sound it makes itself |
+| `card/*.BAS` | the BASIC listings of chapter 5: the chapter prints these files and the sessions run them |
 | `figures/board.py` | draws the board tour from `kicad/release/other-m68k.kicad_pcb` |
+| `figures/diagrams.py` | draws the line diagrams (colour chart, colour byte, screen addresses, memory map, port pinouts, sound patterns); addresses come from `generated/hw.h` |
 | `filter.lua` | pandoc filter: captured screens, the three kinds of box, key caps, picture paths |
 | `guide.typ` | the page design, title page and contents (Typst) |
 
@@ -35,6 +37,10 @@ firmware change shows up in the PDF. The words around a screen still have to be 
 against it by hand.
 
 Other chapter markup:
+
+- ```` ```{.listing file=card/NAME.BAS} ```` prints a file as a listing.
+- The first appendix starts with a raw Typst block that calls `#appendices()`; the chapters
+  after it are lettered.
 
 - `::: curious`, `::: try`, `::: careful` open a box; `:::` closes it.
 - `[ESC]{.key}` draws a key cap.

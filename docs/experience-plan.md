@@ -57,6 +57,10 @@ builds `BASIC.ELF`) and is therefore not on this list.
     memory map and registers, and a tour of each program above as it arrives. It
     complements `docs/programmers-guide.md`, which stays the reference.
 
+First draft complete 2026-11-21 (`docs/users-guide/`): ten chapters and five appendices
+covering the monitor, the programs on C:, BASIC and the hardware. Each program above adds
+its section or chapter when it lands.
+
 ## Releases
 
 The user's guide PDF is a build product and is not checked in. The aim is for GitHub to

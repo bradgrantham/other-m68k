@@ -79,14 +79,22 @@
 // ---- headings ---------------------------------------------------------------------------------
 
 #set heading(numbering: (..n) => if n.pos().len() == 1 { numbering("1", ..n) })
+// The first appendix calls #appendices(): chapters are then lettered and called APPENDIX.
+#let chapter-word = state("chapter-word", "CHAPTER")
+#let appendix-numbering = (..n) => if n.pos().len() == 1 { numbering("A", ..n) }
+#let appendices() = {
+  counter(heading).update(0)
+  chapter-word.update("APPENDIX")
+}
 #show heading: set text(font: sans)
 #show heading.where(level: 1): it => {
   pagebreak(weak: true)
   v(0.3in)
   if it.numbering != none {
     grid(columns: (auto, 1fr), column-gutter: 8pt, align: bottom,
-      text(size: 44pt, weight: "bold", fill: spot, counter(heading).display("1")),
-      pad(bottom: 5pt, text(size: 8pt, weight: "bold", tracking: 0.15em, fill: spot, "CHAPTER")))
+      text(size: 44pt, weight: "bold", fill: spot, counter(heading).display(it.numbering)),
+      pad(bottom: 5pt, text(size: 8pt, weight: "bold", tracking: 0.15em, fill: spot,
+        context chapter-word.get())))
     v(0.1em)
   }
   text(size: 21pt, weight: "bold", it.body)
