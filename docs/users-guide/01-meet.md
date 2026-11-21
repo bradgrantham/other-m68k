@@ -6,7 +6,7 @@ of those. The whole computer is about a dozen chips on one board, and each chip 
 you can name.
 
 That simplicity is the point. This is a computer you can learn all the way down: you can
-type a command and watch a light come on, or change one number in memory and see one dot
+type a command and watch a light come on, or change one number in memory and see one pixel
 change colour on the screen. This guide starts with plugging things in, and by the last
 chapter it has given you the address of every part of the machine.
 
@@ -18,7 +18,7 @@ chapter it has given you the address of every part of the machine.
 | Memory | 1 megabyte of RAM. Your programs get 842 KB of it |
 | Built-in storage | Drive C:, 768 KB, kept in the ROM chips. It keeps its files with the power off |
 | Card storage | Drive D:, a microSD card |
-| Picture | 320 dots across and 240 down. Each dot can be any of 256 colours |
+| Picture | 320 pixels across and 240 down. Each pixel can be any of 256 colours |
 | Text | 53 characters across and 24 lines down |
 | Video output | Composite video and S-video, for an NTSC television or monitor |
 | Sound | One channel, 8-bit samples, 15,700 samples a second |
@@ -104,7 +104,7 @@ computer when you ask.
 is arranged by loading a design into it, and between them these two do the work of several
 dozen smaller chips. CPLD 1 decides which chip answers when the processor asks for an
 address, and it keeps the picture in step with the television. CPLD 2 looks after the
-keyboard, the SD card, the lights, the sound and the dots of the picture.
+keyboard, the SD card, the lights, the sound and the pixels of the picture.
 
 **The 68681** is the tall chip on the left. It runs the two serial ports, and its spare
 pins are put to work reading the joystick.

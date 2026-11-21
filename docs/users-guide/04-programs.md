@@ -82,7 +82,7 @@ bmpview D:SUNSET.BMP -s
 ```
 
 A photograph can hold millions of colours and the Griffin Jr. has 256, so `bmpview` cannot
-give each dot its true colour. Instead it mixes the colours it has, putting dots of two
+give each pixel its true colour. Instead it mixes the colours it has, putting pixels of two
 nearby colours side by side so that from a little distance they blend into the one it
 wanted. This is called dithering, and you can see it if you look closely at the sky in a
 photograph.

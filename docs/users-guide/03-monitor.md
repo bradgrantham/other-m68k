@@ -333,8 +333,8 @@ spell out what was written.
 
 ### Painting with numbers
 
-The picture on the screen is stored in RAM with one byte for each dot, so if you change a
-byte, a dot changes colour. The `fill` command writes the same byte to a whole range of
+The picture on the screen is made of tiny squares called pixels, and it is stored in RAM
+with one byte for each pixel. If you change a byte, a pixel changes colour. The `fill` command writes the same byte to a whole range of
 addresses, which makes it a paintbrush.
 
 ::: try
@@ -351,7 +351,7 @@ A red stripe and a green stripe appear across the middle of the screen.
 ![Two `fill` commands, writing straight into the picture.](shots/paint.png){width=62%}
 
 The first number is the address to start at, the second is how many bytes to fill and the
-third is the byte to write. Hex `1900` bytes is 6,400 dots, which is 20 rows of 320. The
+third is the byte to write. Hex `1900` bytes is 6,400 pixels, which is 20 rows of 320. The
 byte `e0` is bright red and `1c` is bright green. Try `03` for blue and `ff` for white.
 Chapter 6 explains how a byte becomes a colour, and `cls` wipes the stripes away when you
 have finished.

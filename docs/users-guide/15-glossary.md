@@ -21,7 +21,7 @@ Bus error
 :   What the processor reports when it asks for an address and nothing answers.
 
 Byte
-:   Eight bits, enough for a number from 0 to 255. One character of text or one dot of the
+:   Eight bits, enough for a number from 0 to 255. One character of text or one pixel of the
     picture.
 
 CPLD
@@ -62,6 +62,10 @@ NTSC
 
 Page
 :   One complete picture in memory. The Griffin Jr. has two and shows one at a time.
+
+Pixel
+:   One of the small coloured squares that make up the picture. The screen is 320 pixels
+    wide and 240 high.
 
 Program
 :   A list of instructions for the computer.

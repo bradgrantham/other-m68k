@@ -1,23 +1,23 @@
 # Pictures
 
 Everything you see on the screen of the Griffin Jr., text included, is a grid of coloured
-dots, and every dot is one byte in RAM. There is no separate text screen and no fixed set of
+squares called pixels, and every pixel is one byte in RAM. There is no separate text screen and no fixed set of
 shapes. A program that can write a byte to memory can draw anything.
 
 This chapter explains how that works, using nothing but the monitor's memory commands
 from chapter 3.
 
-## One byte, one dot
+## One byte, one pixel
 
-The picture is 320 dots wide and 240 dots high, which makes 76,800 dots, and so the
+The picture is 320 pixels wide and 240 pixels high, which makes 76,800 pixels, and so the
 picture takes 76,800 bytes of RAM. The bytes are stored in reading order: the first byte
-is the top left dot, the next is the dot to its right, and when a row ends the next row
+is the top left pixel, the next is the pixel to its right, and when a row ends the next row
 begins straight after it.
 
 ![The screen and the addresses of its four corners.](figures/screenmem.svg){width=92%}
 
-Each row is 320 bytes long, which is hex `140`. So to find a dot, start at `ed400`, add
-hex `140` for every row down, and add 1 for every dot across.
+Each row is 320 bytes long, which is hex `140`. So to find a pixel, start at `ed400`, add
+hex `140` for every row down, and add 1 for every pixel across.
 
 Type `cls`, and then these four lines:
 
@@ -28,16 +28,16 @@ fill f8580 280 1c
 fill f8a80 500 03
 ```
 
-![One white dot, then one, two and four rows of colour.](shots/rows.png){width=62%}
+![One white pixel, then one, two and four rows of colour.](shots/rows.png){width=62%}
 
-The `mb` command wrote a single byte and lit a single white dot near the middle of the
+The `mb` command wrote a single byte and lit a single white pixel near the middle of the
 screen. Look closely and you will find it above the stripes. The first `fill` wrote hex
-`140` bytes, which is exactly one row, so it drew a line one dot thick from edge to edge.
+`140` bytes, which is exactly one row, so it drew a line one pixel thick from edge to edge.
 The others wrote two rows and four rows.
 
 ::: try
-Type `fill ed400 12c00 03`. Hex `12c00` is 76,800, so this fills every dot on the screen
-with blue, including the dots that made up the text. Type `cls` to get the usual
+Type `fill ed400 12c00 03`. Hex `12c00` is 76,800, so this fills every pixel on the screen
+with blue, including the pixels that made up the text. Type `cls` to get the usual
 background back.
 :::
 
@@ -73,13 +73,13 @@ one.
 
 ## Where the text comes from
 
-When the BIOS prints a letter, it draws the letter's shape into the picture, dot by dot,
-exactly as your own program might. Each character sits in a box 6 dots wide and 10 high.
-Fifty-three boxes fit across the 320 dots with two dots to spare, and twenty-four fit down
+When the BIOS prints a letter, it draws the letter's shape into the picture, pixel by pixel,
+exactly as your own program might. Each character sits in a box 6 pixels wide and 10 high.
+Fifty-three boxes fit across the 320 pixels with two pixels to spare, and twenty-four fit down
 the 240, which is where the screen's 53 columns and 24 lines come from.
 
 This explains two things you may have noticed. Text and drawings can share the screen,
-because both are only dots. And scrolling the text takes a moment, because the BIOS has to
+because both are only pixels. And scrolling the text takes a moment, because the BIOS has to
 move nearly the whole picture up by ten rows, which is about 74,000 bytes each time.
 
 ## Two pages
@@ -106,7 +106,7 @@ page 1's 75 KB as ordinary memory.
 
 A television draws its picture one line at a time, 262 lines in each picture and about 60
 pictures a second, and it cannot wait. While it sweeps across a line, the Griffin Jr. has
-to fetch the bytes for that line from RAM at a steady rate of one byte for every dot.
+to fetch the bytes for that line from RAM at a steady rate of one byte for every pixel.
 
 In many home computers of the 1980s the processor had to stop and wait whenever the
 picture needed the memory, and some lost a large part of their speed that way. The

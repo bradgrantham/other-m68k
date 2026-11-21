@@ -88,7 +88,7 @@ def screenmem():
     for x, y, a, anchor, dx, dy in corners:
         out.append('<circle cx="%g" cy="%g" r="1.3" fill="%s"/>' % (x, y, SPOT))
         out.append(text(x + dx, y + dy, "%x" % a, 4, anchor, font=MONO, fill=SPOT, weight="bold"))
-    out.append(text(94, 50, "320 dots across", 4.5, fill="white"))
+    out.append(text(94, 50, "320 pixels across", 4.5, fill="white"))
     out.append(text(94, 58, "240 rows down", 4.5, fill="white"))
     out.append(text(94, 70, "each row is hex 140 bytes", 3.6, fill="#aab"))
     return svg(188, 116, out)

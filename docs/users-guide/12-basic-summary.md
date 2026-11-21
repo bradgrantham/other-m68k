@@ -61,8 +61,8 @@ The sums are `+`, `-`, `*`, `/` and `^` for "to the power of". The tests are `=`
 | `CLS [colour]` | Clears the page being drawn on |
 | `COLOR colour [, background]` | Sets the drawing colour, and the colour `CLS` uses |
 | `RGB(red, green, blue)` | The nearest colour to those amounts, each from 0 to 255 |
-| `PSET x, y [, colour]` | One dot |
-| `POINT(x, y)` | The colour of a dot, or -1 if it is off the screen |
+| `PSET x, y [, colour]` | One pixel |
+| `POINT(x, y)` | The colour of a pixel, or -1 if it is off the screen |
 | `LINE x1, y1, x2, y2 [, colour]` | A line |
 | `RECT x, y, w, h [, colour]` | The outline of a rectangle. `FRECT` fills it |
 | `CIRCLE x, y, r [, colour]` | The outline of a circle. `FCIRCLE` fills it |
@@ -70,7 +70,7 @@ The sums are `+`, `-`, `*`, `/` and `^` for "to the power of". The tests are `=`
 | `SCRW` `SCRH` | The width and height of the screen: 320 and 240 |
 | `PAGE draw, show` | Which page (0 or 1) to draw on and which to show |
 | `VSYNC [n]` | Waits for the next picture, or for `n` pictures |
-| `SPRITE DEFINE n, x, y, w, h [, clear]` | Takes sprite `n` (0 to 31, up to 128 by 128 dots) from the page. Dots of the colour `clear` are left out when it is drawn |
+| `SPRITE DEFINE n, x, y, w, h [, clear]` | Takes sprite `n` (0 to 31, up to 128 by 128 pixels) from the page. Pixels of the colour `clear` are left out when it is drawn |
 | `SPRITE n, x, y` | Draws sprite `n` |
 | `TEXT` | Goes back to the text screen |
 

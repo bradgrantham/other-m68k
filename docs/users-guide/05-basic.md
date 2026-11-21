@@ -126,7 +126,7 @@ which BASIC ignores. It is there for the person reading the program.
 
 ## Drawing
 
-The screen is 320 dots wide and 240 dots high. Every drawing statement says where to draw
+The screen is 320 pixels wide and 240 pixels high. Every drawing statement says where to draw
 by giving two numbers: how far across from the left edge, and how far down from the top.
 So `0, 0` is the top left corner, `319, 239` is the bottom right, and `160, 120` is the
 middle.
@@ -142,7 +142,7 @@ in which case BASIC uses the colour set by the last `COLOR` statement.
 | Statement | What it draws |
 |----------|--------------------|
 | `CLS colour` | Fills the whole screen with one colour |
-| `PSET x, y, colour` | One dot |
+| `PSET x, y, colour` | One pixel |
 | `LINE x1, y1, x2, y2, colour` | A line from one point to another |
 | `RECT x, y, wide, high, colour` | The outline of a rectangle. `x, y` is its top left corner |
 | `FRECT x, y, wide, high, colour` | A filled rectangle |
@@ -324,7 +324,7 @@ program, it also gives the number of the line.
 | `TYPE MISMATCH ERROR` | Text was used where a number was wanted, or the other way round |
 | `DIVISION BY ZERO ERROR` | A sum tried to divide by nothing |
 | `UNDEF'D STATEMENT ERROR` | A `GOTO` points at a line number that does not exist |
-| `ILLEGAL QUANTITY ERROR` | A number is outside what the statement allows, such as a dot off the screen |
+| `ILLEGAL QUANTITY ERROR` | A number is outside what the statement allows, such as a pixel off the screen |
 | `FILE ERROR` | The file is not there, or the drive could not be read or written |
 
 After an error the program is still in memory. Use `LIST` to look at the line, type it
