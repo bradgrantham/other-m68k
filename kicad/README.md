@@ -344,6 +344,23 @@ and then in `kicad/lib/`.
   RTS and DTR positive. The adapter schematic and the channel-B mouse driver are on the list;
   the main board is unchanged.
 
+* **For the next board revision, from the first case assembly (2026-11-21;** details and
+  measurements in `enclosure/README.md`, "First assembly"**).** Not decided yet:
+  * J5 RCA: the jacks in hand have toes that hang over the board edge and do not suit the
+    footprint or the case; another jack is to be chosen and the footprint checked against it.
+  * J2/J11 serial: right-angle 1x6 headers reached through a wall notch are not practical in
+    the case. Options: a USB-serial bridge for channel A on the USB-C connector (J1 becomes a
+    USB 2.0 receptacle; one cable for power and console), a DE-9 with an RS-232 transceiver
+    for channel B (a serial mouse then plugs in directly and the adapter above is not
+    needed), panel connectors for the TTL signals, or plain vertical headers used with the
+    lid off.
+  * J6 audio: the jack's nose reaches 2.3 mm past the front edge and the case's round opening
+    is closed beneath it. Opening the case slot to the split fixes it without a board change;
+    moving the jack back is the board-side alternative.
+  * J4 microSD: the socket sits too far from the front edge for the card to be latched or
+    released through the case wall; move it forward (about 1.5 mm is available before the
+    pads reach the edge) together with a finger recess in the case wall.
+
 * The schematic is a generated, label-per-pin drawing: correct and ERC-clean, but not a
   pretty hand-drawn sheet. Everything connects by global label name.
 * The two project footprints (mini-DIN, RCA) were drawn from the manufacturers' PCB layout

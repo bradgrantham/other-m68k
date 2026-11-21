@@ -177,6 +177,53 @@ the flag, or just correct the number.
 The axis heights matter most: a 1 mm error moves a hole 1 mm, and the mini-DIN holes have
 only 1.5 mm of wall left under the lid.
 
+## First assembly (2026-11-21): open items for the next board revision and case print
+
+The lid body, face veneer and tray printed well enough in PETG. Assembling them around a
+rev C3 board turned up five problems. Nothing below is decided yet; each item lists what was
+seen, what the geometry says, and the options.
+
+1. **The halves are fiddly to join** ("keystoning": everything has to be exactly lined up
+   before they slide together, and with a board inside they have not gone together yet).
+   Three things in the geometry make this so; which one dominates is not established.
+   * The lip is 2.5 mm tall with 0.15 mm clearance per side around a 185 by 130 mm
+     perimeter, with square edges on both the lip and the recess: no lead-in, so nothing
+     engages until the whole perimeter is aligned. Options: a 45 degree chamfer on the lip
+     top and the recess mouth, `lip_fudge` 0.25 to 0.3, a shorter lip, or lip segments on
+     the long sides only.
+   * The round holes are closed circles in the lid wall, so the lid cannot come straight
+     down over anything that passes through one. The RCA barrel reaches 9.4 mm past the
+     board edge through a hole whose bottom is 1.9 mm above the split, which forces the lid
+     to be hooked over the barrel at an angle and slid forward while it comes down. Option:
+     every opening whose connector passes the board edge becomes a slot open at the split,
+     closed from below by a tab on the tray, as the serial notches already are.
+2. **RCA jack.** The jacks in hand have two toes meant to hang over the board edge. The
+   footprint (`RCA_CUI_RCJ-041_Horizontal`) and the case assume a body that ends at the
+   edge; the tray wall and lip start 0.5 mm from it. Decision so far: choose another jack
+   (flat-fronted body, nothing below the board top past the edge, barrel at least 6 mm past
+   the edge to clear the 2.5 mm of gap and wall). The alternative is a relief in the tray
+   wall for the toes.
+3. **Serial headers.** The right-angle 1x6 headers behind the 18 by 9 mm wall notch are not
+   practical to plug into. Another solution is needed; see `kicad/README.md`, "Known
+   limitations", for the board-side options.
+4. **microSD slot too far back.** The card cannot be pushed far enough through the opening
+   to latch, nor far enough to release. From the footprint: the socket mouth is 1.7 mm
+   behind the board edge, the latched card's end is 0.3 mm behind the board edge, which is
+   2.8 mm behind the outer wall surface, and the push to release goes deeper still; the
+   ejected card stands only 1.2 mm proud of the wall. The opening is 13 by 2 mm, too small
+   for a fingertip. The socket can move forward about 1.5 mm before its pads reach the
+   board edge, so the board alone cannot fix it: the wall needs a finger recess around the
+   slot (wall thinned to under 1 mm or opened over about 18 mm), with the socket moved
+   forward as far as it will go.
+5. **Audio jack opening closed at the bottom.** The hole is a circle tangent to the lid's
+   bottom edge (its lowest point is 0.1 mm above the split), and the jack's nose reaches
+   2.3 mm past the board edge into it, so the lid wall has to be flexed outward to get
+   round the nose. Either the jack moves back on the board until its nose is inside the
+   board edge, or the opening is cut open down to the split so the lid slides straight down
+   over the nose. The second is the same rule as in item 1 and needs no board change: any
+   round opening whose connector passes the board edge, or that leaves under 1.5 mm of
+   wall beneath it, becomes a slot open at the split.
+
 ## Printing
 
 Six prints: the lid body face down in PETG (the button membranes are its first layers, so
@@ -194,9 +241,11 @@ board changes, `make` regenerates the case; when a measurement changes, edit `pa
 
 ## Known limitations
 
-* The case has not been printed yet; the plug envelopes and the verify-flagged heights are
-  data-sheet values. The fit check tests the case against those same numbers plus the KiCad
-  library models, so it catches geometry errors, not wrong data.
+* The case has been printed once and did not go together with a board in it: see "First
+  assembly" below. The plug envelopes and the verify-flagged heights are still data-sheet
+  values. The fit check tests the case against those same numbers plus the KiCad library
+  models, so it catches geometry errors, not wrong data, and it tests the parts in their
+  final position, not whether they can be brought there.
 * In the fit model the mini-DIN, RCA and PLCC parts are boxes (no library model), the sockets
   are boxes to their seated height, and the RCA barrel beyond the board edge is represented
   only by the plug envelope.
