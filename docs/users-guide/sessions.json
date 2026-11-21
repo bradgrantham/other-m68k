@@ -1,24 +1,223 @@
 {
-  "_comment": "Screens for the user's guide; see screens.py for the fields.",
-  "ramtest":  {"frames": 150, "shot": true},
-  "boot":     {"frames": 500, "shot": true},
-  "help":     {"keys": "help\n", "start": "C:/> help"},
-  "firsts":   {"keys": "beep\nled 1\nled 2\nled 3\nled 0\nticks\nticks\n", "start": "C:/> beep"},
-  "info":     {"keys": "info\n", "start": "C:/> info"},
-  "dir":      {"keys": "dir\n", "start": "C:/> dir"},
-  "cat":      {"keys": "cat README.TXT\n", "start": "C:/> cat"},
-  "hello":    {"keys": "hello\nx", "start": "C:/> hello"},
-  "drives":   {"keys": "D:\ndir\nC:\ndir D:\n", "sd": true, "start": "C:/> D:"},
-  "cd":       {"keys": "mkdir GAMES\ncd GAMES\ncd\ncd ..\nrmdir GAMES\n", "start": "C:/> mkdir", "frames": 1500},
-  "files":    {"keys": "copy D:NOTES.TXT C:\nren NOTES.TXT TODO.TXT\ndir *.TXT\ndel TODO.TXT\n", "sd": true, "start": "C:/> copy", "frames": 1800},
-  "wild":     {"keys": "dir *.TXT\ndir D:*.CMD\ndir H*\n", "sd": true, "start": "C:/> dir"},
-  "date":     {"keys": "date\n\ndate 2026-11-21 14:30\ndate\n\n", "start": "C:/> date"},
-  "unknown":  {"keys": "frog\nhelo\n", "start": "C:/> frog"},
-  "history":  {"keys": "beep\nticks\nhistory\n", "start": "C:/> history"},
-  "cat2":     {"keys": "cat D:NOTES.TXT\n", "sd": true, "start": "C:/> cat"},
-  "autoexec": {"keys": "cat AUTOEXEC.CMD\n", "start": "C:/> cat"},
-  "script":   {"keys": "cat D:GREET.CMD\ngreet\n", "sd": true, "start": "C:/> cat", "frames": 1200},
-  "md":       {"keys": "md e00000 20\nmd 8000 10\nmb 8000 47 72 69 66 66 69 6e 21\nmd 8000 10\n", "start": "C:/> md"},
-  "paint":    {"keys": "cls\nfill f5100 1900 e0\nfill f6a00 1900 1c\n", "shot": true},
-  "fault":    {"keys": "md 800000\n", "start": "C:/> md"}
+ "_comment": "Screens for the user's guide; see screens.py for the fields.",
+ "ramtest": {
+  "frames": 150,
+  "shot": true
+ },
+ "boot": {
+  "frames": 500,
+  "shot": true
+ },
+ "help": {
+  "keys": "help\n",
+  "start": "C:/> help"
+ },
+ "firsts": {
+  "keys": "beep\nled 1\nled 2\nled 3\nled 0\nticks\nticks\n",
+  "start": "C:/> beep"
+ },
+ "info": {
+  "keys": "info\n",
+  "start": "C:/> info"
+ },
+ "dir": {
+  "keys": "dir\n",
+  "start": "C:/> dir"
+ },
+ "cat": {
+  "keys": "cat README.TXT\n",
+  "start": "C:/> cat"
+ },
+ "hello": {
+  "keys": "hello\nx",
+  "start": "C:/> hello"
+ },
+ "drives": {
+  "keys": "D:\ndir\nC:\n",
+  "sd": true,
+  "start": "C:/> D:"
+ },
+ "cd": {
+  "keys": "mkdir GAMES\ncd GAMES\ncd\ncd ..\nrmdir GAMES\n",
+  "start": "C:/> mkdir",
+  "frames": 1500
+ },
+ "files": {
+  "keys": "copy D:NOTES.TXT C:\nren NOTES.TXT TODO.TXT\ndir *.TXT\ndel TODO.TXT\n",
+  "sd": true,
+  "start": "C:/> copy",
+  "frames": 1800
+ },
+ "wild": {
+  "keys": "dir *.TXT\ndir D:*.CMD\ndir H*\n",
+  "sd": true,
+  "start": "C:/> dir"
+ },
+ "date": {
+  "keys": "date\n\ndate 2026-11-21 14:30\ndate\n\n",
+  "start": "C:/> date"
+ },
+ "unknown": {
+  "keys": "frog\nhelo\n",
+  "start": "C:/> frog"
+ },
+ "history": {
+  "keys": "beep\nticks\nhistory\n",
+  "start": "C:/> history"
+ },
+ "cat2": {
+  "keys": "cat D:NOTES.TXT\n",
+  "sd": true,
+  "start": "C:/> cat"
+ },
+ "autoexec": {
+  "keys": "cat AUTOEXEC.CMD\n",
+  "start": "C:/> cat"
+ },
+ "script": {
+  "keys": "cat D:GREET.CMD\ngreet\n",
+  "sd": true,
+  "start": "C:/> cat",
+  "frames": 1200
+ },
+ "md": {
+  "keys": "md e00000 20\nmd 8000 10\nmb 8000 47 72 69 66 66 69 6e 21\nmd 8000 10\n",
+  "start": "C:/> md"
+ },
+ "paint": {
+  "keys": "cls\nfill f5100 1900 e0\nfill f6a00 1900 1c\n",
+  "shot": true
+ },
+ "fault": {
+  "keys": "md 800000\n",
+  "start": "C:/> md"
+ },
+ "plasma": {
+  "keys": "plasma\n",
+  "shot": true,
+  "page": 1,
+  "frames": 700
+ },
+ "bmpview": {
+  "keys": "bmpview D:SUNSET.BMP\n",
+  "sd": true,
+  "shot": true,
+  "page": 1,
+  "frames": 1500
+ },
+ "tune": {
+  "keys": "tune\n",
+  "frames": 1500,
+  "start": "C:/> tune"
+ },
+ "sdplay": {
+  "keys": "sdplay -pcm D:CHIME.PCM\n",
+  "sd": true,
+  "frames": 1200,
+  "start": "C:/> sdplay"
+ },
+ "joystick": {
+  "keys": "joytest -j\n",
+  "joy": "left,fire",
+  "frames": 420,
+  "start": "C:/> joytest"
+ },
+ "paddles": {
+  "keys": "joytest\n",
+  "paddle": "300,700",
+  "frames": 420,
+  "start": "C:/> joytest"
+ },
+ "term": {
+  "keys": "term\nhello from the Griffin\n",
+  "serial": "hello from the other computer\n",
+  "frames": 900,
+  "start": "C:/> term"
+ },
+ "abench": {
+  "keys": "abench\n",
+  "frames": 2500,
+  "start": "C:/> abench"
+ },
+ "lsprog": {
+  "keys": "ls.elf D:\n",
+  "sd": true,
+  "start": "C:/> ls.elf"
+ },
+ "sstv": {
+  "keys": "sstv D:SUNSET.BMP\n",
+  "sd": true,
+  "shot": true,
+  "page": 1,
+  "frames": 1600
+ },
+ "b_scene": {
+  "keys": "basic D:SCENE.BAS\n",
+  "sd": true,
+  "shot": true,
+  "frames": 1500,
+  "page": 1
+ },
+ "b_ball": {
+  "keys": "basic D:BALL.BAS\n",
+  "sd": true,
+  "shot": true,
+  "frames": 777,
+  "page": 1
+ },
+ "b_sketch": {
+  "keys": "basic D:SKETCH.BAS\n",
+  "sd": true,
+  "shot": true,
+  "frames": 900,
+  "joy": "right,down",
+  "page": 1
+ },
+ "b_song": {
+  "keys": "basic D:SONG.BAS\n",
+  "sd": true,
+  "frames": 1800,
+  "start": "C:/> basic"
+ },
+ "b_catch": {
+  "keys": "basic D:CATCH.BAS\n",
+  "sd": true,
+  "shot": true,
+  "frames": 560,
+  "paddle": "500,0",
+  "page": 1
+ },
+ "b_guess": {
+  "keys": "basic D:GUESS.BAS\n12\n6\n3\n1\n",
+  "sd": true,
+  "frames": 1200,
+  "start": "C:/> basic"
+ },
+ "b_direct": {
+  "keys": "basic\nprint 2 + 2\nprint 10 / 4, 7 * 6\nprint \"Hello\"\nfriend$ = \"Griffin\"\nprint \"Hello, \"; friend$; \"!\"\nquit\n",
+  "frames": 1500,
+  "start": "C:/> basic"
+ },
+ "b_first": {
+  "keys": "basic\n10 for n = 1 to 5\n20 print n; \"times 7 is\"; n * 7\n30 next n\nrun\n",
+  "frames": 1500,
+  "start": "GRIFFIN BASIC"
+ },
+ "b_edit": {
+  "keys": "basic\n10 for n = 1 to 5\n20 print n; \"times 7 is\"; n * 7\n30 next n\n20 print n; \"squared is\"; n * n\n5 print \"A table of squares\"\nlist\nrun\n",
+  "frames": 1800,
+  "start": "20 print n; \"squared"
+ },
+ "b_save": {
+  "keys": "basic\n10 for n = 1 to 5\n20 print n; \"squared is\"; n * n\n30 next n\nsave \"D:SQUARES.BAS\"\nnew\nlist\nload \"D:SQUARES.BAS\"\nlist\nquit\n",
+  "sd": true,
+  "frames": 2200,
+  "start": "save"
+ },
+ "b_errors": {
+  "keys": "basic\nprnt 5\nprint 5 / 0\nprint \"five\" + 5\n10 goto 50\nrun\nload \"D:NOTHERE.BAS\"\n",
+  "sd": true,
+  "frames": 1800,
+  "start": "GRIFFIN BASIC"
+ }
 }

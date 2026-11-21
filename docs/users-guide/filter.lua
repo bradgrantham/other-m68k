@@ -1,6 +1,7 @@
 -- Pandoc filter for the user's guide (Markdown -> Typst).
 --
 --   ```{.screen session=NAME}     the captured screen build/screens/NAME.txt (see screens.py)
+--   ```{.listing file=card/X.BAS} a program listing, read from the file the sessions run
 --   ::: curious / try / careful   the three kinds of box (guide.typ defines them)
 --   [ESC]{.key}                   a key cap
 --   ![caption](shots/x.png)       pictures live under build/, at /build/... for Typst
@@ -14,6 +15,11 @@ local function read(path)
 end
 
 function CodeBlock(el)
+  -- ```{.listing file=card/NAME.BAS}: the file itself, so the listing shown is the one that ran
+  if el.classes:includes("listing") and el.attributes.file then
+    local text = read(el.attributes.file):gsub("\r", "")
+    return pandoc.CodeBlock(text:gsub("\n+$", ""), pandoc.Attr("", { "listing" }))
+  end
   if el.classes:includes("screen") and el.attributes.session then
     local text = read("build/screens/" .. el.attributes.session .. ".txt")
     return pandoc.CodeBlock(text:gsub("\n+$", ""), pandoc.Attr("", { "screen" }))

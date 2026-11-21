@@ -157,11 +157,11 @@ To go to a drive, type its name. The prompt changes to show where you are now.
 ```{.screen session=drives}
 ```
 
-You can also name a drive without going there, as the last command above does when it
-lists D: from C:.
+You can also name a drive without going there. From drive C:, for example, `dir D:` lists
+the card and leaves you where you were.
 
-The card in these pictures holds three small files that were made for this guide, so your
-own card will show something different.
+The card in these pictures holds a few files that were made for this guide, so your own
+card will show something different.
 
 If the prompt shows a question mark, as in `D:?>`, the Griffin Jr. cannot read that drive.
 For D: this means that there is no card in the socket, or that the card is not formatted

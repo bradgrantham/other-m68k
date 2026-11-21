@@ -16,6 +16,11 @@ Session fields:
   shot     true: also save the picture
   page     which framebuffer page the picture is read from (0 or 1); default 0
   joy, paddle   passed to the emulator's --joy / --paddle
+  serial   text sent into serial port A (\\n = CR), 100 frames after the typing starts
+
+The card also gets two files made here, so that no binary sits in the repository:
+SUNSET.BMP (a 320x240 picture for bmpview and sstv) and CHIME.PCM (two seconds of sound
+for sdplay).
 """
 import json, os, re, shutil, subprocess, sys
 
@@ -28,6 +33,40 @@ PAGES = {0: 0x0ED400, 1: 0x0DA800}          # spec/board.json video.pages
 W, H = 320, 240
 
 
+def make_media(dirname):
+    """SUNSET.BMP and CHIME.PCM for the card."""
+    import math
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (W, H))
+    px = im.load()
+    for y in range(H):
+        t = y / 150.0
+        for x in range(W):
+            if y < 150:                                 # sky: deep blue down to orange
+                px[x, y] = (int(40 + 215 * t), int(30 + 130 * t), int(120 - 80 * t))
+            else:                                       # water: the sky again, darker
+                u = (y - 150) / 90.0
+                ripple = 18 * math.sin(y * 0.9 + x * 0.05)
+                px[x, y] = (int(200 - 150 * u + ripple), int(110 - 80 * u + ripple / 2), int(60 + 30 * u))
+    d = ImageDraw.Draw(im)
+    d.ellipse((200, 96, 260, 156), fill=(255, 236, 170))            # the sun, half set
+    d.rectangle((0, 150, W, 152), fill=(60, 30, 40))                # the horizon
+    d.polygon([(0, 150), (60, 108), (120, 150)], fill=(40, 26, 50))  # two hills
+    d.polygon([(80, 150), (150, 122), (215, 150)], fill=(52, 30, 56))
+    for y in range(153, H):                                          # the sun's path on the water
+        w = 4 + (y - 153) // 6
+        if y % 3:
+            d.line((230 - w, y, 230 + w, y), fill=(255, 220, 150))
+    im.save(os.path.join(dirname, "SUNSET.BMP"))
+
+    rate, pcm = 15707, bytearray()                      # one sample per video line (NTSC)
+    for i, hz in enumerate((523.25, 659.25, 783.99, 1046.5)):       # C E G C, half a second each
+        for n in range(rate // 2):
+            env = math.exp(-5.0 * n / rate)
+            pcm.append(int(128 + 110 * env * math.sin(2 * math.pi * hz * n / rate)))
+    open(os.path.join(dirname, "CHIME.PCM"), "wb").write(pcm)
+
+
 def make_card(path):
     """A small FAT32 card holding the files in card/ (upper-cased names)."""
     env = dict(os.environ, PATH=os.environ["PATH"] + ":/sbin:/usr/sbin", MTOOLS_SKIP_CHECK="1")
@@ -37,10 +76,13 @@ def make_card(path):
         f.truncate(64 << 20)
     subprocess.run(["mkfs.vfat", "-F", "32", "-n", "GRIFFIN", path], check=True, env=env,
                    stdout=subprocess.DEVNULL)
-    card = os.path.join(HERE, "card")
-    for name in sorted(os.listdir(card)):
-        subprocess.run(["mcopy", "-i", path, os.path.join(card, name), "::/" + name.upper()],
-                       check=True, env=env)
+    made = os.path.join(BUILD, "card-made")
+    os.makedirs(made, exist_ok=True)
+    make_media(made)
+    for d in (os.path.join(HERE, "card"), made):
+        for name in sorted(os.listdir(d)):
+            subprocess.run(["mcopy", "-i", path, os.path.join(d, name), "::/" + name.upper()],
+                           check=True, env=env)
 
 
 def save_png(data, path):
@@ -66,6 +108,9 @@ def run(name, s, card):
         cmd += ["--joy", s["joy"]]
     if s.get("paddle"):
         cmd += ["--paddle", s["paddle"]]
+    if s.get("serial"):
+        cmd += ["--serial-type", s["serial"].replace("\n", "\\n"),
+                "--serial-type-delay", str(s.get("delay", 350) + 100)]
     if s.get("shot"):
         cmd += ["--dump-mem", "0x%X" % PAGES[s.get("page", 0)], str(W * H)]
     r = subprocess.run(cmd, check=True, capture_output=True)

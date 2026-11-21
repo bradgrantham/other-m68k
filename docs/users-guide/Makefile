@@ -26,7 +26,7 @@ build/guide.typ: guide.typ $(TYP)
 	cat guide.typ $(TYP) > $@
 
 # The sed drops pandoc's centring so that tables and their cells sit at the left margin.
-build/ch/%.typ: %.md filter.lua build/screens.stamp Makefile
+build/ch/%.typ: %.md filter.lua build/screens.stamp Makefile $(wildcard card/*)
 	@mkdir -p build/ch
 	$(PANDOC) --from markdown --to typst --lua-filter filter.lua --wrap=preserve $< \
 	    | sed -e 's/^  align(center)\[#table(/  [#table(/' -e '/^    align: (\(auto,\)*),$$/d' > $@
