@@ -69,7 +69,7 @@ limits the current to 200 milliamps. If you build a controller of your own, the 
 switch pins are the easy place to start: anything that connects a pin to ground counts as
 a press.
 
-Use `joytest` from chapter 4 to check a controller, and `JOY` and `PADDLE` from chapter 5
+Use `joytest` from chapter 4 to check a controller, and `JOY` and `PADDLE` from chapter 6
 to use one in a program.
 
 ## The serial ports
@@ -112,7 +112,7 @@ that the BIOS does not touch it, and it belongs to whatever program wants it:
   [Ctrl]{.key} + [D]{.key} at the far end.
 - **`sstv`** watches the port while it is sending, and stops if an [ESC]{.key} arrives.
 - **`srec`**, a monitor command, receives a program sent from another computer. Chapter
-  10 describes it.
+  11 describes it.
 
 To watch the self-test report, connect the cable, open a terminal program on the other
 computer at 38400 8N1, and press RESET on the Griffin Jr.
@@ -138,7 +138,7 @@ which is why fine detail on a composite picture shows fringes of false colour. S
 keeps brightness and colour on separate wires. If your set has the input, the text will be
 noticeably sharper.
 
-Both outputs follow the NTSC standard. The audio socket is described in chapter 7.
+Both outputs follow the NTSC standard. The audio socket is described in chapter 8.
 
 ## Power
 

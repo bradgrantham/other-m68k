@@ -28,7 +28,9 @@ m68k-emu --rom fw/build/flash.img [options]      # or --rom fw/build/rom.bin: BI
   --frames N          exit after N frames                            --trace          disassemble each instruction to stderr
   --trace-from ADDR   start tracing when PC first reaches ADDR       --break ADDR     dump registers and exit when PC reaches ADDR
   --serial-log FILE   copy of the serial (DUART channel A) output     --duart-b-log FILE  DUART channel B output (dropped otherwise)
-  --type STR          type STR on the PS/2 keyboard (\n = Enter)     --type-delay N   ... starting after N frames (default 120)
+  --type STR          type STR on the PS/2 keyboard: \n Enter, \e Esc, \t Tab, \b Backspace,
+                      \^s Ctrl-S, \<up> \<S-right> \<C-home> \<C-S-end> \<pgdn> \<del> \<f3> named
+                      keys (C- and S- hold Ctrl and Shift), \p waits half a second     --type-delay N   ... starting after N frames (default 120)
   --serial-type STR   feed STR into the serial port (\n = CR)         --serial-type-delay N  ... after N frames (default 120)
   --joy LIST          hold joystick switches: up,down,left,right,fire       --paddle A,B|pad  paddles at A,B (0..1023) or from a game controller's triggers
   --sd-trace          log SD commands to stderr                      --exit-on-berr   exit with status 2 on the first bus error

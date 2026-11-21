@@ -32,7 +32,7 @@ ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,-n -Wl,--no-warn-rwx-segments -L$(B)
 LDLIBS  = -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 
-EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv ctors
+EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv ctors edit
 
 .PHONY: all clean check-sources host-bmpview
 
@@ -45,7 +45,8 @@ check-sources:
 $(B):
 	mkdir -p $(B)
 
-$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o $(B)/pdm.o $(B)/bmp.o $(B)/sstv_enc.o $(B)/sstv_play.o
+$(B)/libsys.a: $(B)/syscall_stubs.o $(B)/newlib_shim.o $(B)/pdm.o $(B)/bmp.o $(B)/sstv_enc.o $(B)/sstv_play.o \
+             $(B)/edit_core.o $(B)/edit_ui.o
 	$(AR) rcs $@ $^
 
 $(B)/syscall_stubs.o: $(GEN)/syscall_stubs.S | $(B)
@@ -67,6 +68,7 @@ $(B)/bmp.o: CFLAGS += -O2            # pixel loops: speed over size
 $(B)/pdm.o: CFLAGS += -O2            # table build and encoder: speed over size
 $(B)/sstv_enc.o: CFLAGS += -O2          # per-sample NCO loop: speed over size
 $(B)/plasma.o: CFLAGS += -O2         # inner loop: 5 VBLANKs a frame against 6 at -Os
+$(B)/edit_ui.o: CFLAGS += -O2        # the redraw: typing and scrolling speed
 
 $(B)/%.elf: $(B)/%.o $(B)/crt0.o $(B)/libsys.a user.ld $(GEN)/user.ld
 	$(CC) $(LDFLAGS) -o $@ $(B)/crt0.o $< $(LDLIBS)

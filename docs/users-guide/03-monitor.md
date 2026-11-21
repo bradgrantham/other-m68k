@@ -77,7 +77,7 @@ facts that identify your machine.
 The first line gives the version of the BIOS. The second gives the size of the BIOS and
 the result of the check on it, then the size of drive C: and the size of the RAM. The
 third says that the picture is NTSC and that serial port A is set to 38400 baud. The lines
-after that will mean more once you have read chapter 9.
+after that will mean more once you have read chapter 10.
 
 ## Typing and fixing mistakes
 
@@ -298,8 +298,9 @@ Here are some things you might put in your own:
 - The name of a program, so that it runs at once. A Griffin Jr. that starts straight into
   a game or a slide show is one line away.
 
-The monitor cannot write text files by itself. For now, write your script on another
-computer, save it to the SD card as plain text, and copy it across:
+To write a script, or to change this one, use the editor: `edit C:AUTOEXEC.CMD`. Chapter 5
+describes it. You can also write a script on another computer, save it to the SD card as
+plain text, and copy it across:
 
 ```
 copy D:AUTOEXEC.CMD C:
@@ -311,7 +312,7 @@ during the memory test skips it.
 ## Looking into memory
 
 Everything the Griffin Jr. knows is a number stored at an **address**, and the monitor
-lets you look at any address and change what is there. Chapter 9 has the full map of what
+lets you look at any address and change what is there. Chapter 10 has the full map of what
 lives where. This is a first look.
 
 ```{.screen session=md}
@@ -354,7 +355,7 @@ A red stripe and a green stripe appear across the middle of the screen.
 The first number is the address to start at, the second is how many bytes to fill and the
 third is the byte to write. Hex `1900` bytes is 6,400 pixels, which is 20 rows of 320. The
 byte `e0` is bright red and `1c` is bright green. Try `03` for blue and `ff` for white.
-Chapter 6 explains how a byte becomes a colour, and `cls` wipes the stripes away when you
+Chapter 7 explains how a byte becomes a colour, and `cls` wipes the stripes away when you
 have finished.
 
 ::: careful
@@ -422,4 +423,4 @@ tell you where the program was when you stopped it.
 | `reset` | The same as pressing RESET |
 
 The commands not covered here deal with the SD card, the serial port and the ROM itself.
-They come up in chapters 8 and 9, and the appendix lists every command in full.
+They come up in chapters 9 and 10, and the appendix lists every command in full.

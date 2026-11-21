@@ -12,7 +12,10 @@ builds `BASIC.ELF`) and is therefore not on this list.
 
 ## Making things on the machine
 
-1. **Full-screen text editor.** Nothing can be created on the Griffin without one. A small
+1. **Full-screen text editor.** DONE 2026-11-21: `edit` on C: (`sdk/edit.h`, a library with
+   modern keys, Shift-select, clipboard, multi-step undo, find; guide chapter 5). Still to
+   do: BASIC's `EDIT` command calling the same library (in `../polybasic`). The original
+   note: Nothing can be created on the Griffin without one. A small
    vi- or WordStar-style editor for the 53x24 console; makes `AUTOEXEC.CMD`, scripts and
    BASIC programs editable in place.
 2. **Forth.** Interactive access to every register in `HARDWARE.md`: type a word, watch the

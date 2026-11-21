@@ -29,7 +29,7 @@ hdl:
 # programs, except the constructor demo `ctors`), and the two chip images for the TL866. `make run` boots it and keeps what the
 # machine writes to C: in fw/build/flash.img across runs (--rom-save).
 # Optional programs (CARD_PROGRAMS below) are not on C:; `make card` packages them for D:.
-FLASHFS_PROGRAMS = hello plasma bmpview tune abench sdplay term joytest
+FLASHFS_PROGRAMS = hello plasma bmpview tune abench sdplay term joytest edit
 FLASHFS_FILES = flashfs/AUTOEXEC.CMD flashfs/README.TXT $(foreach p,$(FLASHFS_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
 
 # BASIC is built in its own tree (make griffinjr there); it goes on C: when it has been built.
@@ -73,13 +73,15 @@ fw/build/flash.img fw/build/rom_even.bin fw/build/rom_odd.bin: fw/build/rom.bin 
 	python3 fw/mkrom.py --split fw/build/flash.img fw/build/rom_even.bin fw/build/rom_odd.bin fw/build/rom.bin fw/build/c.img
 
 # all the tests: firmware host tests, static constructors in the ROM (emulator), emulator
-# tests, the SSTV encoder (host + emulator), static constructors in a program (emulator)
+# tests, the SSTV encoder (host + emulator), static constructors in a program (emulator),
+# the editor (host + emulator)
 check: flash emu
 	$(MAKE) -C fw test
 	$(MAKE) -C fw test-ctors
 	$(MAKE) -C emu test
 	$(MAKE) -C tests/sstv check
 	$(MAKE) -C tests/sdk-ctors check
+	$(MAKE) -C tests/edit check
 
 run: flash emu
 	./emu/build/m68k-emu --rom fw/build/flash.img --rom-save fw/build/flash.img $(EMUFLAGS)

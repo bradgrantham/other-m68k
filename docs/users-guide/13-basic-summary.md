@@ -81,7 +81,7 @@ The sums are `+`, `-`, `*`, `/` and `^` for "to the power of". The tests are `=`
 | `BEEP` | A short tone |
 | `SOUND hertz, ms [, volume [, voice]]` | Queues a note. 0 hertz is a rest. Volume is 0 to 15 and voice 1 to 3 |
 | `SOUND OFF` | Stops all sound at once |
-| `PLAY a$ [, b$ [, c$]]` | Queues music, one text for each voice. Chapter 5 lists what goes in the text |
+| `PLAY a$ [, b$ [, c$]]` | Queues music, one text for each voice. Chapter 6 lists what goes in the text |
 | `PLAYING(n)` | True while voice `n` has sound waiting. `PLAYING(0)` asks about any voice |
 | `INKEY$` | A key if one is waiting, or an empty text |
 | `JOY(0)` `JOY(1)` | The joystick: left to right as -1, 0, 1, and up to down as -1, 0, 1 |

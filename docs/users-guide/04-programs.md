@@ -10,7 +10,8 @@ and the last section of this chapter describes that package.
 
 | Program | What it does |
 |----------|--------------------|
-| `basic` | The BASIC language. Chapter 5 is all about it |
+| `edit` | The text editor. Chapter 5 describes it |
+| `basic` | The BASIC language. Chapter 6 is all about it |
 | `hello` | Prints a few facts about the machine |
 | `plasma` | A moving pattern of colour |
 | `bmpview` | Shows a picture file |
@@ -57,7 +58,7 @@ switch chooses which one goes to the television. `plasma` always draws on the pa
 cannot see. When that page is finished, it flips the switch and starts drawing on the
 other one.
 
-Because you only ever see finished pictures, the movement is clean. Chapter 6 shows how to
+Because you only ever see finished pictures, the movement is clean. Chapter 7 shows how to
 flip pages yourself.
 :::
 
@@ -105,7 +106,7 @@ note as it goes. Press any key to stop it.
 
 There are two voices, a melody and a bass line under it. No recording is involved: the
 program works out the shape of the sound wave as it plays, 15,700 values a second, and
-hands them to the BIOS a small batch at a time. Chapter 7 explains how those numbers
+hands them to the BIOS a small batch at a time. Chapter 8 explains how those numbers
 become sound.
 
 ## sdplay
@@ -144,7 +145,7 @@ ffmpeg -i song.mp3 -ac 1 -ar 15707 -f u8 SONG.PCM
 |----------|--------------------|
 | `sdplay -pcm FILE` | 8-bit sound at 15,707 samples a second |
 | `sdplay -half FILE` | 8-bit sound at half that rate. The file is half the size and sounds duller |
-| `sdplay FILE` | A file already worked into the form the sound circuit uses, which leaves more of the processor free. Chapter 7 describes it |
+| `sdplay FILE` | A file already worked into the form the sound circuit uses, which leaves more of the processor free. Chapter 8 describes it |
 
 ## joytest
 
@@ -184,7 +185,7 @@ paddle and measures how long that takes. The further you turn the knob, the long
 
 The two paddles report back along the same wires as the joystick's up and down switches.
 While the Griffin Jr. is timing paddles, a joystick pushed up or down would confuse it,
-and so a program has to choose one or the other. `-j` chooses the joystick. Chapter 8 goes
+and so a program has to choose one or the other. `-j` chooses the joystick. Chapter 9 goes
 through the port pin by pin.
 :::
 
@@ -248,12 +249,12 @@ to the other computer to send back what it wants you to see. If you want to see 
 typing as well, start it with `term -echo`.
 
 You need a serial cable to use `term`, and the other computer must be set to 38400 baud.
-Chapter 8 covers the cable and the settings.
+Chapter 9 covers the cable and the settings.
 
 ## The programmers' examples
 
 Three programs are there mainly to be read. Their source code is part of the software for
-the Griffin Jr., and chapter 10 points you to it. Two of them, `ls` and `cat`, do what
+the Griffin Jr., and chapter 11 points you to it. Two of them, `ls` and `cat`, do what
 monitor commands already do, so they are kept in the card package and not on drive C:.
 
 **`ls`** lists a directory, much as the monitor's `dir` does. The monitor has a command of
@@ -271,7 +272,7 @@ with `ls`, type `cat.elf` to get the program and not the monitor's command.
 
 **`abench`** is on drive C:. It measures how much of the processor is left for a program while sound is
 playing, for each of the ways a program can make sound. The numbers matter if you are
-writing a game, and chapter 7 explains what they mean.
+writing a game, and chapter 8 explains what they mean.
 
 ```{.screen session=abench}
 ```
@@ -311,7 +312,7 @@ your card on another computer.
 | `SSTV.ELF` | The `sstv` program described above |
 | `FSTEST.ELF` | A test that writes a file, reads it back and reports whether the two match. Useful when a card or drive C: is in doubt |
 | `LS.ELF` `CAT.ELF` | The two programmers' examples described above |
-| `GUESS.BAS` and five more | The BASIC programs from chapter 5, ready to run, so that you need not type them in |
+| `GUESS.BAS` and five more | The BASIC programs from chapter 6, ready to run, so that you need not type them in |
 | `GREET.CMD` | The script from chapter 3 |
 | `README.TXT` | A list of what is on the card |
 

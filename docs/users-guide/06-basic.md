@@ -95,8 +95,10 @@ the monitor when it ends:
 basic D:SQUARES.BAS
 ```
 
-A `.BAS` file is plain text. That means you can also write a program on another computer,
-copy it to the SD card and run it on the Griffin Jr.
+A `.BAS` file is plain text. That means you can write or change a program in the editor
+from chapter 5, with `edit D:SQUARES.BAS`, and then run it with `basic D:SQUARES.BAS`. For
+a long program this is often more comfortable than retyping numbered lines. You can also
+write a program on another computer and copy it to the SD card.
 
 ## Asking questions and making choices
 
@@ -153,7 +155,7 @@ in which case BASIC uses the colour set by the last `COLOR` statement.
 A colour is a number from 0 to 255, where 0 is black and 255 is white. The easy way to
 get the number for a colour is `RGB`, which takes the amounts of red, green and blue you
 want, each from 0 to 255, and gives back the nearest colour the Griffin Jr. has. So
-`RGB(255, 0, 0)` is red and `RGB(255, 230, 0)` is the yellow of the sun above. Chapter 6
+`RGB(255, 0, 0)` is red and `RGB(255, 230, 0)` is the yellow of the sun above. Chapter 7
 explains what is inside the number.
 
 The roof in the scene shows a useful trick. BASIC has no statement for a filled triangle,

@@ -56,7 +56,7 @@ A program has three ways to make sound, in order of effort.
 
 **The monitor's `beep`** is the simplest, and BASIC has a `BEEP` of its own.
 
-**BASIC's `SOUND` and `PLAY`**, from chapter 5, give you three voices. BASIC works out
+**BASIC's `SOUND` and `PLAY`**, from chapter 6, give you three voices. BASIC works out
 the samples for all three, adds them together and passes the total to the BIOS.
 
 **The BIOS sound stream** is what programs written in C use, and it is how `tune`, `sdplay`

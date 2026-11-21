@@ -139,7 +139,7 @@ reason this part of the BIOS is written to use no memory at all, and it keeps ev
 it needs in the processor's own registers.
 
 The report means that a board with no picture can still tell you what is wrong with it.
-Chapter 8 shows how to connect a serial cable and read it.
+Chapter 9 shows how to connect a serial cable and read it.
 :::
 
 ::: curious

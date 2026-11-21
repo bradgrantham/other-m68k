@@ -18,7 +18,7 @@ make clean
 | `sessions.json` | the emulator sessions the chapters show: what is typed, how long to run |
 | `screens.py` | runs the sessions in `emu/build/m68k-emu` on `fw/build/flash.img` and writes `build/screens/NAME.txt` (the console text) and `build/shots/NAME.png` (the picture) |
 | `card/` | files for the SD card (drive D:) that the sessions use. The `.BAS` listings and `GREET.CMD` also go into the card package (`make card` at the top level); `screens.py` builds its card from that package, the rest of `card/`, and a picture and a sound it makes itself |
-| `card/*.BAS` | the BASIC listings of chapter 5: the chapter prints these files and the sessions run them |
+| `card/*.BAS` | the BASIC listings of chapter 6: the chapter prints these files and the sessions run them |
 | `figures/board.py` | draws the board tour from `kicad/release/other-m68k.kicad_pcb` |
 | `figures/diagrams.py` | draws the line diagrams (colour chart, colour byte, screen addresses, memory map, port pinouts, sound patterns); addresses come from `generated/hw.h` |
 | `filter.lua` | pandoc filter: captured screens, the three kinds of box, key caps, picture paths |

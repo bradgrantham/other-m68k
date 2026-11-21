@@ -1,7 +1,7 @@
 # The colour chart
 
 Each square shows one colour with its byte in hex. The first digit of the byte is the row
-and the second is the column. Chapter 6 explains how the number is made up.
+and the second is the column. Chapter 7 explains how the number is made up.
 
 ![All 256 colours.](figures/colours.svg){width=100%}
 

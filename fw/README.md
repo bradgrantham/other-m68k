@@ -51,7 +51,7 @@ on it, each stripped with `m68k-unknown-elf-strip` into `fw/build/cfiles/NAME.EL
 each: the SDK links them with the integer-only printf and without page padding, see
 `../sdk/README.md`). When `../polybasic` has been built (`make griffinjr` there;
 `POLYBASIC=` names another place) its `BASIC.ELF` goes on too, about 160 KB. Together they
-take about 300 KB of the 768 KB. The optional programs in `CARD_PROGRAMS` (`sstv`, `fstest`, and `ls` and `cat`, which
+take about 340 KB of the 768 KB (the editor, `edit`, is one of them). The optional programs in `CARD_PROGRAMS` (`sstv`, `fstest`, and `ls` and `cat`, which
 duplicate monitor commands)
 are not on C:; `make card` puts them, the user's guide's BASIC listings and `cardfs/README.TXT`
 into `build/card/` and `build/griffin-jr-card.zip`, to be copied onto an SD card. A volume

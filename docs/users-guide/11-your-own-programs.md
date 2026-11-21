@@ -46,7 +46,7 @@ mine
 The standard C library is there, so `printf`, `fopen`, `malloc` and the rest behave as
 they do on any computer. Files opened with `fopen` are files on drives C: and D:.
 
-For anything particular to the Griffin Jr., a program makes system calls, which chapter 9
+For anything particular to the Griffin Jr., a program makes system calls, which chapter 10
 introduced. In C they look like ordinary functions whose names begin with `sys_`:
 
 | Function | What it does |
@@ -61,7 +61,7 @@ introduced. In C they look like ordinary functions whose names begin with `sys_`
 | `sys_ticks` | The count of frames drawn since the machine started |
 
 To draw, a program asks `sys_video_info` for the address of a page and then writes bytes
-to it, exactly as you did by hand with `fill` in chapter 6. `plasma` is the example to
+to it, exactly as you did by hand with `fill` in chapter 7. `plasma` is the example to
 read first: it is short, and it shows drawing, page flipping and the keyboard.
 
 ## Trying a program without the card

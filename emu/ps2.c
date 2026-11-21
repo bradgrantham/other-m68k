@@ -130,21 +130,23 @@ static void build_maps(void)
 
 /* ---- byte queue ------------------------------------------------------------- */
 
-static uint8_t *queue;
+/* Bytes waiting to go to the keyboard port.  A value of 0x100 + n is not a byte: it holds
+ * the queue back for n tenths of a second (\\p in typed text). */
+static uint16_t *queue;
 static size_t q_len, q_cap, q_head;
 static uint64_t next_deliver;
 
-static void push(uint8_t b)
+static void push(uint16_t b)
 {
     if (q_len == q_cap) {
         if (q_head) {
-            memmove(queue, queue + q_head, q_len - q_head);
+            memmove(queue, queue + q_head, (q_len - q_head) * sizeof *queue);
             q_len -= q_head;
             q_head = 0;
         }
         if (q_len == q_cap) {
             q_cap = q_cap ? q_cap * 2 : 256;
-            queue = realloc(queue, q_cap);
+            queue = realloc(queue, q_cap * sizeof *queue);
             if (!queue) {
                 perror("realloc");
                 exit(1);
@@ -196,8 +198,33 @@ void ps2_tick(uint64_t now)
     }
     if (now < next_deliver || io_ps2_ready())
         return;
-    io_ps2_deliver(queue[q_head++], 0);
+    if (queue[q_head] & 0x100) {
+        next_deliver = now + (uint64_t)(queue[q_head++] & 0xFF) * (CPU_CLOCK_HZ / 10);
+        return;
+    }
+    io_ps2_deliver((uint8_t)queue[q_head++], 0);
     next_deliver = now + BYTE_INTERVAL;
+}
+
+/* \<name> in typed text: a key that has no character.  The name may start with C- and/or
+ * S- for Ctrl and Shift held: \<S-right>, \<C-home>, \<C-S-end>.  \^x is Ctrl with a
+ * letter. */
+static const struct { const char *name; int sc; } named_keys[] = {
+    { "up", SDL_SCANCODE_UP }, { "down", SDL_SCANCODE_DOWN }, { "left", SDL_SCANCODE_LEFT },
+    { "right", SDL_SCANCODE_RIGHT }, { "home", SDL_SCANCODE_HOME }, { "end", SDL_SCANCODE_END },
+    { "pgup", SDL_SCANCODE_PAGEUP }, { "pgdn", SDL_SCANCODE_PAGEDOWN }, { "del", SDL_SCANCODE_DELETE },
+    { "ins", SDL_SCANCODE_INSERT }, { "f1", SDL_SCANCODE_F1 }, { "f2", SDL_SCANCODE_F2 },
+    { "f3", SDL_SCANCODE_F3 }, { "f4", SDL_SCANCODE_F4 }, { "caps", SDL_SCANCODE_CAPSLOCK },
+};
+
+static void type_chord(struct key k, int ctrl, int shift)
+{
+    if (ctrl) push_key(keymap[SDL_SCANCODE_LCTRL], 1);
+    if (shift) push_key(keymap[SDL_SCANCODE_LSHIFT], 1);
+    push_key(k, 1);
+    push_key(k, 0);
+    if (shift) push_key(keymap[SDL_SCANCODE_LSHIFT], 0);
+    if (ctrl) push_key(keymap[SDL_SCANCODE_LCTRL], 0);
 }
 
 void ps2_type_text(const char *text)
@@ -207,6 +234,35 @@ void ps2_type_text(const char *text)
     struct key shift = keymap[SDL_SCANCODE_LSHIFT];
     for (const char *p = text; *p; p++) {
         int c = (unsigned char)*p;
+        if (c == '\\' && p[1] == '^' && p[2] && ascii_map[(unsigned char)p[2] & 0x7F].sc) {
+            type_chord(keymap[ascii_map[(unsigned char)p[2] & 0x7F].sc], 1, 0);
+            p += 2;
+            continue;
+        }
+        if (c == '\\' && p[1] == '<') {
+            const char *q = p + 2, *end = strchr(q, '>');
+            int ctrl = 0, sh = 0, found = 0;
+            if (end) {
+                for (;;) {
+                    if (q[0] == 'C' && q[1] == '-') { ctrl = 1; q += 2; }
+                    else if (q[0] == 'S' && q[1] == '-') { sh = 1; q += 2; }
+                    else break;
+                }
+                for (size_t i = 0; i < sizeof named_keys / sizeof named_keys[0]; i++)
+                    if (strlen(named_keys[i].name) == (size_t)(end - q) && !strncmp(named_keys[i].name, q, (size_t)(end - q))) {
+                        type_chord(keymap[named_keys[i].sc], ctrl, sh);
+                        found = 1;
+                    }
+                if (!found) fprintf(stderr, "m68k-emu: --type: unknown key \\<%.*s>\n", (int)(end - (p + 2)), p + 2);
+                p = end;
+                continue;
+            }
+        }
+        if (c == '\\' && p[1] == 'p') {           /* pause: let the program catch up */
+            push(0x100 + 5);
+            p++;
+            continue;
+        }
         if (c == '\\' && p[1]) {
             p++;
             switch (*p) {

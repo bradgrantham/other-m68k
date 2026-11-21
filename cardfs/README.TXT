@@ -14,7 +14,7 @@ Programs: type the name at the prompt.
   CAT.ELF      has ls and cat of its own, so type
                ls.elf or cat.elf to run these
 
-BASIC programs from chapter 5 of the User's Guide:
+BASIC programs from chapter 6 of the User's Guide:
 type  basic D:NAME.BAS
 
   GUESS.BAS    guess the number

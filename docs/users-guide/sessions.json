@@ -236,5 +236,24 @@
  "regs9": {
   "keys": "md f0000e 2\nmw f00006 b\nmw f00006 1b\nmw f00006 3\n",
   "start": "C:/> md"
+ },
+ "ed_open": {
+  "keys": "edit D:GREET.CMD\n\\p\\p\\p\\<down>\\<down>\\<S-end>",
+  "sd": true,
+  "shot": true,
+  "page": 1,
+  "frames": 1100
+ },
+ "ed_find": {
+  "keys": "edit D:GREET.CMD\n\\p\\p\\p\\^fbeep",
+  "sd": true,
+  "shot": true,
+  "page": 1,
+  "frames": 1100
+ },
+ "ed_auto": {
+  "keys": "edit AUTOEXEC.CMD\n\\p\\p\\p\\<C-end>date\n\\^s\\^q\\p\\pcls\ncat AUTOEXEC.CMD\n",
+  "frames": 1500,
+  "start": "C:/> cat"
  }
 }

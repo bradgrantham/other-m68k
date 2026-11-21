@@ -97,7 +97,7 @@ shows the last picture that `plasma` drew on the other page, frozen. The monitor
 listening, although you cannot see what you type, so type `page 0` to come back.
 :::
 
-Programs use the two pages to move things smoothly, as chapters 4 and 5 described: draw
+Programs use the two pages to move things smoothly, as chapters 4 and 6 described: draw
 on the page that is hidden, then swap. A program that does not need two pages can use
 page 1's 75 KB as ordinary memory.
 

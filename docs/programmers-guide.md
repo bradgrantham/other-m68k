@@ -1105,6 +1105,35 @@ the line interrupt that leaves 44 % of the CPU idle in Robot 36, which is why `s
 its progress bar straight into the other page rather than printing (a console scroll is
 40 ms, enough to underrun the stream and smear a few lines).
 
+### The text editor as a library
+
+`sdk/edit.h` (in `libsys.a`) is the editor behind `EDIT.ELF`, callable from any program
+that wants its user to edit a block of text:
+
+```c
+#include "edit.h"
+
+struct edit_session s = { 0 };
+s.cap = len + 4096;
+s.text = malloc(s.cap);                 /* LF line ends; the editor may realloc the block */
+memcpy(s.text, source, len);
+s.len = len;
+s.title = "BASIC program";              /* shown on the status line */
+s.start_line = 120;                     /* open with the cursor on this line (0 = the top) */
+int rc = edit_run(&s);                  /* EDIT_KEEP, EDIT_DISCARD, or a negative E_* code */
+if (rc == EDIT_KEEP) use(s.text, s.len);
+free(s.text);
+```
+
+With `s.save` left NULL, Ctrl-S ends the session with `EDIT_KEEP`, and Ctrl-Q with unsaved
+changes asks "Keep changes?". With a `save(ctx, text, len)` callback, Ctrl-S calls it and the
+editor carries on (this is how `examples/edit.c` writes the file), and Ctrl-Q asks "Save
+changes?". The editor draws on framebuffer page 1 and shows it, so the console on page 0 is
+untouched and is shown again on return; whatever the program had on page 1 is overwritten.
+It reads the keyboard through `sys_key_event` and empties both keyboard queues before it
+returns. It needs about 32 KB of heap for the undo log besides the text. `edit_strip_cr` and
+`edit_add_cr` convert CR LF files on the way in and out.
+
 ## 1.9 Interrupt hooks
 
 `sys_set_irq_handler(level, fn)` installs `void fn(void)` to be called from the BIOS's
