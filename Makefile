@@ -29,7 +29,7 @@ hdl:
 # programs, except the constructor demo `ctors`), and the two chip images for the TL866. `make run` boots it and keeps what the
 # machine writes to C: in fw/build/flash.img across runs (--rom-save).
 # Optional programs (CARD_PROGRAMS below) are not on C:; `make card` packages them for D:.
-FLASHFS_PROGRAMS = hello plasma ls cat bmpview tune abench sdplay term joytest
+FLASHFS_PROGRAMS = hello plasma bmpview tune abench sdplay term joytest
 FLASHFS_FILES = flashfs/AUTOEXEC.CMD flashfs/README.TXT $(foreach p,$(FLASHFS_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
 
 # BASIC is built in its own tree (make griffinjr there); it goes on C: when it has been built.
@@ -48,7 +48,8 @@ flash: fw sdk fw/build/flash.img
 
 # The card package: optional programs, the user's guide's BASIC listings and script, and a
 # README, as a directory to copy onto an SD card (drive D:) and as a zip of the same.
-CARD_PROGRAMS = sstv fstest
+# (ls and cat are programmers' examples that duplicate monitor commands)
+CARD_PROGRAMS = sstv fstest ls cat
 CARD_EXTRAS   = cardfs/README.TXT $(wildcard docs/users-guide/card/*.BAS) docs/users-guide/card/GREET.CMD
 CARD_ELFS     = $(foreach p,$(CARD_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
 

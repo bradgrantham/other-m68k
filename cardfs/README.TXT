@@ -10,6 +10,9 @@ Programs: type the name at the prompt.
                sstv PIC.BMP    a picture file
   FSTEST.ELF   checks that files can be written
                and read back
+  LS.ELF       programmers' examples. The monitor
+  CAT.ELF      has ls and cat of its own, so type
+               ls.elf or cat.elf to run these
 
 BASIC programs from chapter 5 of the User's Guide:
 type  basic D:NAME.BAS

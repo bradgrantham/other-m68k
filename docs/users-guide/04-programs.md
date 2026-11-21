@@ -18,9 +18,10 @@ and the last section of this chapter describes that package.
 | `sdplay` | Plays a sound file from the SD card |
 | `joytest` | Shows what the joystick and paddles are doing |
 | `term` | Turns the Griffin Jr. into a terminal on serial port A |
-| `ls` `cat` `abench` | Programmers' examples and a speed test |
+| `abench` | Measures what sound costs the processor |
 | `sstv` | Sends a picture as sound, to a phone or a radio. On the card |
 | `fstest` | Checks that files can be written and read back. On the card |
+| `ls` `cat` | Programmers' examples. On the card |
 
 Several of the examples below use files from the guide's own SD card: a picture named
 `SUNSET.BMP` and a sound named `CHIME.PCM`. Your card will not have these, so put a
@@ -251,8 +252,9 @@ Chapter 8 covers the cable and the settings.
 
 ## The programmers' examples
 
-Three programs on the drive are there mainly to be read. Their source code is part of the
-software for the Griffin Jr., and chapter 10 points you to it.
+Three programs are there mainly to be read. Their source code is part of the software for
+the Griffin Jr., and chapter 10 points you to it. Two of them, `ls` and `cat`, do what
+monitor commands already do, so they are kept in the card package and not on drive C:.
 
 **`ls`** lists a directory, much as the monitor's `dir` does. The monitor has a command of
 its own called `ls`, which is another name for `dir`, and the monitor's own commands
@@ -267,7 +269,7 @@ of the example.
 **`cat`** prints files, like the monitor's `cat`, and can take several names at once. As
 with `ls`, type `cat.elf` to get the program and not the monitor's command.
 
-**`abench`** measures how much of the processor is left for a program while sound is
+**`abench`** is on drive C:. It measures how much of the processor is left for a program while sound is
 playing, for each of the ways a program can make sound. The numbers matter if you are
 writing a game, and chapter 7 explains what they mean.
 
@@ -308,6 +310,7 @@ your card on another computer.
 |----------|--------------------|
 | `SSTV.ELF` | The `sstv` program described above |
 | `FSTEST.ELF` | A test that writes a file, reads it back and reports whether the two match. Useful when a card or drive C: is in doubt |
+| `LS.ELF` `CAT.ELF` | The two programmers' examples described above |
 | `GUESS.BAS` and five more | The BASIC programs from chapter 5, ready to run, so that you need not type them in |
 | `GREET.CMD` | The script from chapter 3 |
 | `README.TXT` | A list of what is on the card |

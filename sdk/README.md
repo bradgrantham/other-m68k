@@ -15,7 +15,7 @@ make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fste
 The `.elf` files are what `run` loads (ELF32 big-endian m68k, one `PT_LOAD` segment at
 0x8000, entry `_start` = 0x8000); copy them onto the card or onto C: (`HELLO.ELF`, so that
 `hello` finds it). The top-level `make flash` puts the examples (all but `ctors`) on C:, stripped
-(15-34 KB each; the loader reads only the program headers), except `sstv` and `fstest`, which
+(15-34 KB each; the loader reads only the program headers), except `sstv`, `fstest`, `ls` and `cat`, which
 go into the card package (`make card`).
 
 Two things in the `Makefile` keep the programs small. **`printf` is integer-only**: the
