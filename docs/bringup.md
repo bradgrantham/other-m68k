@@ -24,7 +24,8 @@ assumes the previous ones pass.
   using a stack and reports over serial; LED codes in `fw/README.md` tell you how far it got without serial.
   The banner is the last thing on serial: after it the BIOS releases port A to programs (spec rev 8),
   so the monitor needs the video output and the PS/2 keyboard. Until video works the serial report
-  (`RAM ... OK`, the banner with the ROM checksum and ID) is all the firmware says.
+  (`RAM ... OK`, then the banner: `Griffin Jr.` and `842K RAM available`) is all the firmware says;
+the firmware version, ROM checksum and ID are in the monitor's `info`, which needs video and a keyboard.
 
 ## 4. Video
 * The banner appears. Check the four alignment cases with a scope if the picture has

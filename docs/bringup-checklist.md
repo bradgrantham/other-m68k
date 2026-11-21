@@ -15,7 +15,7 @@ To rebuild on Linux: `make flash` (firmware), then `make -C hdl fit pins-check s
 
 - [ ] Firmware images on the Mac: `rom_even.bin` and `rom_odd.bin` (512 KB each), from
       `fw/build/` or the `griffin-jr-fw-*.zip` there. Note the version in the zip name; the
-      banner in stage G should show it: ________________
+      `info` command in stage G should show it: ________________
 - [ ] CPLD images on the Mac: copy `hdl/build/fit/cpld1_mmu.svf` and `cpld2_io.svf` into
       `hdl/build/fit/` of the Mac checkout (the `flash-cpld` targets look there). They are
       made from the JEDs by `make -C hdl svf` (prjbureau `fuseconv`).
@@ -110,8 +110,10 @@ and that the EVEN/ODD chips are not swapped.
 - [ ] Unplug. Fit both AS6C4008-55PCN in U2 and U3.
 - [ ] Power up. Do not press NMI during the POST.
 - [ ] LED0, then LED0 + LED1 for about 4 s (RAM test), then LED1, then both off.
-- [ ] Serial shows `RAM ... OK` (three dots) and the banner: firmware version, ROM checksum,
-      C: size, RAM size, ID `0x6802`. Record the version: ____________
+- [ ] Serial shows `RAM ... OK` (three dots) and the banner: `Griffin Jr.` and
+      `842K RAM available` (a third line `ROM BAD: type info` means a bad flash image).
+- [ ] Once video and the keyboard work, `info` shows the firmware version, ROM checksum
+      `(ok)`, C: size, RAM size and ID `6802`. Record the version: ____________
 - [ ] After the banner serial A goes quiet: the BIOS hands the port to programs. From here on
       the monitor is on the TV and the PS/2 keyboard.
 

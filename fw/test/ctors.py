@@ -103,7 +103,7 @@ def main():
     # ctors_cxx.cpp includes bios.h and calls the BIOS's ksnprintf: C linkage from the headers
     check("C++ called the BIOS through bios.h", cxx_text == "bios.h C++", "ksnprintf wrote %r" % cxx_text)
     # the BIOS came up as usual afterwards: POST and banner on serial, the monitor took a command
-    check("POST and banner on serial", "RAM ... OK" in b.out and "DUART 38400 8N1" in b.out)
+    check("POST and banner on serial", "RAM ... OK" in b.out and "K RAM available" in b.out)
     check("monitor ran `info`", re.search(r"ticks \d+ \(60/s\)", b.out) is not None)
     if fails:
         sys.stdout.write(b.out + b.err)

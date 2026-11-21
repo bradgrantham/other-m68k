@@ -48,7 +48,10 @@ volume: an 0xFF-filled 768 KB file (erased flash), `mkfs.vfat -F 12 -s 8 -f 2 -r
 an 8 KB erase sector), then `mcopy` of the files, upper-cased. The top-level `make flash`
 puts `flashfs/AUTOEXEC.CMD`, `flashfs/README.TXT` and the SDK examples on it, each stripped
 with `m68k-unknown-elf-strip` into `fw/build/cfiles/NAME.ELF` (43-62 KB each instead of
-54-75 KB; the loader needs only the program headers): about 475 KB of the 768 KB.
+54-75 KB; the loader needs only the program headers). When `../polybasic` has been built
+(`make griffinjr` there; `POLYBASIC=` names another place) its `BASIC.ELF` goes on too, about
+160 KB. With it the volume holds about 710 KB of its 768 KB, so `fstest` is left off: a
+volume that does not fit fails the build with mcopy's "Disk full".
 
 ## Programming the ROM
 
@@ -203,10 +206,13 @@ writes even then odd (catches WEU stuck), the upper half odd then even (catches 
 either shows up as `exp 55AA55AA got ...`. The three sweeps take about 50 M clocks, 4 s at
 12 MHz.
 
-After the POST the banner shows board name, firmware version, the ROM image size and its
-stored checksum word, the size of C:, RAM size, ID register (0x6802 on the DUART board),
-NTSC/PAL (PAL is selected with the soft switch when `INTSTAT.PALJMP` is set), the DUART baud
-rate and the user RAM range. At the first prompt after reset the monitor runs
+After the POST the banner is two lines: the board name, and the RAM a program can have
+(`842K RAM available`, the USER region). A ROM image whose word sum is not zero adds a third,
+`ROM BAD: type info`. The identifying data is in the monitor's `info` (`print_ident` in
+`main.c`): firmware version, the ROM image size and its stored checksum word with `(ok)` or
+`(BAD)`, the size of C:, RAM size, NTSC/PAL (PAL is selected with the soft switch when
+`INTSTAT.PALJMP` is set), the DUART baud rate, then the ID register (0x6802 on the DUART
+board) and the user RAM range. At the first prompt after reset the monitor runs
 `C:/AUTOEXEC.CMD` (see "Scripts") unless an ESC is waiting in the keyboard queue: hold or
 press ESC during the POST to skip it.
 
@@ -502,7 +508,8 @@ program therefore drops you back in the monitor with its registers on the screen
 
 ## Monitor
 
-All numbers are hex (`0x` optional). The line editor (`lineedit.c`) takes lines up to 127
+All numbers are hex (`0x` optional). Built-in commands are matched without regard to case
+(`HELP`, `Dir`), like file and program names. The line editor (`lineedit.c`) takes lines up to 127
 characters: Left/Right, Home/End (also ^A/^E) move the cursor, Backspace and Delete (^D) edit
 anywhere in the line, ^K kills to the end, ^U/^C the whole line, ^W the word before the cursor,
 and a line may wrap over several screen rows. Up/Down browse the last 32 typed lines (a line
@@ -537,7 +544,7 @@ prompt the monitor writes back the C: cache.
 | `ramtest` | destructive test of 0x8000-0xFFFFF (user RAM and both framebuffers) |
 | `beep` | 1 kHz for 200 ms (0xFF/0x00 patterns to `IO_AUDIO`) |
 | `cls` | clear the console |
-| `info` | banner, tick rate, INTSTAT, INTEN and GPIO shadows, DUART SRA, RX overruns, PS/2 errors, `go` default, current directory, clock, C: erase/program cycles since boot (and whether the cache is dirty) |
+| `info` | firmware version, ROM size and checksum word, C: and RAM sizes, video standard and baud rate (the identifying data the power-on banner leaves out), ID register, user RAM range, tick rate, INTSTAT, INTEN and GPIO shadows, DUART SRA, RX overruns, PS/2 errors, `go` default, current directory, clock, C: erase/program cycles since boot (and whether the cache is dirty) |
 | `sd` | re-initialise the card; print type, bus width, RCA, capacity, CID, CSD (also drops D:'s mount and open files) |
 | `sd rd lba` | hex dump of one 512-byte block |
 | `C:` / `D:` | make that drive current |
@@ -613,7 +620,7 @@ direction and `lseek` on them `E_INVAL`.
 | `post.S` | ROM checksum and RAM test, registers only |
 | `duart.S`, `duart.h` | `duart_reset_init` (stack-less DUART bring-up), `post_putc/puts/puthex` (poll TXRDY), `delay_loops`; MR/CR/ACR values with data-sheet references |
 | `memops.S`, `string.c` | memcpy/memmove/memset, str* |
-| `main.c` | `bios_main`, banner, `putchar_both` |
+| `main.c` | `bios_main`, the power-on banner, `print_ident` for `info`, `putchar_both` |
 | `console.c`, `font6x10.h`, `mkfont.py` | video console |
 | `serial.c`, `input.c`, `queue.c`, `ps2.c`, `irq.c` | GPIO shadow, polled DUART TX, input rings, PS/2 decoder, ISRs (DUART RX drain) |
 | `exception.c`, `syscall.c`, `monitor.c`, `srec.c`, `hexdump.c`, `printf.c` | as named; `syscall.c` holds the user pointer checks and the fs/SD/exec call wrappers |

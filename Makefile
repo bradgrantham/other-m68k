@@ -28,8 +28,21 @@ hdl:
 # The flash window image: the BIOS image plus the C: volume (flashfs/ and the SDK's example
 # programs, except the constructor demo `ctors`), and the two chip images for the TL866. `make run` boots it and keeps what the
 # machine writes to C: in fw/build/flash.img across runs (--rom-save).
-FLASHFS_PROGRAMS = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv
+# (fstest, a file-system self test, stays off C: to leave room for BASIC; it is in sdk/build for the card)
+FLASHFS_PROGRAMS = hello plasma ls cat bmpview tune abench sdplay term joytest sstv
 FLASHFS_FILES = flashfs/AUTOEXEC.CMD flashfs/README.TXT $(foreach p,$(FLASHFS_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
+
+# BASIC is built in its own tree (make griffinjr there); it goes on C: when it has been built.
+POLYBASIC ?= ../polybasic
+BASIC_ELF := $(wildcard $(POLYBASIC)/build/griffinjr/BASIC.ELF)
+ifneq ($(BASIC_ELF),)
+FLASHFS_FILES += fw/build/cfiles/BASIC.ELF
+fw/build/cfiles/BASIC.ELF: $(BASIC_ELF)
+	mkdir -p fw/build/cfiles
+	$(XTOOLS)/m68k-unknown-elf-strip -o $@ $<
+else
+$(warning BASIC.ELF not found under $(POLYBASIC): C: is built without BASIC)
+endif
 
 flash: fw sdk fw/build/flash.img
 
@@ -61,3 +74,6 @@ clean:
 	-$(MAKE) -C emu clean
 	-$(MAKE) -C sdk clean
 	-$(MAKE) -C hdl clean
+
+# a failed recipe (a full C: volume, say) must not leave a half-made target behind
+.DELETE_ON_ERROR:

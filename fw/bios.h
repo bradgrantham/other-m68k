@@ -184,7 +184,8 @@ extern uint32_t last_entry;             /* default address for `go` */
 /* ---- main.c ---- */
 extern uint16_t post_rom_sum;           /* 16-bit word sum from POST (0 = good) */
 void bios_main(void);
-void print_banner(void);
+void print_banner(void);             /* power-on: name, available RAM */
+void print_ident(void);              /* `info`: firmware version, ROM sum, sizes, video standard, baud */
 void putchar_both(int c);               /* console, plus serial while console_serial is set */
 extern int console_serial;              /* 1 during POST/banner, 0 after: serial A belongs to programs */
 

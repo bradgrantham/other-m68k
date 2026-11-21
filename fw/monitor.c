@@ -221,7 +221,7 @@ static void cmd_beep(void)
 
 static void cmd_info(void)
 {
-    print_banner();
+    print_ident();
     kprintf("ID %04x  user RAM %06x-%06x  fb0 %06x\n", IO_ID, (unsigned)USER_BASE, (unsigned)(USER_END - 1),
             (unsigned)FB_PAGE0_ADDR);
     kprintf("ticks %u (%u/s) INTSTAT %04x INTEN %04x\n", ticks, ticks_per_sec, IO_INTSTAT, inten_shadow);
@@ -700,11 +700,12 @@ static void cmd_help(void)
             "del ren mkdir rmdir   file management\n"
             "date [Y-M-D H:M]  show/set the clock\n"
             "format C:      empty flash volume\n"
-            "run [-v] file [args] load ELF and run (-v: load addresses)\n"
+            "run [-v] file [args]  load and run a program\n"
             "name [args]    NAME.ELF or NAME.CMD\n"
             "               from ., C:/, D:/\n"
             "exit  history  end a script / typed lines\n"
-            "flash file     reprogram the ROM\n");
+            "flash file     reprogram the ROM\n"
+            "reboot         start the ROM again\n");
 }
 
 static void execute(char *line)
@@ -715,13 +716,20 @@ static void execute(char *line)
     char *rest;
     char *word = first_word(raw, &rest);
     if (!*word) return;
-    if (!strcmp(word, "run")) { cmd_run(rest); return; }
-    if (!strcmp(word, "echo")) { kprintf("%s\n", rest); return; }
-    if (!strcmp(word, "date")) { cmd_date(rest); return; }
-    if (!strcmp(word, "rem") || word[0] == '#' || word[0] == ';') return;
+    /* Built-in commands are matched without regard to case (HELP, Dir): c is the command
+     * word in lower case. A word too long to be a built-in is left to run_unknown, which
+     * gets the word as typed. */
+    char c[12];
+    size_t n = 0;
+    while (word[n] && n < sizeof c - 1) { c[n] = lower(word[n]); n++; }
+    c[n] = 0;
+    if (word[n]) c[0] = 0;
+    if (!strcmp(c, "run")) { cmd_run(rest); return; }
+    if (!strcmp(c, "echo")) { kprintf("%s\n", rest); return; }
+    if (!strcmp(c, "date")) { cmd_date(rest); return; }
+    if (!strcmp(c, "rem") || word[0] == '#' || word[0] == ';') return;
     int argc = args_split(line, argv, 0, 12);
     if (!argc) return;
-    const char *c = argv[0];
     if (!strcmp(c, "help") || !strcmp(c, "?")) cmd_help();
     else if (!strcmp(c, "md")) cmd_md(argc, argv);
     else if (!strcmp(c, "mb")) cmd_mem_write(argc, argv, 1);

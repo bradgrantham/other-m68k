@@ -15,7 +15,16 @@ void putchar_both(int c)
     serial_putc(c);
 }
 
+/* What the machine says at power-on: its name and the RAM a program can have. A bad ROM
+ * sum is the one thing worth a third line; everything else is in print_ident (`info`). */
 void print_banner(void)
+{
+    kprintf("%s\n%uK RAM available\n", BOARD_NAME, (unsigned)(USER_SIZE / 1024));
+    if (post_rom_sum != 0) kprintf("ROM BAD: type info\n");
+}
+
+/* The identifying data, for the monitor's `info`. */
+void print_ident(void)
 {
     uint16_t stored = *(volatile uint16_t *)(ROM_BASE + ROM_IMAGE_SIZE - 2);
     kprintf("%s BIOS %s\n", BOARD_NAME, FW_VERSION);

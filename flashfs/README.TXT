@@ -1,4 +1,11 @@
-This is drive C:, the 768 KB FAT12 volume in the flash ROM chips on the Griffin Jr.
-It holds the common programs (NAME.ELF) so they run from any drive, and
-AUTOEXEC.CMD, which the monitor runs at boot. The SD card is drive D:.
-Programs here were built from sdk/examples; replace them with `copy D:X.ELF C:`.
+This is drive C:. It lives in the flash ROM chips of
+the Griffin Jr. and holds 768 KB.
+
+The programs here (the .ELF files) run from any
+drive. Type a program's name without the .ELF.
+
+AUTOEXEC.CMD holds commands that run each time the
+machine starts.
+
+The SD card is drive D:. To add a program from the
+card, type:  copy D:NAME.ELF C:
