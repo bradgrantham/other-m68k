@@ -10,18 +10,16 @@ seen on hardware yet. Write down what really happens.
 
 ## A. Before the boards arrive (on the computer)
 
-Nothing is built on the Mac yet: there is no `fw/build/` and no `hdl/build/`.
+Everything is built on the Linux machine and copied to the Mac; nothing is built on the Mac.
+To rebuild on Linux: `make flash` (firmware), then `make -C hdl fit pins-check svf` (CPLDs).
 
-- [ ] Firmware images: `make flash XTOOLS=<toolchain>/bin` gives `fw/build/rom_even.bin` and
-      `fw/build/rom_odd.bin` (512 KB each). The Makefile expects the toolchain in
-      `~/x-tools/m68k-unknown-elf/bin`; on the Mac there is one in `~/Downloads/m68k-unknown-elf/bin`.
-- [ ] CPLD fits: `make -C hdl fit` then `make -C hdl pins-check` gives
-      `hdl/build/fit/cpld1_mmu.jed` and `cpld2_io.jed`. `fit.sh` wants `ATF15XX_YOSYS` and
-      `WINEPREFIX` set (same fitter flow as Griffin's `cpld/Makefile`).
-- [ ] JED to SVF for both, with prjbureau `fuseconv` as Griffin does:
-      `python3 -m util.fuseconv -d ATF1508AS x.jed x.svf`. This step has never been run for
-      this project (`hdl/STATUS.md`, "Not done").
-- [ ] `make -C hdl sim` ends in `RESULT: PASS`.
+- [ ] Firmware images on the Mac: `rom_even.bin` and `rom_odd.bin` (512 KB each), from
+      `fw/build/` or the `griffin-jr-fw-*.zip` there. Note the version in the zip name; the
+      banner in stage G should show it: ________________
+- [ ] CPLD images on the Mac: copy `hdl/build/fit/cpld1_mmu.svf` and `cpld2_io.svf` into
+      `hdl/build/fit/` of the Mac checkout (the `flash-cpld` targets look there). They are
+      made from the JEDs by `make -C hdl svf` (prjbureau `fuseconv`).
+- [ ] OpenOCD is installed on the Mac (`openocd --version`).
 - [ ] Program the flash chips in the TL866 (minipro device `SST39SF040`):
       `rom_even.bin` into the chip for **U4** (EVEN, D15..D8), `rom_odd.bin` into the chip for
       **U5** (ODD, D7..D0). Label the chips.
@@ -68,13 +66,13 @@ chips must be in their sockets or the chain is open.
 
 - [ ] Fit both ATF1508AS into U6 and U7 (PLCC-84; check the bevelled corner). Nothing else fitted.
 - [ ] Power up; current is modest and neither chip gets hot.
-- [ ] OpenOCD sees two TAPs with ID 0x0150803f. Use Griffin's settings (`-irlen 10`, two
-      `jtag newtap` lines, UM232H); the one-TAP `-irlen 3` command in `hdl/README.md` does not
-      match this chain.
-- [ ] Program `cpld1_mmu.svf` into one TAP. Which TAP name is U6 is not established: check the
-      next line, and if it fails, erase that chip and use the other TAP.
-- [ ] CPUCLK is 12 MHz (J9 channel 0, or U1 socket pin 15). This proves CPLD1 is in U6.
-- [ ] Program `cpld2_io.svf` into the other TAP.
+- [ ] `make -C hdl jtag-scan`: OpenOCD sees two TAPs, `tap0.tap` and `tap1.tap`, with ID
+      0x0150803f (Griffin's settings: UM232H, two `jtag newtap` lines, `-irlen 10`). The
+      Makefile runs `sudo openocd`; on the Mac use `OPENOCD=openocd` if sudo is not needed.
+- [ ] Program `cpld1_mmu.svf` into U6: `make -C hdl flash-cpld1`. U6 is `tap1` and U7 is
+      `tap0` (OpenOCD counts from the TDO end; confirmed on the first board).
+- [ ] CPUCLK is 12 MHz (J9 channel 0, or U1 socket pin 15).
+- [ ] Program `cpld2_io.svf` into U7: `make -C hdl flash-cpld2`.
 - [ ] HSYNC period 63.6 us (J9 channel 18): ________
 - [ ] VSYNC period 16.7 ms (J9 channel 19): ________
 - [ ] LATCH pulses every 333 ns.

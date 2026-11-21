@@ -339,9 +339,9 @@ CPLD1 pins: 27 inputs + 33 outputs = 60 of the 60 regular I/O with JTAG on (none
    Output is `build/fit/cpld1_mmu.svf` and `build/fit/cpld2_io.svf`.
 3. Program through the JTAG header with the FT232H (UM232H) and OpenOCD. The chain is header
    TDI -> U6 (CPLD1) -> U7 (CPLD2) -> header TDO, two TAPs of IR length 10, ID 0x0150803f:
-   `make jtag-scan`, then `make flash-cpld1 TAP=tapN` and `make flash-cpld2 TAP=tapM`. These
+   `make jtag-scan`, then `make flash-cpld1` (U6, tap1) and `make flash-cpld2` (U7, tap0). These
    are the commands Griffin's `cpld/Makefile` uses (two `jtag newtap ... -irlen 10` lines and
-   `svf FILE -tap tapN.tap`). Which TAP name is U6 is settled at bring-up
-   (`docs/bringup-checklist.md`, stage D). The SVF files can be built on one machine and
+   `svf FILE -tap tapN.tap`). OpenOCD's tap0 is the chip nearest TDO, so U6 is
+   tap1: confirmed on the first rev C3 board (12 MHz CPUCLK after programming CPLD1 into tap1). The SVF files can be built on one machine and
    copied into `build/fit/` on the one with the adapter. Keep JTAG
    enabled so the parts stay reprogrammable in circuit.

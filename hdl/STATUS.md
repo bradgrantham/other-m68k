@@ -48,8 +48,9 @@
 ## Not done
 
 * The pin blocks are a free-placement harvest, not yet reconciled with board routing.
-* SVF conversion and programming (ATMISP under wine, or prjbureau fuseconv; openocd not
-  installed).
+* Bring-up of the programmed chips beyond the clock. On 2026-11-20 `cpld1_mmu.svf` went into
+  U6 (OpenOCD tap1) on the first rev C3 board and CPUCLK is 12 MHz; the rest of
+  `docs/bringup-checklist.md` stage D (CPLD2, video timing) is not recorded here yet.
 
 ## Findings against docs/architecture.md (please review)
 
