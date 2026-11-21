@@ -69,7 +69,7 @@ The sums are `+`, `-`, `*`, `/` and `^` for "to the power of". The tests are `=`
 | `GPRINT x, y, text$ [, colour]` | Text on the picture |
 | `SCRW` `SCRH` | The width and height of the screen: 320 and 240 |
 | `PAGE draw, show` | Which page (0 or 1) to draw on and which to show |
-| `VSYNC [n]` | Waits for the next picture, or for `n` pictures |
+| `VSYNC [n]` | Waits for the next frame, or for `n` frames |
 | `SPRITE DEFINE n, x, y, w, h [, clear]` | Takes sprite `n` (0 to 31, up to 128 by 128 pixels) from the page. Pixels of the colour `clear` are left out when it is drawn |
 | `SPRITE n, x, y` | Draws sprite `n` |
 | `TEXT` | Goes back to the text screen |

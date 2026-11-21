@@ -104,7 +104,7 @@ The programmer's guide lists every register and every bit.
 ## Interrupts
 
 Much of what a computer does is wait. The keyboard may have a key for it, or the
-television may have finished a picture, and it would be wasteful for the processor to keep
+television may have finished a frame, and it would be wasteful for the processor to keep
 asking. So the parts of the machine tap it on the shoulder. This tap is called an
 **interrupt**: the processor stops what it is doing, runs a short piece of the BIOS that
 deals with the event, and goes back to where it was.
@@ -114,7 +114,7 @@ Griffin Jr. uses five of them.
 
 | Level | Source | What the BIOS does |
 |----|----------|--------------------|
-| 1 | The television has finished a picture | Counts a tick and keeps the clock |
+| 1 | The television has finished a frame | Counts a tick and keeps the clock |
 | 2 | The keyboard has sent a byte | Works out which key it was and queues it |
 | 3 | The 68681 | Takes in bytes from the serial port, and times the paddles |
 | 4 | The television has started a new line | Sends out the next sound pattern |
@@ -131,7 +131,7 @@ wrong.
 A program could read the keyboard and draw its own letters by working the registers
 directly, but nearly all programs let the BIOS do it. The BIOS offers about forty services,
 called **system calls**, for things like printing text, reading a key, opening a file,
-waiting for the next picture and playing a buffer of sound.
+waiting for the next frame and playing a buffer of sound.
 
 To make a system call, a program puts the number of the service in a register and carries
 out the instruction `TRAP #15`. The processor jumps into the BIOS, the BIOS does the work,

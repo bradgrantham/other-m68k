@@ -53,12 +53,12 @@ introduced. In C they look like ordinary functions whose names begin with `sys_`
 |----------|--------------------|
 | `sys_video_info` | Tells the program where the two pages of the picture are |
 | `sys_video_set_page` | Chooses the page the television shows |
-| `sys_wait_vblank` | Waits for the television to finish the current picture |
+| `sys_wait_vblank` | Waits for the television to finish the current frame |
 | `sys_pollchar` | Gives a key if one has been pressed, without waiting |
 | `sys_joystick` | Reads the joystick's switches |
 | `sys_paddles` | Reads the two paddles |
 | `sys_audio_start` | Begins a stream of sound and returns the first buffer to fill |
-| `sys_ticks` | The count of pictures drawn since the machine started |
+| `sys_ticks` | The count of frames drawn since the machine started |
 
 To draw, a program asks `sys_video_info` for the address of a page and then writes bytes
 to it, exactly as you did by hand with `fill` in chapter 6. `plasma` is the example to

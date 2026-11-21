@@ -170,7 +170,7 @@ For paddles, run it without the `-j`:
 other. A question mark after a number means that the Griffin Jr. got no reading from that
 paddle, which is what you see on the first line before the first measurement, and what you
 see all the time if no paddle is plugged in. The number at the end of the line counts
-pictures drawn, so you can see how often readings arrive.
+frames, so you can see how often readings arrive.
 
 The buttons on a pair of paddles show up as the left and right switches.
 

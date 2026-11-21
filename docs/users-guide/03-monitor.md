@@ -42,8 +42,9 @@ Now make the machine do something you can see and hear.
 `led` switches the two green lights: `led 1` lights LED0, `led 2` lights LED1, `led 3`
 lights both and `led 0` puts them out.
 
-`ticks` prints a counter that goes up by one each time the television finishes drawing a
-picture. That happens 60 times a second, which is why the second number above is larger
+A television does not show one steady picture. It draws the whole screen again from top
+to bottom many times a second, and each complete drawing is called a **frame**. `ticks`
+prints a counter that goes up by one for every frame. There are 60 frames a second, which is why the second number above is larger
 than the first. Type `ticks`, count ten seconds and type it again, and the two numbers
 will be about 600 apart.
 
@@ -412,7 +413,7 @@ tell you where the program was when you stopped it.
 | `history` | Lists the lines you have typed |
 | `beep` | Plays a short tone |
 | `led N` | Switches the green lights, `0` to `3` |
-| `ticks` | Prints the picture counter |
+| `ticks` | Prints the frame counter |
 | `info` | Prints the facts that identify the machine |
 | `md ADDRESS LENGTH` | Shows memory |
 | `mb ADDRESS BYTES` | Changes memory |

@@ -87,7 +87,7 @@ move nearly the whole picture up by ten rows, which is about 74,000 bytes each t
 The Griffin Jr. sets aside room for two complete pictures. Page 0 starts at `ed400` and is
 the one you normally see. Page 1 starts at `da800`, just below it in memory. A switch in
 CPLD 1 chooses which page goes to the television, and the change takes effect between one
-picture and the next, so the screen never shows half of each.
+frame and the next, so the screen never shows half of each.
 
 The monitor's `page` command works the switch.
 
@@ -104,8 +104,8 @@ page 1's 75 KB as ordinary memory.
 ::: curious
 **Sharing the memory with the television**
 
-A television draws its picture one line at a time, 262 lines in each picture and about 60
-pictures a second, and it cannot wait. While it sweeps across a line, the Griffin Jr. has
+A television draws its picture one line at a time, 262 lines in each frame and about 60
+frames a second, and it cannot wait. While it sweeps across a line, the Griffin Jr. has
 to fetch the bytes for that line from RAM at a steady rate of one byte for every pixel.
 
 In many home computers of the 1980s the processor had to stop and wait whenever the
@@ -124,11 +124,11 @@ a great deal for sound, as the next chapter shows.
 ::: curious
 **Sixty times a second**
 
-Each time the television finishes a picture and goes back to the top, CPLD 2 sends the
+Each time the television finishes a frame and goes back to the top, CPLD 2 sends the
 processor a signal. The BIOS uses it to count the `ticks` you met in chapter 3 and to keep
 the clock. Programs use it as a steady beat: BASIC's `VSYNC` waits for it, and so does
 every game that wants to move at an even speed.
 
-A picture lasts for 262 lines of 764 clock ticks each. That is 200,168 ticks of the 12 MHz
-clock, which comes to 59.95 pictures a second and not quite 60.
+A frame lasts for 262 lines of 764 clock ticks each. That is 200,168 ticks of the 12 MHz
+clock, which comes to 59.95 frames a second and not quite 60.
 :::

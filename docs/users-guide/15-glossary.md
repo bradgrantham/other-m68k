@@ -44,6 +44,9 @@ Flash memory
 :   Memory that keeps its contents without power and can be rewritten in blocks. The ROM
     chips are flash memory.
 
+Frame
+:   One complete drawing of the screen by the television. There are 60 a second.
+
 Hex
 :   Hexadecimal: counting in sixteens, with the digits 0 to 9 and a to f.
 

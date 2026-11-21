@@ -179,7 +179,7 @@ to how far across it is and `dy` to how far down. Lines 60 and 70 watch for the 
 the screen and turn the ball round by changing the sign of `dx` or `dy`. Line 80 draws
 the ball in its new place.
 
-`VSYNC` in line 90 waits until the television has finished drawing the current picture.
+`VSYNC` in line 90 waits until the television has finished drawing the current frame.
 That happens 60 times a second, so the loop runs at a steady 60 steps a second whatever
 else is going on, and the ball crosses the screen at the same speed every time.
 
@@ -294,7 +294,7 @@ The program has three parts, and the remarks mark where each begins.
 Lines 40 to 90 start a new star. They choose a place for it along the top, set its speed
 from the score, and print the score and the number of lives.
 
-Lines 100 to 210 are the game's loop, which goes round once for every picture the
+Lines 100 to 210 are the game's loop, which goes round once for every frame the
 television draws. Each time round it rubs out the basket, finds out where the player
 wants it, draws it there, and then does the same for the star. Line 130 is the one that
 reads the controller: if `PADDLE(0)` gives a real reading the basket goes where the

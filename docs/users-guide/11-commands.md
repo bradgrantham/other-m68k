@@ -50,7 +50,7 @@ In a script, a line that begins with `#` or `;`, or with the word `rem`, is a re
 | `beep` | Plays a short tone |
 | `led N` | Sets the green lights: 0 for neither, 1 for LED0, 2 for LED1, 3 for both |
 | `page N` | Shows page 0 or page 1 of the picture |
-| `ticks` | Prints the count of pictures drawn since start-up, in decimal |
+| `ticks` | Prints the count of frames drawn since start-up, in decimal |
 | `reset` | Starts the machine again, memory test and all |
 | `reboot` | Starts the BIOS again without the reset that `reset` gives the other chips |
 | `ramtest` | Tests the RAM that programs and pictures use. The screen and any program in memory are lost |
