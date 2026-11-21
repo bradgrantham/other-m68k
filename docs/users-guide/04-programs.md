@@ -46,7 +46,7 @@ you press a key.
 ![`plasma`, caught in mid-swirl.](shots/plasma.png){width=62%}
 
 Nothing here is stored as a picture. The program works out the colour of every block
-afresh for each frame, about twelve times a second, which is a fair show of what the 68000
+afresh for each new picture, about twelve times a second, which is a fair show of what the 68000
 can do while the screen is being drawn.
 
 ::: curious
