@@ -57,6 +57,12 @@ builds `BASIC.ELF`) and is therefore not on this list.
     memory map and registers, and a tour of each program above as it arrives. It
     complements `docs/programmers-guide.md`, which stays the reference.
 
+## Releases
+
+The user's guide PDF is a build product and is not checked in. The aim is for GitHub to
+build it, and the enclosure files, and publish them as GitHub releases; the checked-in
+enclosure STLs go away when that exists. Not started.
+
 ## Suggested order
 
 The user's guide first, describing the system and the programs that exist today (monitor,

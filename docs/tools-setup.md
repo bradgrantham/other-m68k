@@ -16,6 +16,8 @@ fetched by hand.
 | freerouting CLI | 2.5.0, `~/.local/share/freerouting/freerouting-cli` (self-contained binary) | kicad/ autorouting |
 | wine + winetricks | 9.0 (apt) | ATF15xx fitter |
 | python3 | 3.12, stdlib only | tools/gen.py, kicad/ |
+| pandoc | 3.6.4, `~/.local/opt/pandoc-3.6.4/bin/pandoc` (GitHub release tarball, 2026-11-21) | docs/users-guide/ |
+| Typst | 0.13.1, `~/.local/opt/typst-x86_64-unknown-linux-musl/typst` (GitHub release tarball, 2026-11-21) | docs/users-guide/ |
 
 Reference documents kept in `~/.local/share/datasheets/`: ATF1508AS datasheet, SN74AHCT245,
 M68000 User's Manual (section 10.10 has the AC timing used in `docs/architecture.md`).
