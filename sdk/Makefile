@@ -14,11 +14,22 @@ B   = build
 CFLAGS  = -m68000 -Os -Wall -Wextra -ffunction-sections -fdata-sections -I$(GEN) -I. -MMD -MP
 # C++ programs: crt0 runs static constructors and destructors; they link with the same
 # libraries as C programs (no libstdc++), so no exceptions, RTTI or guards for local statics.
+# newlib's printf formats floating point, which costs every program about 21 KB (the
+# formatter, dtoa and the soft-float routines under it). Nothing here prints a float, so
+# the printf family is mapped onto newlib's integer-only twins: hello is 13 KB of text
+# instead of 34 KB. A program that needs %f, %e or %g: add its name to FLOAT_PRINTF.
+INT_PRINTF = -Dprintf=iprintf -Dfprintf=fiprintf -Dsprintf=siprintf -Dsnprintf=sniprintf \
+             -Dvprintf=viprintf -Dvfprintf=vfiprintf -Dvsprintf=vsiprintf -Dvsnprintf=vsniprintf
+FLOAT_PRINTF =
+CFLAGS += $(INT_PRINTF)
+$(FLOAT_PRINTF:%=$(B)/%.o): INT_PRINTF =
 CXXFLAGS = $(CFLAGS) -fno-exceptions -fno-rtti -fno-threadsafe-statics
 ASFLAGS = -m68000 -I$(GEN) -I. -x assembler-with-cpp
 # newlib in this toolchain expects the libgloss names (write/read/sbrk/_exit/...), which
 # newlib_shim.c provides; libsys comes after libc so libc's references resolve into it.
-LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments -L$(B)
+# -n: no page alignment in the file. The default leaves 8 KB of padding before the one
+# load segment; the BIOS loader reads the segment from whatever offset the header gives.
+LDFLAGS = -m68000 -nostartfiles -T user.ld -Wl,--gc-sections -Wl,-n -Wl,--no-warn-rwx-segments -L$(B)
 LDLIBS  = -Wl,--start-group -lc -lsys -Wl,--end-group -lgcc
 
 EXAMPLES = hello plasma ls cat fstest bmpview tune abench sdplay term joytest sstv ctors

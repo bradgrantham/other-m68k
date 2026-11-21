@@ -41,6 +41,7 @@ make fw         # fw/build/rom.bin (256 KB BIOS image, for the monitor's `flash`
 make flash      # fw/build/flash.img (BIOS + the C: volume from flashfs/ and the SDK examples), rom_even.bin / rom_odd.bin for the two flash chips
 make emu        # emu/build/m68k-emu
 make sdk        # sdk/build/*.elf user programs
+make card       # build/card/ and build/griffin-jr-card.zip: the optional programs and the guide's BASIC listings, for the SD card
 make run        # boot flash.img in the emulator (what the machine writes to C: persists in it)
 make -C hdl sim # simulate the glue logic (needs iverilog)
 ```

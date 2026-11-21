@@ -68,7 +68,9 @@ def make_media(dirname):
 
 
 def make_card(path):
-    """A small FAT32 card holding the files in card/ (upper-cased names)."""
+    """A small FAT32 card: the card package (`make card` at the top level: the optional
+    programs, the guide's listings, its README), the other files in card/, and the picture
+    and sound made here.  Names are upper-cased."""
     env = dict(os.environ, PATH=os.environ["PATH"] + ":/sbin:/usr/sbin", MTOOLS_SKIP_CHECK="1")
     if os.path.exists(path):
         os.remove(path)
@@ -79,9 +81,12 @@ def make_card(path):
     made = os.path.join(BUILD, "card-made")
     os.makedirs(made, exist_ok=True)
     make_media(made)
-    for d in (os.path.join(HERE, "card"), made):
+    package = os.path.join(TOP, "build", "card")
+    if not os.path.isdir(package):
+        sys.exit("screens.py: %s is missing: run `make card` at the top level" % package)
+    for d in (package, os.path.join(HERE, "card"), made):
         for name in sorted(os.listdir(d)):
-            subprocess.run(["mcopy", "-i", path, os.path.join(d, name), "::/" + name.upper()],
+            subprocess.run(["mcopy", "-o", "-i", path, os.path.join(d, name), "::/" + name.upper()],
                            check=True, env=env)
 
 

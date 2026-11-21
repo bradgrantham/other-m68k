@@ -1,11 +1,12 @@
-# The programs on drive C:
+# The programs
 
-The Griffin Jr. comes with a small set of programs on drive C:. Some are there to be used,
-some show off one part of the machine, and a few are short examples left in place for
-people who want to write programs of their own. This chapter takes them one at a time.
+The Griffin Jr. comes with a small set of programs. Some are there to be used, some show
+off one part of the machine, and a few are short examples left in place for people who
+want to write programs of their own. This chapter takes them one at a time.
 
-Because the monitor looks on drive C: wherever you are, you can run any of them by typing
-its name.
+Most of them are on drive C:, and because the monitor looks there wherever you are, you
+can run any of those by typing its name. A few more come as files to copy to the SD card,
+and the last section of this chapter describes that package.
 
 | Program | What it does |
 |----------|--------------------|
@@ -16,9 +17,10 @@ its name.
 | `tune` | Plays a piece of music |
 | `sdplay` | Plays a sound file from the SD card |
 | `joytest` | Shows what the joystick and paddles are doing |
-| `sstv` | Sends a picture as sound, to a phone or a radio |
 | `term` | Turns the Griffin Jr. into a terminal on serial port A |
 | `ls` `cat` `abench` | Programmers' examples and a speed test |
+| `sstv` | Sends a picture as sound, to a phone or a radio. On the card |
+| `fstest` | Checks that files can be written and read back. On the card |
 
 Several of the examples below use files from the guide's own SD card: a picture named
 `SUNSET.BMP` and a sound named `CHIME.PCM`. Your card will not have these, so put a
@@ -191,7 +193,10 @@ through the port pin by pin.
 sstv D:SUNSET.BMP
 ```
 
-`sstv` sends a picture as sound. Slow-scan television, or SSTV, is a way of turning a
+`sstv` is one of the programs in the card package, so it runs when a card that holds it
+is in the socket.
+
+It sends a picture as sound. Slow-scan television, or SSTV, is a way of turning a
 picture into a long warbling tone that can travel over anything that carries a voice.
 Radio amateurs use it to send pictures around the world, and a close relative of it
 carried the first television pictures back from the Moon.
@@ -275,9 +280,8 @@ A program is a file like any other, so you manage programs with the file command
 chapter 3.
 
 A program does not have to be on drive C: to run. If it is on the SD card, the monitor
-finds it there, as long as no program on C: has the same name. Drive C: is small, and the
-programs that come with the machine nearly fill it, so the card is the best place for your
-own collection.
+finds it there, as long as no program on C: has the same name. Drive C: is small, so the
+card is the best place for a large collection.
 
 To put a program on drive C: anyway, so that it is there without the card, copy it across:
 
@@ -293,3 +297,20 @@ del C:ABENCH.ELF
 
 Nothing is lost for good by doing this. The programs that came on drive C: are part of the
 software for the Griffin Jr., so you can copy any of them back from a card later.
+
+## The card package
+
+The software for the Griffin Jr. includes a folder of extra files meant for the SD card,
+which is also supplied as a single file named `griffin-jr-card.zip`. Copy its contents to
+your card on another computer.
+
+| File | What it is |
+|----------|--------------------|
+| `SSTV.ELF` | The `sstv` program described above |
+| `FSTEST.ELF` | A test that writes a file, reads it back and reports whether the two match. Useful when a card or drive C: is in doubt |
+| `GUESS.BAS` and five more | The BASIC programs from chapter 5, ready to run, so that you need not type them in |
+| `GREET.CMD` | The script from chapter 3 |
+| `README.TXT` | A list of what is on the card |
+
+These are kept off drive C: to leave room there for your own things. If you use one of
+them often, copy it to drive C: and it will be there without the card.

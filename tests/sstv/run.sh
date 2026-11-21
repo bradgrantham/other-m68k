@@ -1,6 +1,6 @@
 #!/bin/sh
 # run.sh [host]  -- SSTV encoder tests. Host part: host_test.c (sample budgets, 9 WAVs) and
-# decode.py on three of them. Emulator part: SSTV.ELF on C: sends the console in Robot 36 to
+# decode.py on three of them. Emulator part: SSTV.ELF on the card sends the console in Robot 36 to
 # --audio-wav (PDM + the board's RC filter model) and writes a WAV to D:; both are decoded.
 # Prints PASS:/FAIL: lines and ALL TESTS PASSED; exit 1 on any failure.
 cd "$(dirname "$0")"
@@ -28,13 +28,15 @@ done
 echo "== emulator"
 [ -x $EMU ] && [ -f $FLASH ] || { echo "run.sh: build the emulator and 'make flash' first" >&2; exit 1; }
 # Robot 36 from the console (38 s of audio): about 2300 frames after the 350-frame boot delay
-step "$EMU" --rom $FLASH --headless --no-stdin --exit-on-berr --frames 2900 \
+# sstv is a card program (make card), not on C:: the card image carries it
+cp $TOP/sdk/build/sstv.elf $B/SSTV.ELF
+sh $TOP/fw/test/mkimage.sh $B/sd.img 64 $B/SSTV.ELF > /dev/null 2>&1 || fail "sd image (needs mkfs.vfat and mcopy)"
+step "$EMU" --rom $FLASH --sd $B/sd.img --headless --no-stdin --exit-on-berr --frames 2900 \
     --type 'sstv --no-ui\n' --type-delay 350 --audio-wav $B/emu-r36.wav --text-dump $B/emu-r36.txt
 grep -q "240 lines," $B/emu-r36.txt && pass "sstv ran: $(grep '240 lines,' $B/emu-r36.txt)" || { cat $B/emu-r36.txt; fail "sstv summary line"; }
 if python3 decode.py $B/emu-r36.wav $B/emu-r36.png --rate 48000/1 > $B/decode-emu.log 2>&1; then pass "decode emulator audio ($(grep -c '^PASS' $B/decode-emu.log) checks)"
 else cat $B/decode-emu.log; fail "decode emulator audio"; fi
 # --wav onto D:
-sh $TOP/fw/test/mkimage.sh $B/sd.img 64 > /dev/null 2>&1 || fail "sd image (needs mkfs.vfat and mcopy)"
 step "$EMU" --rom $FLASH --sd $B/sd.img --headless --fast --no-stdin --exit-on-berr --frames 3000 \
     --type 'sstv --no-ui --wav D:OUT.WAV\n' --type-delay 350 --no-audio --text-dump $B/emu-wav.txt
 grep -q "OUT.WAV in" $B/emu-wav.txt && pass "wav written: $(grep 'OUT.WAV in' $B/emu-wav.txt)" || { cat $B/emu-wav.txt; fail "sstv --wav summary line"; }
@@ -43,7 +45,7 @@ MTOOLS_SKIP_CHECK=1 mcopy -i $B/sd.img ::/OUT.WAV $B/target.wav 2>/dev/null || f
 if [ -f $B/target.wav ] && python3 decode.py $B/target.wav $B/target.png --rate 12000000/764 > $B/decode-target.log 2>&1; then pass "decode target WAV ($(grep -c '^PASS' $B/decode-target.log) checks)"
 else [ -f $B/target.wav ] && cat $B/decode-target.log; fail "decode target WAV"; fi
 # the flash volume is refused
-step "$EMU" --rom $FLASH --headless --fast --no-stdin --frames 500 \
+step "$EMU" --rom $FLASH --sd $B/sd.img --headless --fast --no-stdin --frames 500 \
     --type 'sstv --no-ui --wav C:OUT.WAV\n' --type-delay 350 --no-audio --text-dump $B/emu-cwav.txt
 grep -q "too small" $B/emu-cwav.txt && pass "C: refused for --wav" || { cat $B/emu-cwav.txt; fail "C: refused for --wav"; }
 

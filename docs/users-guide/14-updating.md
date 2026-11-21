@@ -52,4 +52,4 @@ copy D:AUTOEXEC.CMD C:
 ```
 
 Drive C: holds 768 KB, of which a few KB go on housekeeping. The programs that come with
-the Griffin Jr. take up most of the rest.
+the Griffin Jr. take up a little under half of the rest.

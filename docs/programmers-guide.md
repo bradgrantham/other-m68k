@@ -281,7 +281,11 @@ graphics; the loader will not put ELF segments there, but you can point at it:
 ### The C library
 
 * `printf`, `puts`, `putchar`, `fprintf(stderr, ...)`: go to the console, the text screen on
-  video page 0 (not to the serial port, [1.4](#14-the-console)). `stdout` is line buffered;
+  video page 0 (not to the serial port, [1.4](#14-the-console)). **The SDK Makefile builds
+  with the integer-only printf** (`-Dprintf=iprintf` and so on, `INT_PRINTF`), which saves
+  about 21 KB a program: `%d`, `%u`, `%x`, `%s`, `%c` and their widths work, `%f`/`%e`/`%g` do
+  not. Add the program's name to `FLOAT_PRINTF` in `sdk/Makefile` to get newlib's full
+  `printf`; `float` and `double` arithmetic works either way. `stdout` is line buffered;
   call `fflush(stdout)` before waiting for input after a prompt that has no newline.
 * `fgets(buf, n, stdin)`, `scanf`, `getchar()`: read the PS/2 keyboard through a small line
   editor (echo on the screen, Backspace) in the shim; the line ends with Enter.

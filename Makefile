@@ -3,7 +3,7 @@ XTOOLS ?= $(HOME)/x-tools/m68k-unknown-elf/bin
 export XTOOLS
 
 .SECONDEXPANSION:
-.PHONY: all gen check-gen fw emu sdk hdl flash run check clean
+.PHONY: all gen check-gen fw emu sdk hdl flash card run check clean
 
 all: gen fw emu sdk flash
 
@@ -28,8 +28,8 @@ hdl:
 # The flash window image: the BIOS image plus the C: volume (flashfs/ and the SDK's example
 # programs, except the constructor demo `ctors`), and the two chip images for the TL866. `make run` boots it and keeps what the
 # machine writes to C: in fw/build/flash.img across runs (--rom-save).
-# (fstest, a file-system self test, stays off C: to leave room for BASIC; it is in sdk/build for the card)
-FLASHFS_PROGRAMS = hello plasma ls cat bmpview tune abench sdplay term joytest sstv
+# Optional programs (CARD_PROGRAMS below) are not on C:; `make card` packages them for D:.
+FLASHFS_PROGRAMS = hello plasma ls cat bmpview tune abench sdplay term joytest
 FLASHFS_FILES = flashfs/AUTOEXEC.CMD flashfs/README.TXT $(foreach p,$(FLASHFS_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
 
 # BASIC is built in its own tree (make griffinjr there); it goes on C: when it has been built.
@@ -45,6 +45,20 @@ $(warning BASIC.ELF not found under $(POLYBASIC): C: is built without BASIC)
 endif
 
 flash: fw sdk fw/build/flash.img
+
+# The card package: optional programs, the user's guide's BASIC listings and script, and a
+# README, as a directory to copy onto an SD card (drive D:) and as a zip of the same.
+CARD_PROGRAMS = sstv fstest
+CARD_EXTRAS   = cardfs/README.TXT $(wildcard docs/users-guide/card/*.BAS) docs/users-guide/card/GREET.CMD
+CARD_ELFS     = $(foreach p,$(CARD_PROGRAMS),fw/build/cfiles/$(shell echo $(p) | tr a-z A-Z).ELF)
+
+card: sdk build/griffin-jr-card.zip
+
+build/griffin-jr-card.zip: $(CARD_ELFS) $(CARD_EXTRAS)
+	rm -rf build/card && mkdir -p build/card
+	cp $(CARD_ELFS) $(CARD_EXTRAS) build/card/
+	rm -f $@ && cd build/card && zip -q -X ../griffin-jr-card.zip *
+	@echo "card: build/card/ and $@: $$(ls build/card | tr '\n' ' ')"
 
 # programs go in stripped (the loader reads only the program headers; symbols would double the size)
 fw/build/cfiles/%.ELF: sdk/build/$$(shell echo % | tr A-Z a-z).elf

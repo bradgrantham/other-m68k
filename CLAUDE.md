@@ -13,7 +13,7 @@ depends on it in the same piece of work.
 |---|---|
 | `spec/board.json` (memory map, registers, interrupts, syscalls, ABI) | `make gen` regenerates `generated/`; then the firmware, SDK, emulator and HDL that use it; then `docs/programmers-guide.md` and the user's guide chapters that quote addresses, registers or timings |
 | firmware behaviour (`fw/`): boot and POST messages, the banner, LED codes, monitor commands and keys, scripts, drives, the fault screen, the clock | `fw/README.md`, `docs/programmers-guide.md` where it applies, and `docs/users-guide/` |
-| the program list (`sdk/examples/`, what `make flash` puts on C:, `flashfs/`, BASIC from `../polybasic`) or what a program does or takes on its command line | `docs/users-guide/` (the chapter on the programs, and the command reference) |
+| the program list (`sdk/examples/`, what `make flash` puts on C: (`FLASHFS_PROGRAMS`, `flashfs/`), what `make card` puts in the card package (`CARD_PROGRAMS`, `cardfs/`), BASIC from `../polybasic`) or what a program does or takes on its command line | `docs/users-guide/` (the chapter on the programs with its card-package table, and the command reference), `cardfs/README.TXT`, `fw/README.md` |
 | the SDK (`sdk/`), system calls, libraries | `docs/programmers-guide.md`, `sdk/README.md` |
 | the board (`kicad/`): connectors, part positions, silkscreen | `kicad/ORDER.md`, the BOM flow (`parts.json`, `fab_export.py`), `enclosure/`, and the board tour, figures and pinouts in `docs/users-guide/` |
 | a program or system from `docs/experience-plan.md` is added | its section or chapter in `docs/users-guide/`, and its entry in the plan |

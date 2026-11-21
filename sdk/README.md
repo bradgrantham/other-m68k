@@ -15,7 +15,16 @@ make -C sdk      # build/libsys.a, build/crt0.o, build/{hello,plasma,ls,cat,fste
 The `.elf` files are what `run` loads (ELF32 big-endian m68k, one `PT_LOAD` segment at
 0x8000, entry `_start` = 0x8000); copy them onto the card or onto C: (`HELLO.ELF`, so that
 `hello` finds it). The top-level `make flash` puts the examples (all but `ctors`) on C:, stripped
-(43-62 KB each; the loader reads only the program headers). The `.srec` files are for the
+(15-34 KB each; the loader reads only the program headers), except `sstv` and `fstest`, which
+go into the card package (`make card`).
+
+Two things in the `Makefile` keep the programs small. **`printf` is integer-only**: the
+printf family is mapped onto newlib's `iprintf` twins (`INT_PRINTF`), because newlib's float
+formatting costs every program about 21 KB (`hello`: 13 KB of text instead of 34 KB). With it,
+`%f`, `%e` and `%g` print nothing useful. A program that needs them adds its name to
+`FLOAT_PRINTF` and gets the full `printf` back; floating-point arithmetic itself is not
+affected. **No page padding**: `-Wl,-n` drops the 8 KB of alignment the linker otherwise puts
+before the load segment. The `.srec` files are for the
 serial upload path.
 
 ## What is here

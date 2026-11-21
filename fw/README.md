@@ -46,12 +46,15 @@ window (rom.bin, 0xFF, the volume image at `FLASH_VOL_OFFSET`) and splits it int
 volume: an 0xFF-filled 768 KB file (erased flash), `mkfs.vfat -F 12 -s 8 -f 2 -r 224 -R 16`
 (4 KB clusters, two FATs, 224 root entries, 16 reserved sectors so the data area starts on
 an 8 KB erase sector), then `mcopy` of the files, upper-cased. The top-level `make flash`
-puts `flashfs/AUTOEXEC.CMD`, `flashfs/README.TXT` and the SDK examples on it, each stripped
-with `m68k-unknown-elf-strip` into `fw/build/cfiles/NAME.ELF` (43-62 KB each instead of
-54-75 KB; the loader needs only the program headers). When `../polybasic` has been built
-(`make griffinjr` there; `POLYBASIC=` names another place) its `BASIC.ELF` goes on too, about
-160 KB. With it the volume holds about 710 KB of its 768 KB, so `fstest` is left off: a
-volume that does not fit fails the build with mcopy's "Disk full".
+puts `flashfs/AUTOEXEC.CMD`, `flashfs/README.TXT` and the programs in `FLASHFS_PROGRAMS`
+on it, each stripped with `m68k-unknown-elf-strip` into `fw/build/cfiles/NAME.ELF` (15-34 KB
+each: the SDK links them with the integer-only printf and without page padding, see
+`../sdk/README.md`). When `../polybasic` has been built (`make griffinjr` there;
+`POLYBASIC=` names another place) its `BASIC.ELF` goes on too, about 160 KB. Together they
+take about 350 KB of the 768 KB. The optional programs in `CARD_PROGRAMS` (`sstv`, `fstest`)
+are not on C:; `make card` puts them, the user's guide's BASIC listings and `cardfs/README.TXT`
+into `build/card/` and `build/griffin-jr-card.zip`, to be copied onto an SD card. A volume
+that does not fit fails the build with mcopy's "Disk full".
 
 ## Programming the ROM
 

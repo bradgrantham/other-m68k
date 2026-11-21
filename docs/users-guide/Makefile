@@ -32,7 +32,7 @@ build/ch/%.typ: %.md filter.lua build/screens.stamp Makefile $(wildcard card/*)
 	    | sed -e 's/^  align(center)\[#table(/  [#table(/' -e '/^    align: (\(auto,\)*),$$/d' > $@
 
 # Every screen and picture in the guide comes out of the emulator.
-build/screens.stamp: sessions.json screens.py $(wildcard card/*) $(TOP)/fw/build/flash.img $(TOP)/emu/build/m68k-emu
+build/screens.stamp: sessions.json screens.py $(wildcard card/*) $(TOP)/fw/build/flash.img $(TOP)/emu/build/m68k-emu $(TOP)/build/griffin-jr-card.zip
 	python3 screens.py
 	@touch $@
 

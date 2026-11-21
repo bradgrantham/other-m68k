@@ -109,9 +109,12 @@
 
 // ---- title page ---------------------------------------------------------------------------------
 
-#set page(width: 5.5in, height: 8.5in, margin: (x: 0.6in, top: 0.7in, bottom: 0.75in))
+// Margins for double-sided printing and a comb binding: the holes take the first 3/8 in
+// of the inside edge, so the inside margin is the wide one.
+#set page(width: 5.5in, height: 8.5in,
+  margin: (inside: 0.8in, outside: 0.45in, top: 0.7in, bottom: 0.75in))
 
-#page(fill: spot, margin: 0.6in)[
+#page(fill: spot, margin: (inside: 0.8in, outside: 0.45in, y: 0.6in))[
   #set text(font: sans, fill: white)
   #v(1.3in)
   #text(size: 46pt, weight: "bold")[Griffin Jr.]

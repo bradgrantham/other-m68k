@@ -64,7 +64,8 @@ its section or chapter when it lands.
 ## Releases
 
 The user's guide PDF is a build product and is not checked in. The aim is for GitHub to
-build it, and the enclosure files, and publish them as GitHub releases; the checked-in
+build it, the card package (`make card`: `griffin-jr-card.zip`) and the enclosure files,
+and publish them as GitHub releases; the checked-in
 enclosure STLs go away when that exists. Not started.
 
 ## Suggested order

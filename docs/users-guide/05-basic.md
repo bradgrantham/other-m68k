@@ -9,6 +9,10 @@ the result at once.
 The Griffin Jr. has its own version, Griffin BASIC, with statements for drawing, for
 sound and for the joystick. This chapter starts from nothing and ends with a small game.
 
+The longer programs in this chapter are also in the card package described at the end of
+chapter 4. Typing a program in is the best way to learn what each line does, but if you
+would rather watch one run first, `basic D:CATCH.BAS` will do it.
+
 ## Starting and stopping
 
 Type `basic` at the monitor's prompt.

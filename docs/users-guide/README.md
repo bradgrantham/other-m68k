@@ -17,7 +17,7 @@ make clean
 | `NN-name.md` | one chapter each, in file-name order |
 | `sessions.json` | the emulator sessions the chapters show: what is typed, how long to run |
 | `screens.py` | runs the sessions in `emu/build/m68k-emu` on `fw/build/flash.img` and writes `build/screens/NAME.txt` (the console text) and `build/shots/NAME.png` (the picture) |
-| `card/` | the files on the SD card (drive D:) that the sessions use; `screens.py` adds a picture and a sound it makes itself |
+| `card/` | files for the SD card (drive D:) that the sessions use. The `.BAS` listings and `GREET.CMD` also go into the card package (`make card` at the top level); `screens.py` builds its card from that package, the rest of `card/`, and a picture and a sound it makes itself |
 | `card/*.BAS` | the BASIC listings of chapter 5: the chapter prints these files and the sessions run them |
 | `figures/board.py` | draws the board tour from `kicad/release/other-m68k.kicad_pcb` |
 | `figures/diagrams.py` | draws the line diagrams (colour chart, colour byte, screen addresses, memory map, port pinouts, sound patterns); addresses come from `generated/hw.h` |
@@ -56,7 +56,7 @@ package in a usable version; both are single binaries from their GitHub release 
 Makefile looks for `~/.local/opt/pandoc-*/bin/pandoc` and `~/.local/opt/typst-*/typst`, then
 for `pandoc` and `typst` on the PATH (`make PANDOC=... TYPST=...` overrides). Also needed:
 python3 with Pillow and the `pcbnew` module (KiCad 9), `mkfs.vfat` and `mcopy` for the card
-image, and the built emulator and flash image (`make emu flash` at the top level).
+image, and the built emulator, flash image and card package (`make emu flash card` at the top level).
 
 Fonts come from the machine: C059 for the text, Nimbus Sans for headings (both in
 `fonts-urw-base35`), DejaVu Sans Mono for listings.
