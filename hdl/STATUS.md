@@ -6,12 +6,18 @@
   Verilog-2001, one clock, async reset, no inferred memories. Lint clean (`iverilog -Wall`).
 * `tb/`: 68000 bus master, 512Kx8 55 ns SRAM model (AS6C4008-55 timings) with timing
   checks, SST39SF040 flash model (JEDEC program/erase/ID, busy status, write-timing checks)
-  and 74AHCT245 models, whole-board testbench with 16 tests, a frame/pixel monitor, a
+  and 74AHCT245 models, whole-board testbench with 17 tests, a frame/pixel monitor, a
   bus-contention checker and an MA18..17 edge checker.
-  `make -C hdl sim` ends in `RESULT: PASS` (16 tests, 0 errors; ~30 s).
+  `make -C hdl sim` ends in `RESULT: PASS` (17 tests, 0 errors; ~30 s).
 * **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 111/128
   (pass 2, fan-in 37/40, no I/O left) and CPLD2 123/128 (pass 1, 58/64 I/O, 126/128 nodes) with
   the pin blocks kept. JEDs in `build/fit/`.
+* **CPUCLK runs during reset (2026-11-22, found on the first rev C3 board)**: CPLD1's phase
+  counter was cleared by SYSRESET, so CPUCLK stood still while reset was asserted and the
+  68000 booted only about half the time (LED0 on or HALT low). `ph` now has no reset and
+  free-runs from power-on. With the new image LED0 comes on at every reset on that board.
+  Fit unchanged at 111/128 macrocells, pins unchanged; new testbench test (CPUCLK edges
+  while reset is held).
 * **Spec rev 7 (2026-10-21, rev C board)**: the SD card moved from bit-banged SPI to its native
   4-bit bus. SDIO now holds six open-drain drivers (DAT3, CLK, CMD, DAT0, DAT1, DAT2; 1 =
   released, reset 0x3F) and reads back the pin levels in the same bits; INTSTAT.SDMISO is gone;

@@ -1,6 +1,6 @@
 // tb_system.v -- whole-board simulation: CPLD1 + CPLD2 + 2 SRAM + 2 74AHCT245 + 2 flash
 // + behavioural 68000 bus master, with a video/frame monitor, a bus-contention checker
-// and thirteen self-checking tests.  Prints "RESULT: PASS" or "RESULT: FAIL".
+// and seventeen self-checking tests.  Prints "RESULT: PASS" or "RESULT: FAIL".
 `timescale 1ns/1ps
 
 // ---------------------------------------------------------------------------------
@@ -337,6 +337,12 @@ always @(posedge clk24) if (sysreset_n && (xh_da !== xl_da || xh_db !== xl_db ||
     $display("%0t byte halves disagree", $time);
 end
 
+// ---- CPUCLK must keep running while reset is asserted (the 68000 needs it) -------------
+// ph has no reset; the power-on state of the flip-flops is modelled here.
+initial u1.ph = 3'd0;
+integer reset_clk_edges = 0;
+always @(posedge cpuclk_p) if (!sysreset_n) reset_clk_edges = reset_clk_edges + 1;
+
 // ---- phase lock check: CPLD2's counter must follow CPLD1's ---------------------------
 integer phase_err = 0;
 always @(negedge clk24) if (sysreset_n && $time > 2000 && u1.ph !== u2.ph2) begin
@@ -545,6 +551,11 @@ initial begin
 
     #500 sysreset_n = 1;
     #200;
+
+    // ------------------------------------------------------------------ 0
+    begin_test("CPUCLK runs during reset");
+    check(reset_clk_edges >= 5, "at least 5 CPUCLK rising edges in the 500 ns of reset");
+    end_test;
 
     // ------------------------------------------------------------------ 1
     begin_test("reset vector fetch via overlay, then overlay clear");

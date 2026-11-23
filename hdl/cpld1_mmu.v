@@ -48,8 +48,16 @@ module cpld1_mmu #(
 `include "board_params.vh"
 
 // ---------------------------------------------------------------- phase counter
+// ph is NOT reset by sysreset_n: it free-runs from power-on, so CPUCLK keeps running while
+// reset is asserted.  The 68000 needs its clock during reset (it is a dynamic part with a
+// minimum clock frequency, and RESET/HALT are only acted on with the clock running); with ph
+// held at 0 in reset the CPU came out of reset in an undefined state about half the time on
+// the first rev C3 board (2026-11-22).  Everything else is still reset, so the first slot
+// after reset starts at an arbitrary phase with all strobes inactive; CPLD2 picks the phase
+// up again from LATCH.
 reg [2:0] ph;                          // ph == n during Fn
 assign cpuclk = ~ph[0];                // F0,F2,F4,F6 high; E0 is a cpuclk rising edge
+always @(posedge clk24) ph <= ph + 3'd1;
 
 // ---------------------------------------------------------------- address decode
 wire ram_region = (a[23:24-RAM_DECODE_BITS]      == RAM_BASE[23:24-RAM_DECODE_BITS]);
@@ -124,7 +132,6 @@ assign vsync = SYNC_ACTIVE_LOW ? ~vsync_i : vsync_i;
 // ---------------------------------------------------------------- the one process
 always @(posedge clk24 or negedge sysreset_n) begin
     if (!sysreset_n) begin
-        ph       <= 3'd0;
         ma       <= 17'd0;
         latch    <= 1'b0;
         service  <= 1'b0;
@@ -147,8 +154,6 @@ always @(posedge clk24 or negedge sysreset_n) begin
         pal_req  <= 1'b0;
         pal      <= 1'b0;
     end else begin
-        ph <= ph + 3'd1;
-
         // -------- cycle bookkeeping sampled on every fast edge
         if (as_n) begin
             serviced <= 1'b0;                 // AS seen high: the cycle is over

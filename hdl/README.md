@@ -12,7 +12,7 @@ from `generated/board_params.vh` (generated from `spec/board.json`), which both 
 | `cpld2_io.v` | CPLD2 "I/O + shifter": pixel path, registers, interrupt controller, PS/2 receiver, DUART IRQ routing, upper SRAM address bits MA18..MA17 |
 | `tb/tb_m68k_bus.v` | behavioural 68000 bus master with datasheet delays |
 | `tb/tb_sram.v` | 512Kx8 55 ns SRAM model (AS6C4008-55 class) with read timing and write-timing checks |
-| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, 2 flash, bus master, frame monitor, contention checker, MA18..17 edge checker, 15 tests |
+| `tb/tb_system.v` | whole-board testbench: both CPLDs, 2 SRAM, 2 74AHCT245, 2 flash, bus master, frame monitor, contention checker, MA18..17 edge checker, 17 tests |
 | `Makefile` | `sim`, `wave`, `lint`, `synth`, `fit`, `clean` |
 | `fit.sh` | yosys -> EDIF -> Atmel fitter (wine); see "Synthesis and fitting" |
 | `pins.py` | harvest the fitter's pin choices into the sources' pin blocks / check them |
@@ -121,8 +121,12 @@ the `pal` flop takes the value of `pal_req` at the same moment, so a standard ch
 lands mid-frame. All compare constants are 2:1 muxes between the NTSC and PAL values
 (identical values fold away).
 
-Reset state: `ph=0`, `h=0`, `v=0`, `de=1`, `va=FB_PAGE0_WORD`, `overlay=1`, `page=0`,
-`pal=0`, all strobes inactive.
+Reset state: `h=0`, `v=0`, `de=1`, `va=FB_PAGE0_WORD`, `overlay=1`, `page=0`,
+`pal=0`, all strobes inactive. The phase counter `ph` is not reset: it free-runs from
+power-on, so CPUCLK keeps running while SYSRESET is asserted and the first slot after reset
+starts at an arbitrary phase (CPLD2 picks the phase up from LATCH). Until 2026-11-22 `ph` was
+held at 0 in reset, which stopped CPUCLK; the 68000 then came out of reset in an undefined
+state about half the time on the first rev C3 board.
 
 ## CPLD2 `cpld2_io` (parameter `SYNC_ACTIVE_LOW = 1`)
 
