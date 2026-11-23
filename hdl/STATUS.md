@@ -10,8 +10,25 @@
   bus-contention checker and an MA18..17 edge checker.
   `make -C hdl sim` ends in `RESULT: PASS` (17 tests, 0 errors; ~30 s).
 * **Real Atmel fits** (`make fit`, `fit.sh`, `pins.py`; tables in README.md): CPLD1 111/128
-  (pass 2, fan-in 37/40, no I/O left) and CPLD2 123/128 (pass 1, 58/64 I/O, 126/128 nodes) with
+  (pass 5, fan-in 36/40, no I/O left) and CPLD2 123/128 (pass 1, 58/64 I/O, 126/128 nodes) with
   the pin blocks kept. JEDs in `build/fit/`.
+* **DTACK release is registered (2026-11-23, found on the first rev C3 board)**: with the
+  68681 fitted the CPU hung on its first DUART access with DTACK at a steady 2 V. The fitter
+  (1918) had built the DTACK pin's output enable from the complement of a foldback node. The
+  device has no such signal (a foldback enters the AND array in one polarity), and the JED
+  had the uncomplemented node fused: CPLD1 drove DTACK high during DUART cycles, against the
+  68681, and released it instead for AS-low addresses with A18..15 = 0010 and A22..19 not all
+  ones (0x010000-0x017FFF and its images, where it would never have answered). The `.fit`
+  equations looked right; the fault was found by decoding the product-term fuses. The release
+  is now the flip-flop `dtack_rel` (the DUART-cycle decode sampled on clk24), which reaches
+  the enable as one literal: `dtack_n.OE = !id.Q`, confirmed in the JED. `fit.sh` gained two
+  checks that refuse a fit: a foldback node used complemented, and a pin whose enable is the
+  constant 0. The second caught a flaw in the synthesis script on the way: yosys did not
+  know the TRI cell's ENA pin was an input (cells.lib calls it EN), so logic driving only an
+  enable was deleted. Fit 111/128 macrocells (now at pass 5; one cell carries both VSYNC and a buried
+  register), 71 flip-flops, pins unchanged; CPLD2's fuses are
+  identical under the changed script. With the new image that board runs the POST and prints
+  the banner on serial A. Details in docs/atf15xx.md section 3.6.
 * **CPUCLK runs during reset (2026-11-22, found on the first rev C3 board)**: CPLD1's phase
   counter was cleared by SYSRESET, so CPUCLK stood still while reset was asserted and the
   68000 booted only about half the time (LED0 on or HALT low). `ph` now has no reset and

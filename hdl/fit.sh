@@ -32,8 +32,15 @@ ln -sfn "$FLOW/vendor" "$OUT/vendor"
 cp -u "$FLOW/vendor/atmel.std" "$OUT/atmel.std"
 CHP=""; [ ${#CHPARAM[@]} -gt 0 ] && CHP="chparam ${CHPARAM[*]} $TOP"
 
+echo 'module TRI(input A, input ENA, output Q); endmodule' > "$OUT/tri_cell.v"
+rm -f "$OUT/$VARIANT.edif"
 yosys -q -l "$OUT/$VARIANT.yosys.log" <<YS >/dev/null
 read_liberty -lib $FLOW/cells.lib
+# cells.lib names the tri-state buffer's enable EN, but the fitter's TRI primitive (and the
+# iopadmap line below) call it ENA.  Without this definition yosys does not know ENA is an
+# input, and the clean after iopadmap deletes logic that drives nothing but an enable: the
+# fitter then reports "<pin>.OE = 0" and the pin never drives.
+read_verilog -lib -overwrite $OUT/tri_cell.v
 read_verilog $DEFS -I$HERE/../generated $SRC
 $CHP
 hierarchy -top $TOP
@@ -64,6 +71,24 @@ VEND='C:\m68k_fit\vendor'
 wine "$VEND\\$FITTER" -i "$VARIANT.edif" -ifmt edif -o "$VARIANT.jed" \
      -lib "$VEND\\aprim.lib" -tech $DEVICE -device $PACKAGE -tpd $SPEED $FITOPTS \
      > "$VARIANT.fitter.out" 2>&1 || true
+# A foldback node enters the AND array in one polarity only.  Fitter 1918 has been seen to
+# report a product term that uses one complemented and to fuse the uncomplemented node, so
+# the chip does not do what the report says (CPLD1's DTACK enable, 2026-11-23; see
+# docs/atf15xx.md).  Refuse such a fit.
+if [ -s "$VARIANT.fit" ]; then
+python3 - "$VARIANT.fit" <<'PY' || { rm -f "$VARIANT.jed"; echo "MIS-FIT (see above): the chip would not do what the source says; change the logic and refit"; exit 1; }
+import re, sys
+t = open(sys.argv[1], errors='replace').read()
+flb = set(re.findall(r'^(\S+) is placed at foldback expander node', t, re.M))
+eq = t[t.index('programmed logic:'):] if 'programmed logic:' in t else ''
+dead = re.findall(r'^(\w+)\.OE\s*=\s*0\s*;', eq, re.M)
+for pin in dead: print(f"  {pin}.OE = 0: the pin never drives (its enable logic was lost before the fitter)")
+bad = [(m.group(1), lit) for m in re.finditer(r'^(!?[\w.]+)\s*=\s*(.*?);', eq, re.M | re.S)
+       for lit in re.findall(r'!(\w+)\b', m.group(2)) if lit in flb]
+for lhs, lit in bad: print(f"  {lhs.lstrip('!')} uses !{lit}, and {lit} is a foldback node")
+sys.exit(1 if bad or dead else 0)
+PY
+fi
 grep -E "Fitter_Pass|Warning|ERROR|Error|refused|Fanin" "$VARIANT.fit" "$VARIANT.fitter.out" 2>/dev/null | sort -u | head -20
 echo "Logic Array Block  Macro Cells  I/O Pins  Foldbacks  TotalPT  FanIN  Cascades"
 grep "^[A-H]:" "$VARIANT.fit" 2>/dev/null

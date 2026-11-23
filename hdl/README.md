@@ -96,7 +96,7 @@ SRAM -> transceiver hand-off at E4/E5 and the transceiver -> SRAM hand-off at E0
 | `clk24`, `sysreset_n` | in | 24 MHz oscillator (GCLK pin), system reset (GCLR pin) |
 | `a[23:1]`, `as_n`, `uds_n`, `lds_n`, `rw` | in | 68000 |
 | `cpuclk` | out | 12 MHz to the 68000 |
-| `dtack_n` | out | registered slot-aligned part OR combinational immediate part |
+| `dtack_n` | out | registered slot-aligned part OR combinational immediate part; released (high-Z) during DUART cycles by the register `dtack_rel` |
 | `berr_n` | out | combinational: AS & unmapped & !IACK |
 | `vpa_n` | out | combinational: AS & IACK (A23..A4 all ones) |
 | `ma[16:0]` | out | SRAM word address bits 16..0: VA during F1..F3, CPU A17..A1 during F4..F0 (bits 18..17 come from CPLD2, same edges) |
@@ -276,7 +276,7 @@ xor_synthesis):
 
 | chip | pass | macrocells | flops | foldbacks | nodes+FB | PTs | worst LAB fan-in | I/O pins |
 |---|---|---|---|---|---|---|---|---|
-| `cpld1_mmu` | 2 | **111 / 128** | 70 | 13 | 124 | 400 | 37 / 40 | 64 / 64 (incl. 4 JTAG) |
+| `cpld1_mmu` | 5 | **111 / 128** | 71 | 13 | 124 | 396 | 36 / 40 | 64 / 64 (incl. 4 JTAG) |
 | `cpld2_io` | 1 | **123 / 128** | 84 | 14 | 126 | 365 | 36 / 40 | 58 / 64 (incl. 4 JTAG) |
 | `cpld2_io` rev 5/6 (SPI SD, USERIO) | 1 | 119 / 128 | 85 | 15 | 127 | 369 | 28 / 40 | 60 / 64 |
 | `cpld2_io` before rev 5 (no PDM) | 1 | 107 / 128 | 73 | 9 | 107 | 322 | 28 / 40 | 60 / 64 |
@@ -338,7 +338,9 @@ CPLD1 pins: 27 inputs + 33 outputs = 60 of the 60 regular I/O with JTAG on (none
 ### Flow to the device
 
 1. `make fit` (pin blocks `//PIN: net : pin` in the sources, `-preassign keep`); `make
-   pins-check` confirms the fitter honoured them.
+   pins-check` confirms the fitter honoured them. `fit.sh` refuses a fit that uses a foldback
+   node complemented or leaves a pin's enable at constant 0 (`MIS-FIT`; `docs/atf15xx.md`
+   section 3.6).
 2. JED -> SVF: `make svf` (`prjbureau`'s `util.fuseconv`; set `PRJBUREAU` to its checkout).
    Output is `build/fit/cpld1_mmu.svf` and `build/fit/cpld2_io.svf`.
 3. Program through the JTAG header with the FT232H (UM232H) and OpenOCD. The chain is header

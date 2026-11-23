@@ -166,8 +166,12 @@ DTACK sample. The firmware's bus-error handler prints the faulting address.
 
 **DTACK sharing**: DTACK is an open-drain bus with a 4.7 k pull-up. CPLD1 drives it (low,
 then high again at the end of the cycle) for RAM, ROM, IO and SWITCHES cycles and releases it
-(high-Z) while AS is low in the DUART region; the 68681's open-drain DTACK answers those
-cycles, about 2-3 of its 3.6864 MHz clocks after DUARTCS (the CPU simply waits). The DUART
+(high-Z) during DUART cycles; the 68681's open-drain DTACK answers those
+cycles, about 2-3 of its 3.6864 MHz clocks after DUARTCS (the CPU simply waits). The release
+is a register: "AS low in the DUART region" sampled on every 24 MHz edge, so the pin lets go
+up to one 24 MHz period (42 ns) after DUARTCS falls, long before the 68681 answers, and CPLD1
+drives DTACK high again within about 55 ns of AS rising. (The enable was combinational until
+2026-11-23; the fitter mis-built it and CPLD1 fought the 68681. See hdl/STATUS.md.) The DUART
 sits on the CPU bus (D0..D7), so BUFEN stays off and the video fetch is undisturbed.
 
 **Soft switches** (0xF10000 + 2n): decoded from A1..A2 on a write; PAGE and PAL flip-flops.

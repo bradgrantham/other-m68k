@@ -77,6 +77,7 @@ wire as_low  = ~as_n;
 reg service;      // this slot services a RAM/IO cycle (set E4, cleared E0)
 reg serviced;     // the current AS-low cycle has already been serviced
 reg dtack_r;      // slot-aligned DTACK (RAM/IO)
+reg dtack_rel;    // DTACK pin released (high-Z): a DUART cycle, sampled on clk24
 reg ramoe;        // active-high internal copies of the strobes
 reg bufen;
 reg iocs;
@@ -94,10 +95,20 @@ assign romoe_n = ~(as_low & rom_sel & rw);
 assign romwe_n = ~(as_low & rom_region & ~rw & (~uds_n | ~lds_n));
 assign berr_n  = ~(as_low & ~mapped & ~iack);
 assign vpa_n   = ~(as_low & iack);
-// DTACK is an open-drain bus shared with the DUART: released while AS is low in its region.
+// DTACK is shared with the DUART: CPLD1 releases it during DUART cycles and the 68681's
+// open-drain DTACK answers.  The release is a REGISTER (dtack_rel, du_cycle sampled on clk24),
+// not the combinational du_cycle.  With the combinational enable the Atmel fitter (1918) built
+// the pin's output-enable product term from the complement of a foldback node, which the
+// device does not have (a foldback enters the AND array in one polarity only), and fused the
+// uncomplemented node instead: on the first rev C3 board CPLD1 drove DTACK high through every
+// DUART cycle, the 68681 could only pull it to 2 V, and the CPU hung on the first DUART access
+// (2026-11-23).  A flip-flop output reaches the enable as a single literal.  hdl/fit.sh now
+// refuses any fit whose report uses a foldback node complemented.  The register lags AS by up
+// to one clk24 period at each end of a DUART cycle; the 68681 answers no sooner than its next
+// X1 edge, and at the end CPLD1 drives DTACK high again about 55 ns after AS rises.
 wire   du_cycle = as_low & du_region;
 assign duartcs_n = ~du_cycle;
-assign dtack_n = du_cycle ? 1'bz : ~(dtack_r | (as_low & (rom_sel | sw_region)));
+assign dtack_n = dtack_rel ? 1'bz : ~(dtack_r | (as_low & (rom_sel | sw_region)));
 assign weu_n   = ~(we_phase & ~uds_n);
 assign wel_n   = ~(we_phase & ~lds_n);
 assign ramoe_n = ~ramoe;
@@ -137,6 +148,7 @@ always @(posedge clk24 or negedge sysreset_n) begin
         service  <= 1'b0;
         serviced <= 1'b0;
         dtack_r  <= 1'b0;
+        dtack_rel <= 1'b0;
         ramoe    <= 1'b0;
         bufen    <= 1'b0;
         iocs     <= 1'b0;
@@ -155,6 +167,7 @@ always @(posedge clk24 or negedge sysreset_n) begin
         pal      <= 1'b0;
     end else begin
         // -------- cycle bookkeeping sampled on every fast edge
+        dtack_rel <= du_cycle;                // see the note at dtack_n
         if (as_n) begin
             serviced <= 1'b0;                 // AS seen high: the cycle is over
             if (rom_cyc) overlay <= 1'b0;     // AS rose after a real-ROM access

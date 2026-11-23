@@ -218,6 +218,48 @@ The verdict is the line `$Device PLCC84 fits` near the end of the `.fit` and a
 freshly written `.jed`; do not trust the process exit status.  Delete the old
 `.jed` before a fit you intend to check that way.
 
+### 3.6 Fits that are wrong
+
+A fit can pass and still not be the design.  Two cases have been seen, both on
+a tri-state pin's enable, and `fit.sh` now refuses both (it deletes the `.jed`
+and prints `MIS-FIT`).
+
+**A foldback node used complemented.**  A foldback is the NAND of one product
+term and enters the LAB's AND array in that polarity only: each product term
+has 16 foldback inputs and 40 switch-matrix inputs in true and complement
+(prjbureau's `pterm_points`: `MCn_FLB` once, `UIMn_P` and `UIMn_N`).  Fitter
+1918 will nevertheless print an equation such as
+
+```
+!id00023Q = (A_19 & A_20 & A_21 & A_22);                           <- foldback
+!FB_902   = (!as_n & A_16 & !id00023Q & !A_15 & !A_17 & !A_18);    <- uses its complement
+dtack_n.OE = FB_902;
+```
+
+and fuse the foldback line itself where the equation says `!id00023Q`.  The
+chip then computes the term with that literal inverted.  The equations in the
+`.fit` are what the fitter meant, not what it fused, so reading them does not
+show the fault; on the board it was a pin driving when it should have been
+released.  It arose where the fitter had to invent a foldback (`FB_nnn`) to
+turn a many-literal enable into the single product term an enable can have,
+and built it on a node it had not collapsed.  Avoid the situation: give a
+tri-state enable a single literal, which in practice means a flip-flop output
+(`pin.OE = !id.Q`).  A combinational enable of two or three pin literals that
+is already one product term (`D_0.OE = (rw & !iocs_n)`) is also safe.
+
+**An enable of constant 0.**  `pin.OE = 0;` means the pin never drives.  The
+cause was in the yosys script, not the fitter: `cells.lib` names the TRI cell's
+enable `EN` while the fitter's primitive and the `iopadmap` line use `ENA`, so
+yosys did not know `ENA` was an input and `clean` removed logic that drove
+nothing else.  `fit.sh` now gives yosys a TRI definition with `ENA`.
+
+To check a suspect product term in the JED directly: the product-term fuses
+come first, 96 per term, five terms per macrocell, 80 terms per LAB; a 0 fuse
+connects an input, the first 16 positions are the LAB's foldbacks in macrocell
+order and the other 80 are switch-matrix inputs.  That is enough to see
+whether a term has a foldback fused and how many other literals it has, and
+to match it against the report by literal count.
+
 ---
 
 ## 4. Reading the `.fit`
