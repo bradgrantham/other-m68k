@@ -68,6 +68,37 @@
   the DUART region; CPLD2 lost the serial receiver and gained the DUART IRQ input; INTEN,
   SDIO, GPIO, USERIO.OUT are write-only. The testbench has a 68681 bus-interface stub.
 
+## Open on the first rev C3 board (2026-11-23)
+
+The plan for a second board revision is in `docs/rev2-plan.md`.
+
+The board boots: POST, `RAM ... OK` and the banner on serial A, and a picture on composite
+through a jumpered cable. Open, in the order found:
+
+1. **J5 composite jack is wired backwards** (board fault, not HDL): the shell carries the
+   video and the centre pin is ground. A TV on a normal cable sees the signal inverted and
+   cannot sync. Until the board is reworked, the cable's tip goes to the jack's shell and its
+   shield to ground. See `kicad/README.md`, "Known limitations". J3 (PS/2) and J10
+   (S-video) use footprints drawn the same way and have not been checked with a meter.
+2. **Text on composite has heavy moving cross-colour.** Expected from the numbers: pixels
+   are 6 MHz, so the one-pixel strokes of the 6x10 font (53 columns) are 3 MHz luminance,
+   next to the 3.58 MHz subcarrier, and the subcarrier is not locked to the line so the
+   pattern crawls. Not tried yet: S-video (separate luminance, no cross-colour); a wider
+   font or fewer columns; a colour-off mode for text. The AD724 has no colour-kill pin; the
+   candidates are feeding the jack from LUMA (pin 11) or suppressing the burst by taking
+   HSYNC outside the width the chip accepts as a line sync, which needs an experiment (the
+   datasheet gives no limits, and the input clamp runs in the burst period).
+3. **Picture sits off the left edge of the screen**, beyond the monitor's horizontal
+   control. The active line is 53.3 us, slightly more than the standard 52.7 us, and starts
+   9.0 us after the leading edge of sync against the standard 9.4 us, so some loss to
+   overscan on both sides is expected. On the monitor used the left edge is lost and the
+   right edge shows no black, so it is cut on both sides (not yet counted in characters). Moving slots from the front porch to the back porch (`spec/board.json`
+   `video.timing`, then `make gen`) shifts the picture right by 2 pixels (0.33 us) per slot,
+   and only 2 or 3 slots are available; a larger loss needs a margin in the console or a
+   narrower active line.
+4. **PS/2 keyboard gives no response.** Not investigated. First check: J3 pin assignment
+   and 5 V at the jack (see item 1), then PS2 clock and data at CPLD2.
+
 ## Not done
 
 * The pin blocks are a free-placement harvest, not yet reconciled with board routing.

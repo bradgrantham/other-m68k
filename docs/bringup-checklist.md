@@ -76,7 +76,7 @@ chips must be in their sockets or the chain is open.
 - [ ] HSYNC period 63.6 us (J9 channel 18): ________
 - [ ] VSYNC period 16.7 ms (J9 channel 19): ________
 - [ ] LATCH pulses every 333 ns.
-- [ ] TV on J5 (composite) syncs to a black picture.
+- [ ] TV on J5 (composite) syncs to a black picture (rev C3: see the J5 note in stage H).
 - [ ] TV on J10 (S-video) syncs to a black picture.
 
 ## E. CPU and ROM (no DUART, no RAM)
@@ -101,7 +101,7 @@ and that the EVEN/ODD chips are not swapped.
 - [ ] Unplug. Fit the MC68681P in U10.
 - [ ] FTDI cable on J2 SERIAL A: pin 1 GND, pin 4 cable TXD, pin 5 cable RXD. Do not connect
       the cable's 5 V. Terminal at **38400 8N1**.
-- [ ] Power up. Serial shows `other-m68k POST` and `ROM sum 0000 OK`.
+- [ ] Power up. Serial shows `Griffin Jr. POST` and `ROM OK`.
 - [ ] **(expected)** With no SRAM it then prints `RAM FAIL @...` and LED0/LED1 alternate at
       about 2 Hz. That is the right result for this stage.
 
@@ -122,7 +122,9 @@ stuck WEU or WEL.
 
 ## H. Video
 
-- [ ] The banner and the monitor prompt are on the composite output, 40 columns, in colour.
+- [ ] **Rev C3: J5 is wired backwards** (shell = video, centre = ground; `kicad/README.md`).
+      Use a cable with its tip on the jack's shell and its shield on TP4, or use S-video.
+- [ ] The banner and the monitor prompt are on the composite output, 53 columns, in colour.
 - [ ] The same on S-video.
 - [ ] No columns of garbage. If there are, scope the transceiver enable (BUFEN, J9 channel 17)
       and RAMOE (channel 13) phases against the four alignment cases in `docs/architecture.md`.

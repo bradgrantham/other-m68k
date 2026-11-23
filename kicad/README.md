@@ -394,6 +394,19 @@ and then in `kicad/lib/`.
     ground test points (through-hole loops a probe ground clip holds on to): near the CPU,
     the CPLDs, the flash/RAM, the video section and J9.
 
+* **For the next board revision, from video bring-up (2026-11-23).**
+  * **J5 RCA pads are swapped.** On the first rev C3 board the jack's shell measures 0 ohm
+    to TP1 (VIDEO) and its centre pin 0 ohm to TP4 (GND). The netlist is right (pin 1
+    centre, pin 2 shell); the footprint `RCA_CUI_RCJ-041_Horizontal` numbers the pads the
+    wrong way round: its front slot (x = 4) is the shell tab and its rear slot (x = 8.5) the
+    centre contact, the opposite of what its description says. The footprint was drawn from
+    the drawing and not checked against a part. Swap the pad numbers (and fix the
+    description) when the jack is replaced, and check the result with a meter before
+    ordering. On rev C3 a TV on J5 gets inverted video and does not sync; a cable with its
+    tip on the shell and its shield on ground gives a good picture.
+  * **J3 (PS/2) and J10 (S-video) are unverified** for the same reason: check each pin with
+    a meter against the netlist before trusting them.
+
 * The schematic is a generated, label-per-pin drawing: correct and ERC-clean, but not a
   pretty hand-drawn sheet. Everything connects by global label name.
 * The two project footprints (mini-DIN, RCA) were drawn from the manufacturers' PCB layout
