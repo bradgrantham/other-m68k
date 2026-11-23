@@ -361,6 +361,39 @@ and then in `kicad/lib/`.
     released through the case wall; move it forward (about 1.5 mm is available before the
     pads reach the edge) together with a finger recess in the case wall.
 
+* **For the next board revision, from CPLD bring-up (2026-11-20/21).** Not decided yet:
+  * JTAG TCK signal quality. Seen on the first rev C3 board: with two blank chips the chain
+    scanned and CPLD1 programmed and verified in U6. With the CPLD1 image running, OpenOCD
+    reported `tap1.tap: IR capture error; saw 0x3ff not 0x1` at init, carried on, and the
+    CPLD2 program failed its first verify word; the chip in U7 then stopped answering JTAG
+    until it was erased alone in Griffin's ENGINE socket. Both chips program correctly one at
+    a time in that socket. The cause is not established (no scope capture of TCK yet); the
+    layout facts are that `JTAG_TCK` is about 152 mm of unterminated 0.15/0.2 mm trace from J7
+    to both chips with no series resistor (TMS and TDI are about 180 mm), driven by an FT232H
+    over jumper wires. Options: a 33 to 100 ohm series resistor on TCK at J7 (and on TMS, TDI,
+    TDO for symmetry), a footprint for a small capacitor or an AC termination from TCK to GND
+    at the far chip, TCK routed as one short daisy chain J7 -> U6 -> U7 with J7 next to the
+    CPLDs, and a pull-down on TCK so it is defined with no adapter attached.
+  * J7 pinout. The ByteBlaster 2x5 needs an adapter or five loose jumper wires for the
+    FT232H/UM232H, which has GND, D0 (TCK), D1 (TDI), D2 (TDO), D3 (TMS) in one row. Option: a
+    1x5 or 1x6 header in that order (with a ground beside TCK), in place of or beside J7.
+  * J9 does not match the analyzer's level-shifter board (seen 2026-11-22 on the gusmanb
+    Pico 2 analyzer in hand). The shifter header is 2x16: twelve channel rows (24|1 down to
+    13|12, numbered from 1), then 3V3|3V3, 5V0|5V0, TRG|VRF, GND|GND. J9 is 2x15 with the
+    twelve channel rows in the same pairing but GND on row 13 (pins 25/26) and rows 14-15
+    open, so a straight 2-row cable would put the shifter's 3V3 row on our ground and leave
+    its GND row unconnected. The two columns are also mirrored: seen from the mating side
+    with channel 1 at the top, the shifter's 1..12 column is on the right (its upper pin row,
+    judged from a photo of the right-angle header, not measured) and J9's is on the left, so
+    a straight ribbon would deliver signal n on analyzer channel 25-n. Rev C3 is used with
+    single jumper wires. Next revision: 2x16 with the two columns swapped (check against the
+    analyzer with a meter first), rows 13-15 open, GND on row 16, and silkscreen channel
+    numbers 1-24 to match the analyzer. Both headers are pins, so the cable is socket-to-socket either way.
+  * Scope ground points. Rev C3 has one ground pad (TP4, at the composite jack); probing
+    during bring-up wanted a ground within a probe lead of every area. Add several wire-loop
+    ground test points (through-hole loops a probe ground clip holds on to): near the CPU,
+    the CPLDs, the flash/RAM, the video section and J9.
+
 * The schematic is a generated, label-per-pin drawing: correct and ERC-clean, but not a
   pretty hand-drawn sheet. Everything connects by global label name.
 * The two project footprints (mini-DIN, RCA) were drawn from the manufacturers' PCB layout
